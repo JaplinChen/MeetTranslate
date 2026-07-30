@@ -1,0 +1,47 @@
+// API Service Layer for MeetTranslate Dashboard
+// Single-user local app: the server listens on localhost only, so there is no auth header.
+
+import { warnIfInsecureHttpUrl } from '../utils/urlSecurity';
+
+// Same-origin '/api' by default. Set VITE_API_URL to an API ORIGIN (e.g. http://localhost:8000)
+// when the dashboard dev server and the Python service run on different ports.
+const API_ORIGIN = (import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '');
+export const API_BASE_URL = `${API_ORIGIN}/api`;
+if (API_ORIGIN) warnIfInsecureHttpUrl(API_ORIGIN, 'VITE_API_URL');
+
+export async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  const isFormData = options.body instanceof FormData;
+  const headers: HeadersInit = {
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+    ...options.headers,
+  };
+
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, { ...options, headers });
+
+  if (!response.ok) {
+    // On a non-JSON body fall through to `HTTP <status>` rather than statusText: the status code is
+    // what the toast connection-lost de-dup matches on, and statusText is empty over HTTP/2 anyway.
+    const error = await response.json().catch(() => ({}));
+    const err = new Error(error.message || `HTTP ${response.status}`) as Error & { status?: number };
+    err.status = response.status;
+    throw err;
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  return response.json();
+}
+
+/** Like {@link request} but returns the raw response text. */
+export async function requestText(endpoint: string): Promise<string> {
+  const response = await fetch(`${API_BASE_URL}${endpoint}`);
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || `HTTP ${response.status}`);
+  }
+
+  return response.text();
+}

@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+
+node_modules/
+dashboard/dist/
+*.tsbuildinfo
+
+# Runtime state, not source
+config.json
+recordings/
+models/
+.env

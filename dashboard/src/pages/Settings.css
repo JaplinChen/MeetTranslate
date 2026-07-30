@@ -1,0 +1,84 @@
+.settings-layout {
+  display: flex;
+  align-items: flex-start;
+  min-height: 100vh;
+}
+
+.settings-layout .settings-nav {
+  position: sticky;
+  top: 0;
+  flex-shrink: 0;
+  width: 220px;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 1.25rem 0.75rem;
+  background: var(--bg-white);
+  border-right: 1px solid var(--border);
+}
+
+.settings-layout .settings-nav-title {
+  padding: 0 0.75rem 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+}
+
+.settings-layout .settings-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  color: var(--text-secondary);
+  text-decoration: none;
+  border-radius: var(--radius);
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.settings-layout .settings-nav-item:hover {
+  background: var(--bg-light);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.settings-layout .settings-nav-item.active {
+  background: var(--primary-soft);
+  color: var(--primary-text);
+}
+
+.settings-layout .settings-content {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 767px) {
+  .settings-layout {
+    flex-direction: column;
+  }
+
+  .settings-layout .settings-nav {
+    position: static;
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .settings-layout .settings-nav-title {
+    width: 100%;
+  }
+
+  /* Column flex + align-items:flex-start lets the content size to its widest
+     child (e.g. a 624px fixed-width table), overflowing the viewport and
+     clipping siblings. Force it to the parent width so inner overflow-x:auto
+     scroll containers actually scroll. */
+  .settings-layout .settings-content {
+    width: 100%;
+  }
+}

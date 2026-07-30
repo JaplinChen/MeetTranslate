@@ -1,0 +1,155 @@
+@import './translate/01-part.css';
+@import './translate/02-part.css';
+
+.translate-page .llm-row{
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.translate-page .llm-row input,
+.translate-page .llm-row select{
+  flex: 1;
+  min-width: 0;
+}
+.translate-page .llm-row button{
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.translate-page .llm-status{
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.4rem;
+  font-size: 0.85rem;
+}
+/* Were #16a34a / #dc2626. Both are fixed values that ignore the theme: the green read 3.3:1 on
+   light and 3.2:1 on cream, the red 3.0:1 on dark. The tokens track the surface. */
+.translate-page .llm-status.ok{ color: var(--success-text); }
+.translate-page .llm-status.err{ color: var(--error-text); }
+.translate-page .llm-hint{
+  display: block;
+  font-size: 0.8rem;
+  opacity: 0.7;
+  margin-bottom: 0.4rem;
+}
+.translate-page .llm-fallback-list{
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.translate-page .llm-fallback-list li{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border, #e2e2e2);
+  border-radius: 8px;
+}
+.translate-page .llm-fallback-del{
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #dc2626;
+  display: inline-flex;
+}
+
+.translate-page .llm-label-row{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.translate-page .llm-apply-link{
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  color: var(--primary, #e07a5f);
+  text-decoration: none;
+}
+.translate-page .llm-key-input{
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+.translate-page .llm-key-input input{ width: 100%; padding-right: 2rem; }
+.translate-page .llm-eye{
+  position: absolute;
+  right: 0.4rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  opacity: 0.6;
+  display: inline-flex;
+}
+.translate-page .llm-slider-row{
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.85rem;
+}
+.translate-page .llm-slider-row input[type="range"]{ flex: 1; }
+.translate-page .llm-slider-val{
+  min-width: 2rem;
+  text-align: right;
+  opacity: 0.7;
+}
+.translate-page .translate-preview-result{
+  margin-top: 0.6rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  background: var(--surface-2, rgba(127,127,127,0.08));
+  border: 1px solid var(--border, rgba(127,127,127,0.2));
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.9rem;
+}
+.translate-page .llm-tabs{
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 1.1rem;
+  border-bottom: 1px solid var(--border, rgba(127,127,127,0.18));
+}
+.translate-page .llm-tab{
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  padding: 0.55rem 0.7rem;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  color: inherit;
+}
+.translate-page .llm-tab.active{
+  border-bottom-color: var(--primary, currentColor);
+}
+.translate-page .llm-tab-name{
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.translate-page .llm-tab.active .llm-tab-name{
+  color: var(--primary-text, inherit);
+}
+.translate-page .llm-tab-sub{
+  font-size: 0.72rem;
+  opacity: 0.6;
+}
+.translate-page .translate-preview-actions{
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+.translate-page .translate-preview-actions select{ flex: 1 1 auto; min-width: 0; }
+/* Keep the run button at its natural width so a short CJK label (翻譯) never
+   collapses and wraps vertically. */
+.translate-page .translate-preview-actions .btn-primary{ flex: 0 0 auto; white-space: nowrap; }

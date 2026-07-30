@@ -1,0 +1,182 @@
+/* Scope anchor. Layout comes from `.etable-page` (the page div carries both classes), so there is
+   nothing to set here — `display: block` is the div default, kept only so this is not an empty rule.
+   It exists so every selector below is a descendant of the page root, the convention
+   styles.scope.test.ts enforces for every page stylesheet. */
+.keyproxy-page {
+  display: block;
+}
+
+.keyproxy-page .keyproxy-note {
+  margin: 0 0 1.25rem;
+  padding: 0.75rem 1rem;
+  background: var(--bg-subtle, var(--bg-light));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.keyproxy-page .keyproxy-addbar {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.keyproxy-page .keyproxy-apply {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  color: var(--primary, #e07a5f);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.keyproxy-page .keyproxy-apply:hover {
+  text-decoration: underline;
+}
+
+.keyproxy-page .keyproxy-select,
+.keyproxy-page .keyproxy-input {
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-card, var(--bg-light));
+  color: var(--text-primary);
+  font-size: 0.9375rem;
+}
+
+.keyproxy-page .keyproxy-input {
+  flex: 1;
+  min-width: 220px;
+}
+
+.keyproxy-page .keyproxy-account-input {
+  width: 180px;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-card, var(--bg-light));
+  color: var(--text-primary);
+  font-size: 0.9375rem;
+}
+
+.keyproxy-page .keyproxy-muted {
+  color: var(--text-secondary);
+  opacity: 0.6;
+}
+
+/* Scroll the wide fixed-width table inside its own container so it never forces
+   the page (which has overflow-x:hidden) wider than the viewport and clips the
+   note/warning/addbar beside it on narrow screens. */
+.keyproxy-page .keyproxy-table-scroll {
+  overflow-x: auto;
+}
+
+.keyproxy-page .keyproxy-table {
+  width: 100%;
+  min-width: 40rem;
+  border-collapse: collapse;
+  /* Fixed layout so per-column <col> widths (incl. drag-resized ones) are honored exactly. */
+  table-layout: fixed;
+  font-size: 0.8125rem;
+}
+
+.keyproxy-page .keyproxy-table th,
+.keyproxy-page .keyproxy-table td {
+  text-align: left;
+  padding: 0.45rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  /* Column divider + clip overflow so a long value doesn't blow out its fixed column. */
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.keyproxy-page .keyproxy-table th:last-child,
+.keyproxy-page .keyproxy-table td:last-child {
+  border-right: none;
+}
+
+.keyproxy-page .keyproxy-table th {
+  position: relative;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.keyproxy-page .kp-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -0.5px;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  border-right: 2px solid transparent;
+}
+
+.keyproxy-page .kp-resize-handle:hover {
+  border-right-color: var(--text-secondary);
+}
+
+.keyproxy-page .keyproxy-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.keyproxy-page .keyproxy-mono {
+  font-family: var(--font-mono, monospace);
+}
+
+.keyproxy-page .keyproxy-badge {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  background: var(--bg-subtle, var(--bg-light));
+  color: var(--text-secondary);
+}
+
+.keyproxy-page .keyproxy-badge-active {
+  background: var(--success-bg, rgba(34, 197, 94, 0.15));
+  color: var(--success, #16a34a);
+}
+
+.keyproxy-page .keyproxy-badge-cooldown {
+  background: var(--warning-bg, rgba(234, 179, 8, 0.15));
+  color: var(--warning, #ca8a04);
+}
+
+.keyproxy-page .keyproxy-del {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s;
+}
+
+.keyproxy-page .keyproxy-del:hover:not(:disabled) {
+  color: var(--danger, #dc2626);
+  background: var(--danger-bg, rgba(220, 38, 38, 0.1));
+}
+
+.keyproxy-page .keyproxy-del:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.keyproxy-page .keyproxy-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 3rem 1rem;
+  color: var(--text-secondary);
+}
