@@ -1,0 +1,124 @@
+/* Subtitle page. Sized for a TV across a meeting room, so nothing here inherits the
+   dashboard's type scale — --live-font drives everything and comes from the display settings. */
+
+.live-page {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  font-size: var(--live-font, 40px);
+  line-height: 1.35;
+}
+
+.live-theme-dark {
+  --live-bg: #0b0d10;
+  --live-fg: #f2f4f7;
+  --live-muted: #93a1b0;
+  --live-rule: #1e242c;
+}
+
+.live-theme-light {
+  --live-bg: #ffffff;
+  --live-fg: #101418;
+  --live-muted: #5b6875;
+  --live-rule: #e3e8ee;
+}
+
+.live-page {
+  background: var(--live-bg);
+  color: var(--live-fg);
+}
+
+.live-scroll {
+  flex: 1;
+  min-height: 0; /* height, not min-height, or the inner list never scrolls */
+  overflow-y: auto;
+  padding: 0.6em 1em;
+}
+
+.live-row {
+  display: flex;
+  gap: 0.6em;
+  padding: 0.45em 0;
+  border-bottom: 1px solid var(--live-rule);
+}
+
+.live-row:last-of-type {
+  border-bottom: none;
+}
+
+.live-speaker {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  padding: 0.1em 0.45em;
+  border-radius: 0.3em;
+  font-size: 0.5em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: hsl(var(--speaker-hue, 210) 85% 88%);
+  background: hsl(var(--speaker-hue, 210) 45% 24%);
+}
+
+.live-theme-light .live-speaker {
+  color: hsl(var(--speaker-hue, 210) 70% 25%);
+  background: hsl(var(--speaker-hue, 210) 80% 92%);
+}
+
+.live-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.live-source {
+  margin: 0 0 0.15em;
+  font-size: 0.72em;
+  color: var(--live-muted);
+}
+
+.live-translation {
+  margin: 0 0 0.1em;
+  font-weight: 600;
+  text-wrap: balance;
+}
+
+.live-translation:last-child {
+  margin-bottom: 0;
+}
+
+/* A line the model rewrote after seeing what followed. The tint fades so the correction is
+   noticeable when it lands without leaving the screen permanently marked up. */
+.live-row.is-refined .live-translation {
+  animation: live-refined 1.6s ease-out;
+}
+
+@keyframes live-refined {
+  from {
+    background: hsl(45 90% 55% / 0.28);
+  }
+  to {
+    background: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-row.is-refined .live-translation {
+    animation: none;
+  }
+}
+
+.live-idle,
+.live-banner {
+  color: var(--live-muted);
+}
+
+.live-idle {
+  margin: 0;
+  padding: 1em 0;
+  font-size: 0.7em;
+}
+
+.live-banner {
+  padding: 0.3em 1em;
+  font-size: 0.45em;
+  background: var(--live-rule);
+}

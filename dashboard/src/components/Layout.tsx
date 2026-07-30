@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { BookMarked, Settings, Menu, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { BookMarked, FileText, Mic, Settings, Menu, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { resolveSupportedLanguage, rtlLanguages } from '../i18n';
 import { healthApi } from '../services/api';
 import { LanguageMenu } from './LanguageMenu';
@@ -9,6 +9,8 @@ import { AppearanceMenu } from './AppearanceMenu';
 import './Layout.css';
 
 const navItems = [
+  { to: '/capture', icon: Mic, key: 'capture' as const },
+  { to: '/sessions', icon: FileText, key: 'sessions' as const },
   { to: '/glossary', icon: BookMarked, key: 'glossary' as const },
   { to: '/settings', icon: Settings, key: 'settings' as const },
 ];

@@ -8,6 +8,9 @@ dashboard/dist/
 
 # Runtime state, not source
 config.json
+llm.json
+llm_keys.json
+meettranslate.db*
 recordings/
 models/
 .env

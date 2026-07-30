@@ -1,0 +1,63 @@
+.display-hint {
+  margin: 0 0 0.75rem;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.display-langs,
+.display-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  align-items: flex-end;
+}
+
+.display-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+}
+
+.display-field > span {
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  font-size: 0.74rem;
+  letter-spacing: 0.04em;
+}
+
+.display-field select,
+.display-field input[type='number'] {
+  min-width: 9rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-input, var(--bg-card));
+  color: var(--text-primary);
+}
+
+.display-field input[type='range'] {
+  width: 12rem;
+}
+
+.display-field output {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.display-check {
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+  font-size: 0.88rem;
+}
+
+.display-open {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+  margin-top: 1.25rem;
+  font-size: 0.88rem;
+}

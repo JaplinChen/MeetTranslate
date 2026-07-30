@@ -10,6 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = ROOT / "config.json"
 RECORDINGS_DIR = ROOT / "recordings"
+MODELS_DIR = ROOT / "models"
 
 # Whisper wants 16 kHz mono; capturing at that rate avoids a resample step later.
 SAMPLE_RATE = 16_000
@@ -17,6 +18,36 @@ CHANNELS = 1
 # Frames per callback. 1600 @ 16 kHz = 100 ms — small enough that stopping feels instant,
 # large enough that the callback isn't called so often it starves.
 BLOCK_SIZE = 1600
+
+VAD_MODEL = MODELS_DIR / "silero_vad.onnx"
+SPEAKER_MODEL = MODELS_DIR / "speaker_embedding.onnx"
+
+# Whisper model directories, smallest first. The realtime tier is picked from `whisper_model`;
+# postprocess always uses the largest available.
+WHISPER_DIRS = {
+    "tiny": MODELS_DIR / "sherpa-onnx-whisper-tiny",
+    "base": MODELS_DIR / "sherpa-onnx-whisper-base",
+    "small": MODELS_DIR / "sherpa-onnx-whisper-small",
+    "medium": MODELS_DIR / "sherpa-onnx-whisper-medium",
+    "large-v3": MODELS_DIR / "sherpa-onnx-whisper-large-v3",
+}
+
+# Below this cosine similarity to every known centroid, a segment starts a new speaker.
+SPEAKER_THRESHOLD = 0.55
+# Segments shorter than this give unstable embeddings; they inherit the previous speaker.
+MIN_EMBED_SECONDS = 1.0
+
+
+@dataclass
+class Display:
+    """Subtitle presentation. Tuned for a TV at meeting-room viewing distance, not a desk monitor."""
+
+    font_size: int = 40           # px for the source line; translations scale from this
+    lines: int = 6                # utterances kept on screen before older ones scroll away
+    show_source: str = "top"      # top | bottom | hidden
+    show_speaker: bool = True
+    colour_speakers: bool = True
+    theme: str = "dark"           # dark | light
 
 
 @dataclass
@@ -27,9 +58,21 @@ class Config:
     # Substring matched against input device names, case-insensitive. Empty = system default.
     # Set this to the virtual audio device carrying the meeting audio (VB-Cable / BlackHole).
     input_device: str = ""
+    whisper_model: str = "small"
+    # Consecutive detections disagreeing with a speaker's established language before switching.
+    # Higher for zh<->en because Taiwanese Mandarin routinely embeds English words and would
+    # otherwise flip the speaker's language mid-meeting. See plan.md decision 5.
+    language_switch_after: int = 3
+    language_switch_after_zh_en: int = 6
+    # Speaker code -> language code. Pins a speaker so detection never overrides it.
+    pinned_languages: dict[str, str] = field(default_factory=dict)
+    display: Display = field(default_factory=Display)
 
     def save(self) -> None:
         CONFIG_PATH.write_text(json.dumps(asdict(self), indent=2, ensure_ascii=False), encoding="utf-8")
+
+    def whisper_dir(self) -> Path:
+        return WHISPER_DIRS.get(self.whisper_model, WHISPER_DIRS["small"])
 
 
 def load() -> Config:
@@ -37,11 +80,23 @@ def load() -> Config:
     if CONFIG_PATH.exists():
         data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
 
-    cfg = Config(**{k: v for k, v in data.items() if k in Config.__dataclass_fields__})
+    known = {k: v for k, v in data.items() if k in Config.__dataclass_fields__}
+    # Nested dataclass: json gives a plain dict, and an older file may lack newer display keys.
+    if isinstance(known.get("display"), dict):
+        known["display"] = Display(**{k: v for k, v in known["display"].items()
+                                      if k in Display.__dataclass_fields__})
+    cfg = Config(**known)
 
     if env := os.environ.get("MEETTRANSLATE_INPUT_DEVICE"):
         cfg.input_device = env
     if env := os.environ.get("MEETTRANSLATE_LANGUAGES"):
         cfg.languages = [s.strip() for s in env.split(",") if s.strip()]
+    if env := os.environ.get("MEETTRANSLATE_WHISPER_MODEL"):
+        cfg.whisper_model = env
 
     return cfg
+
+
+def available_whisper_models() -> list[str]:
+    """Model tiers actually present on disk, smallest first."""
+    return [name for name, path in WHISPER_DIRS.items() if path.is_dir()]

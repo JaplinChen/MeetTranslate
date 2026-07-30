@@ -3,3 +3,7 @@ uvicorn[standard]==0.34.0
 sounddevice==0.5.1
 soundfile==0.12.1
 numpy==2.2.1
+sherpa-onnx==1.13.4
+opencc-python-reimplemented==0.1.7
+anthropic==0.120.2
+soxr==1.1.0

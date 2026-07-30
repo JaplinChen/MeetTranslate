@@ -40,18 +40,31 @@ def test_match_is_case_insensitive_and_partial() -> None:
     assert audio.resolve_device(fragment.lower()) == devices[0]["index"]
 
 
-def test_duplicate_names_resolve_to_preferred_hostapi() -> None:
-    """Windows lists one device under four host APIs; MME comes first but has the worst latency."""
+def test_duplicate_names_are_ranked_by_hostapi() -> None:
+    """Windows lists one device under four host APIs; MME comes first but has the worst latency.
+
+    Every match is returned, best first, because a device PortAudio lists is not necessarily one
+    it can open — start() falls through to the next candidate.
+    """
     fake = [
         {"index": 1, "name": "Stereo Mix", "channels": 2, "hostapi": "MME"},
         {"index": 7, "name": "Stereo Mix", "channels": 2, "hostapi": "Windows DirectSound"},
         {"index": 15, "name": "Stereo Mix", "channels": 2, "hostapi": "Windows WASAPI"},
+        {"index": 22, "name": "Stereo Mix", "channels": 2, "hostapi": "Windows WDM-KS"},
+        {"index": 30, "name": "Headset", "channels": 1, "hostapi": "Windows WASAPI"},
     ]
     with patch.object(audio, "list_input_devices", return_value=fake):
+        assert audio.candidate_devices("stereo mix") == [15, 22, 7, 1]
         assert audio.resolve_device("stereo mix") == 15
+        # Non-matching devices must never appear as a fallback.
+        assert 30 not in audio.candidate_devices("stereo mix")
 
     with patch.object(audio, "list_input_devices", return_value=fake[:2]):
-        assert audio.resolve_device("stereo mix") == 1  # no preferred host API present, take the first
+        assert audio.candidate_devices("stereo mix") == [7, 1]
+
+
+def test_empty_fragment_yields_the_default_only() -> None:
+    assert audio.candidate_devices("") == [None]
 
 
 def test_config_defaults_and_env_override() -> None:

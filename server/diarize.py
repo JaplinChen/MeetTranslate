@@ -1,0 +1,166 @@
+"""Speaker separation and per-speaker language tracking.
+
+Everything arrives on one audio stream — the machine is a silent listener in the meeting — so
+speaker identity is the only way to tell participants apart, and it also decides which language
+each utterance is transcribed in. A clustering mistake therefore costs twice: wrong name and
+wrong language. Hence the hysteresis before ever changing a speaker's language.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+import numpy as np
+import sherpa_onnx
+
+from . import config
+
+
+def cosine(a: np.ndarray, b: np.ndarray) -> float:
+    denom = float(np.linalg.norm(a) * np.linalg.norm(b))
+    return float(np.dot(a, b) / denom) if denom else 0.0
+
+
+@dataclass
+class Speaker:
+    code: str
+    centroid: np.ndarray
+    segments: int = 0
+    language: str = ""  # established language; '' until the first transcription lands
+    counts: dict[str, int] = field(default_factory=dict)
+    _pending: tuple[str, int] = ("", 0)
+
+
+class Diarizer:
+    """Online clustering plus language bookkeeping.
+
+    Online rather than offline because subtitles cannot wait for the meeting to end. The offline
+    pass in postprocess sees every segment at once and corrects what this got wrong.
+    """
+
+    def __init__(self, model: str | None = None, threshold: float | None = None, cfg: config.Config | None = None):
+        ec = sherpa_onnx.SpeakerEmbeddingExtractorConfig(
+            model=str(model or config.SPEAKER_MODEL), num_threads=1
+        )
+        self._extractor = sherpa_onnx.SpeakerEmbeddingExtractor(ec)
+        self._threshold = config.SPEAKER_THRESHOLD if threshold is None else threshold
+        self._cfg = cfg or config.Config()
+        self.speakers: list[Speaker] = []
+        self._last_code: str | None = None
+
+    def embed(self, samples: np.ndarray) -> np.ndarray:
+        stream = self._extractor.create_stream()
+        stream.accept_waveform(config.SAMPLE_RATE, samples)
+        stream.input_finished()
+        return np.array(self._extractor.compute(stream), dtype=np.float32)
+
+    def assign(self, samples: np.ndarray) -> Speaker:
+        """Identify the speaker of one utterance, creating a new one if nothing matches."""
+        duration = len(samples) / config.SAMPLE_RATE
+
+        # Short clips give unstable embeddings — a hummed "OK" would otherwise mint a new speaker
+        # every time. Inheriting the previous speaker is right far more often than guessing.
+        if duration < config.MIN_EMBED_SECONDS and self._last_code:
+            return self._by_code(self._last_code)
+
+        emb = self.embed(samples)
+
+        best, best_score = None, -1.0
+        for spk in self.speakers:
+            score = cosine(emb, spk.centroid)
+            if score > best_score:
+                best, best_score = spk, score
+
+        if best is None or best_score < self._threshold:
+            best = Speaker(code=f"S{len(self.speakers) + 1}", centroid=emb)
+            self.speakers.append(best)
+        else:
+            # Running mean: later segments refine the centroid without a stored history.
+            n = best.segments
+            best.centroid = (best.centroid * n + emb) / (n + 1)
+
+        best.segments += 1
+        self._last_code = best.code
+        return best
+
+    def language_for(self, speaker: Speaker) -> str:
+        """Language to force on this speaker's next utterance. '' means let Whisper auto-detect."""
+        if pinned := self._cfg.pinned_languages.get(speaker.code):
+            return pinned
+        return speaker.language
+
+    def observe_language(self, speaker: Speaker, detected: str) -> None:
+        """Record which language an utterance actually turned out to be.
+
+        Switching needs several consecutive disagreements, and many more between Chinese and
+        English: Taiwanese Mandarin routinely embeds English words, so a single English-heavy
+        sentence must not flip the speaker and wreck every following transcription.
+        """
+        if not detected or speaker.code in self._cfg.pinned_languages:
+            return
+
+        speaker.counts[detected] = speaker.counts.get(detected, 0) + 1
+
+        if not speaker.language:
+            speaker.language = detected
+            return
+
+        if detected == speaker.language:
+            speaker._pending = ("", 0)
+            return
+
+        lang, count = speaker._pending
+        count = count + 1 if lang == detected else 1
+        needed = self._switch_threshold(speaker.language, detected)
+
+        if count >= needed:
+            speaker.language = detected
+            speaker._pending = ("", 0)
+        else:
+            speaker._pending = (detected, count)
+
+    def _switch_threshold(self, current: str, candidate: str) -> int:
+        if {current, candidate} == {"zh", "en"}:
+            return self._cfg.language_switch_after_zh_en
+        return self._cfg.language_switch_after
+
+    def _by_code(self, code: str) -> Speaker:
+        return next(s for s in self.speakers if s.code == code)
+
+
+def cluster_offline(embeddings: list[np.ndarray], threshold: float | None = None) -> list[int]:
+    """Agglomerative clustering over every segment of a finished meeting.
+
+    Seeing all segments at once fixes the online pass's mistakes: two clusters that online kept
+    apart because the speaker's first few seconds were atypical get merged here.
+    """
+    if not embeddings:
+        return []
+
+    thr = config.SPEAKER_THRESHOLD if threshold is None else threshold
+    clusters: list[list[int]] = [[i] for i in range(len(embeddings))]
+    centroids = [e.astype(np.float32) for e in embeddings]
+
+    while len(clusters) > 1:
+        best = (-1.0, -1, -1)
+        for i in range(len(clusters)):
+            for j in range(i + 1, len(clusters)):
+                score = cosine(centroids[i], centroids[j])
+                if score > best[0]:
+                    best = (score, i, j)
+
+        score, i, j = best
+        if score < thr:
+            break
+
+        # Weighted merge so a large cluster is not dragged by a single outlying segment.
+        ni, nj = len(clusters[i]), len(clusters[j])
+        centroids[i] = (centroids[i] * ni + centroids[j] * nj) / (ni + nj)
+        clusters[i] += clusters[j]
+        del clusters[j], centroids[j]
+
+    labels = [0] * len(embeddings)
+    for label, members in enumerate(clusters):
+        for idx in members:
+            labels[idx] = label
+    return labels

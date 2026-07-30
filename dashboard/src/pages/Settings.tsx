@@ -1,9 +1,10 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { KeyRound, Bot } from 'lucide-react';
+import { KeyRound, Bot, MonitorPlay } from 'lucide-react';
 import './Settings.css';
 
 const settingsNavItems = [
+  { to: 'display', icon: MonitorPlay, key: 'display' as const },
   { to: 'llm', icon: Bot, key: 'llm' as const },
   { to: 'keyproxy', icon: KeyRound, key: 'keyproxy' as const },
 ];
