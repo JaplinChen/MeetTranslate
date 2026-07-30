@@ -177,6 +177,22 @@ def test_pipeline_emits_line_then_update(tmp: Path) -> None:
         st.close()
 
 
+def test_weight_selection_prefers_quantized_for_live(tmp: Path) -> None:
+    """Live capture wants int8; postprocess wants float32 and falls back if it is absent."""
+    d = config.MODELS_DIR / "sherpa-onnx-whisper-tiny"
+    if not d.is_dir():
+        print("  (skipped: whisper model not present)")
+        return
+
+    live_enc, _, _ = asr.Transcriber(model_dir=d)._paths()
+    assert live_enc.endswith(".int8.onnx"), live_enc
+
+    slow_enc, _, _ = asr.Transcriber(model_dir=d, quantized=False)._paths()
+    assert slow_enc.endswith(".onnx") and not slow_enc.endswith(".int8.onnx"), slow_enc
+
+    assert 2 <= asr.default_threads() <= 4
+
+
 def test_autodetect_reports_the_language(tmp: Path) -> None:
     """Auto-detect must return which language it decoded in.
 

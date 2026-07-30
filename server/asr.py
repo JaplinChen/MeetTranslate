@@ -13,6 +13,7 @@ Two things here are not obvious and are load-bearing:
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -95,24 +96,42 @@ class Vad:
         return out
 
 
+def default_threads() -> int:
+    """Enough threads to matter, few enough to leave room for diarization and the rest of the box.
+
+    Measured on a 20-core machine: small int8 runs at 0.23 realtime on 2 threads and 0.20 on 4,
+    so past a handful the returns are not worth the contention.
+    """
+    return min(4, max(2, (os.cpu_count() or 4) // 4))
+
+
 class Transcriber:
     """Whisper recognizers, one per language, created on first use."""
 
-    def __init__(self, model_dir: Path | None = None, num_threads: int = 2, provider: str = "cpu"):
+    def __init__(self, model_dir: Path | None = None, num_threads: int | None = None,
+                 provider: str = "cpu", quantized: bool = True):
         self._dir = model_dir or config.WHISPER_DIRS["small"]
-        self._threads = num_threads
+        self._threads = num_threads or default_threads()
         self._provider = provider
+        # Quantized weights for live use; postprocess has no latency budget and prefers float32.
+        self._quantized = quantized
         self._cache: dict[str, sherpa_onnx.OfflineRecognizer] = {}
 
     def _paths(self) -> tuple[str, str, str]:
         stem = self._dir.name.replace("sherpa-onnx-whisper-", "")
-        enc = self._dir / f"{stem}-encoder.int8.onnx"
-        dec = self._dir / f"{stem}-decoder.int8.onnx"
+        suffixes = [".int8.onnx", ".onnx"] if self._quantized else [".onnx", ".int8.onnx"]
+
+        def pick(kind: str) -> Path:
+            for suffix in suffixes:
+                candidate = self._dir / f"{stem}-{kind}{suffix}"
+                if candidate.is_file():
+                    return candidate
+            raise FileNotFoundError(f"no {kind} weights for {stem} under {self._dir}")
+
         tok = self._dir / f"{stem}-tokens.txt"
-        for p in (enc, dec, tok):
-            if not p.is_file():
-                raise FileNotFoundError(f"Whisper model file missing: {p}")
-        return str(enc), str(dec), str(tok)
+        if not tok.is_file():
+            raise FileNotFoundError(f"Whisper tokens file missing: {tok}")
+        return str(pick("encoder")), str(pick("decoder")), str(tok)
 
     def _recognizer(self, language: str) -> sherpa_onnx.OfflineRecognizer:
         if language not in self._cache:

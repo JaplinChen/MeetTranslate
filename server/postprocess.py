@@ -9,6 +9,7 @@ every segment at once, then rewrites the stored transcript.
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -92,7 +93,8 @@ def transcribe_all(utterances: list[Utterance], transcriber: asr.Transcriber) ->
 def rewrite_session(store: Store, session_id: int, wav: Path, cfg: config.Config,
                     translator: translate.Translator | None = None) -> list[Utterance]:
     """Re-derive the transcript and replace the stored lines for this session."""
-    transcriber = asr.Transcriber(model_dir=best_model())
+    # float32 weights and every core: this runs after the meeting, so accuracy is the only concern.
+    transcriber = asr.Transcriber(model_dir=best_model(), quantized=False, num_threads=os.cpu_count() or 4)
     diarizer = diarize.Diarizer(cfg=cfg)
 
     utterances = segment(wav)
