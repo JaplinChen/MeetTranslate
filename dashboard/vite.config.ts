@@ -4,9 +4,9 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 // Single source of truth for the version shown in the dashboard: read it from
-// package.json at build time so the Login screen always reflects the actual
-// release (bumped via `npm version`), instead of a hard-coded literal that
-// silently drifts. APP_VERSION env still overrides if explicitly provided.
+// package.json at build time so the sidebar always reflects the actual release
+// (bumped via `npm version`), instead of a hard-coded literal that silently
+// drifts. APP_VERSION env still overrides if explicitly provided.
 const { version: pkgVersion } = JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf-8')) as {
   version: string;
 };
@@ -22,15 +22,16 @@ export default defineConfig({
   server: {
     port: 2886,
     proxy: {
+      // The Python service; same port as the packaged app serves from.
       '/api': {
-        target: 'http://localhost:2785',
+        target: 'http://localhost:8000',
         changeOrigin: true,
         secure: false,
       },
-      // Proxy the WebSocket (socket.io) transport so the dashboard's real-time
-      // chats/sessions streams work against the dev backend.
-      '/socket.io': {
-        target: 'http://localhost:2785',
+      // Subtitle stream. Without ws:true this silently falls back to a failed
+      // HTTP upgrade and the live page shows nothing.
+      '/ws': {
+        target: 'http://localhost:8000',
         ws: true,
         changeOrigin: true,
       },
