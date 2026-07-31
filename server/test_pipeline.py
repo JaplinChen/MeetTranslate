@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from . import asr, config, diarize
+from . import asr, config, correct, diarize, store
 
 
 def test_degenerate_detects_collapsed_decode() -> None:
@@ -28,6 +28,33 @@ def test_noise_keeps_speech_containing_brackets() -> None:
     assert not asr.is_noise("這個 (ERP) 系統要換掉")
     assert not asr.is_noise("- All right")
     assert not asr.is_noise("")
+
+
+def test_language_whitelist_rejects_what_was_never_configured() -> None:
+    """A zh/vi/en meeting produced pt, bo, ja, ko and it on a real recording — all from noise."""
+    tr = asr.Transcriber(languages=["zh", "vi", "en"])
+    assert tr._allowed("zh") and tr._allowed("vi") and tr._allowed("en")
+    assert not tr._allowed("pt") and not tr._allowed("bo") and not tr._allowed("ja")
+    # Whisper reports bare codes, settings may carry a region; both must match.
+    assert asr.Transcriber(languages=["zh-TW", "en"])._allowed("zh")
+    # Auto-detect that reported nothing, and an unconfigured meeting, stay permissive.
+    assert tr._allowed("") and asr.Transcriber()._allowed("pt")
+
+
+def test_corrector_fixes_near_misses_only() -> None:
+    def term(source: str) -> store.Term:
+        return store.Term(id=0, source=source, lang="", mode="hint", category="", targets={})
+
+    c = correct.Corrector([term("工單"), term("威剛科技"), term("Vincent"), term("治具")])
+    # Wrong character, same sound — what the decode-time replacer misses once the tone is wrong.
+    assert c.fix("公單的管理") == "工單的管理"
+    assert c.fix("微剛科技的部分") == "威剛科技的部分"
+    assert c.fix("直距的管理") == "治具的管理"
+    assert c.fix("線上還有問incent") == "線上還有問Vincent"
+    # Different words that merely rhyme must survive untouched.
+    assert c.fix("我們公司的工作單位") == "我們公司的工作單位"
+    assert c.fix("這個 schedule 要 delay 一週") == "這個 schedule 要 delay 一週"
+    assert correct.Corrector([]).fix("原文不動") == "原文不動"
 
 
 def test_degenerate_accepts_normal_speech() -> None:
