@@ -120,6 +120,31 @@ macOS 用 `./start.command`。腳本會清掉佔用 port 的舊程序、建立�
 .venv\Scripts\python.exe -m server.test_e2e        # HTTP API 與完整管線
 ```
 
+用既有錄影檔測辨識率，不必接虛擬音效裝置：
+
+```bash
+ffmpeg -i meeting.mp4 -ac 1 -ar 16000 -c:a pcm_s16le recordings/test01.wav
+.venv\Scripts\python.exe -m scripts.bench_wav recordings/test01.wav --ref ref.txt
+```
+
+輸出分段逐字稿、realtime factor、每位語者的主導語言，以及詞彙表裡哪些詞被辨識出來。`--ref` 給一份人工聽打的參考逐字稿就會算 CER（中文沒有詞邊界，用字錯誤率而非 WER）。`--model medium` 可比較不同模型層級。
+
+### 同音字修正
+
+sherpa-onnx 的 Whisper 沒有 hotwords（contextual biasing 只支援 transducer），公司與產品名稱常常音對字錯。改用同音字替換器：以拼音比對解碼結果，命中就換成詞彙表裡的寫法。僅適用中文。
+
+```bash
+mkdir -p models/hr && cd models/hr
+curl -L -o dict.tar.bz2 https://github.com/k2-fsa/sherpa-onnx/releases/download/hr-files/dict.tar.bz2
+tar -xjf dict.tar.bz2 && rm dict.tar.bz2
+curl -L -O https://github.com/k2-fsa/sherpa-onnx/releases/download/hr-files/lexicon.txt
+cd ../.. && .venv\Scripts\python.exe -m scripts.build_hr
+```
+
+`models/hr/` 三個檔（`dict/`、`lexicon.txt`、`replace.fst`）齊全後，即時管線與會後重跑都會自動套用；缺任一個就整組略過，不會半套。詞彙表改了要重跑 `build_hr.py`。
+
+產生 `replace.fst` 需要 pynini，而 pynini 沒有 Windows wheel。在 Windows 上 `build_hr.py` 只會寫出 `replace.txt`（拼音對照表，可人工檢查），`.fst` 要在 WSL、Linux、macOS 或 Colab 跑同一支腳本產生後複製回 `models/hr/`。
+
 前端另外開一個 dev server（會透過 `VITE_API_URL` 連到後端）：
 
 ```bash
@@ -140,7 +165,8 @@ CPU 足夠，不需要顯示卡。有 NVIDIA 顯卡或 Apple Silicon 會自動�
 
 ## 已知限制
 
-- **越南語與台灣國語的辨識率尚未驗證**。開發過程只有英語測試音，這是目前最大的未知
+- **越南語與台灣國語的辨識率尚未驗證**。開發過程只有英語測試音，這是目前最大的未知。有會議錄影就用上面的 `scripts/bench_wav.py` 量
+- 同音字替換只對中文有效，越南語的專有名詞沒有對應機制
 - **僅在 Windows 實測過**。macOS 路徑已寫好但未在實機驗證
 - 遠端與會者看不到會議室電視。字幕只服務現場
 - 兩人同時講話時，切出的片段混有兩人聲音，語者分離會不穩
