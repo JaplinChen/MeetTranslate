@@ -154,10 +154,17 @@ class Transcriber:
             raise FileNotFoundError(f"Whisper tokens file missing: {tok}")
         return str(pick("encoder")), str(pick("decoder")), str(tok)
 
+    def _hr_for(self, language: str) -> dict[str, str]:
+        """Chinese only. The replacer round-trips text through pinyin, which loses the spaces in
+        anything Latin — measured on a real recording, "You gotta take those from them" came back
+        as one word. Auto-detect is excluded for the same reason: it decodes every language, so it
+        cannot be handed a Chinese-only rewrite."""
+        return self._hr if (self._hr and language.startswith("zh")) else {}
+
     def _recognizer(self, language: str) -> sherpa_onnx.OfflineRecognizer:
         if language not in self._cache:
             enc, dec, tok = self._paths()
-            hr = self._hr or {}
+            hr = self._hr_for(language)
             self._cache[language] = sherpa_onnx.OfflineRecognizer.from_whisper(
                 encoder=enc,
                 decoder=dec,

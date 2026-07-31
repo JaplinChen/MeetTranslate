@@ -212,6 +212,12 @@ def test_homophone_rules_are_used_only_when_complete(tmp: Path) -> None:
 
         assert asr.Transcriber(homophones=False)._hr is None
         assert asr.Transcriber(homophones=True)._hr == files
+
+        # The rules must reach the Chinese recognizer and nothing else: the replacer round-trips
+        # through pinyin and would run "You gotta take those" together into one word.
+        tr = asr.Transcriber(homophones=True)
+        assert tr._hr_for("zh") == files
+        assert tr._hr_for("en") == {} and tr._hr_for("vi") == {} and tr._hr_for("") == {}
     finally:
         config.HR_DIR = original
 

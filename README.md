@@ -143,7 +143,21 @@ cd ../.. && .venv\Scripts\python.exe -m scripts.build_hr
 
 `models/hr/` 三個檔（`dict/`、`lexicon.txt`、`replace.fst`）齊全後，即時管線與會後重跑都會自動套用；缺任一個就整組略過，不會半套。詞彙表改了要重跑 `build_hr.py`。
 
-產生 `replace.fst` 需要 pynini，而 pynini 沒有 Windows wheel。在 Windows 上 `build_hr.py` 只會寫出 `replace.txt`（拼音對照表，可人工檢查），`.fst` 要在 WSL、Linux、macOS 或 Colab 跑同一支腳本產生後複製回 `models/hr/`。
+只對中文辨識器套用。替換器會把文字轉成拼音再轉回來，拉丁字母的空白會在這趟來回中消失——實測 `You gotta take those from them` 會變成一個字。自動偵測的辨識器同理排除。
+
+產生 `replace.fst` 需要 pynini，而 pynini 沒有 Windows wheel。在 Windows 上 `build_hr.py` 只會寫出 `replace.txt`（拼音對照表，可人工檢查），`.fst` 用 Docker 產生：
+
+```bash
+docker run --rm -v "D:/Works/MeetTranslate/models/hr:/w" -w /w python:3.12-slim bash -c \
+  "pip install -q --only-binary :all: pynini && python -c \"
+import pynini
+from pynini.lib import utf8
+rules = [l.rstrip().split('\t') for l in open('replace.txt', encoding='utf-8') if l.strip()]
+c = None
+for p, t in rules:
+    o = pynini.cross(p, t); c = o if c is None else (c | o)
+pynini.cdrewrite(c.optimize(), '', '', utf8.VALID_UTF8_CHAR.star).write('replace.fst')\""
+```
 
 前端另外開一個 dev server（會透過 `VITE_API_URL` 連到後端）：
 
