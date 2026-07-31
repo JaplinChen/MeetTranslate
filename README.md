@@ -131,7 +131,12 @@ ffmpeg -i meeting.mp4 -ac 1 -ar 16000 -c:a pcm_s16le recordings/test01.wav
 
 ### 同音字修正
 
-sherpa-onnx 的 Whisper 沒有 hotwords（contextual biasing 只支援 transducer），公司與產品名稱常常音對字錯。改用同音字替換器：以拼音比對解碼結果，命中就換成詞彙表裡的寫法。僅適用中文。
+公司與產品名稱常常音對字錯。兩層處理：
+
+1. **解碼後修正**（`server/correct.py`，一律啟用）— 把解碼結果和詞彙表逐詞比對去聲調拼音，發音完全相同就換成詞彙表的寫法。`公單 → 工單`、`微剛科技 → 威剛科技`、`生館 → 生管`。英文與越南語詞容許 25% 編輯距離（`incent → Vincent`），中文不容許：中文音節太密集，容許一個編輯距離會把「知道」改成「製造」
+2. **解碼時偏置** — GPU 路徑用 faster-whisper 原生 hotwords 把詞彙表傳進模型。sherpa-onnx 的 Whisper 沒有這個能力（contextual biasing 只支援 transducer），CPU 路徑改用下面的同音字替換器
+
+同音字替換器只在 CPU 路徑有意義，且僅適用中文。
 
 ```bash
 mkdir -p models/hr && cd models/hr
@@ -167,20 +172,37 @@ cd dashboard && npm run dev
 
 ## 效能
 
-Whisper small、int8、4 執行緒，20 邏輯核心：
+量測環境：20 邏輯核心 + RTX 5060 Ti 16 GB。
 
-| 指標 | 數值 |
-|---|---|
-| Realtime factor | 0.20 |
-| 一般短句上字幕 | 約 2 秒 |
-| 16 秒長句上字幕 | 4.8 秒（含模型首次載入） |
+| 路徑 | 模型 | Realtime factor | 機器可用性 |
+|---|---|---|---|
+| GPU（有顯卡時自動使用） | large-v3 float16 | 0.15 – 0.30 | CPU 約 12%，可正常工作 |
+| CPU | small int8、4 執行緒 | 0.20 | 尚可 |
+| CPU | small float32、全部核心 | 0.57 | 整台機器卡死 |
 
-CPU 足夠，不需要顯示卡。有 NVIDIA 顯卡或 Apple Silicon 會自動使用。
+會後重跑七場訪談共 9.5 小時音訊，GPU 上 1 小時 30 分完成。同樣的量在 CPU 上約需 8.5 小時，且期間無法使用電腦——這是 `--threads` 預設只取一半核心的原因。
+
+即時字幕延遲：一般短句約 2 秒，16 秒長句 4.8 秒（含模型首次載入）。
+
+沒有顯卡也能跑，退回 sherpa-onnx CPU 路徑；設 `MEETTRANSLATE_NO_GPU=1` 可強制不用 GPU。
+
+### GPU 安裝
+
+```bash
+.venv\Scripts\python.exe -m pip install -r requirements-gpu.txt
+```
+
+CUDA runtime 來自 pip wheel，不需要另外裝 CUDA Toolkit。兩個踩過的坑：
+
+- **Blackwell（RTX 50 系列，sm_120）需要 CTranslate2 4.8 以上**。多數教學釘的 CUDA 12.1 版本不涵蓋這代顯卡
+- CTranslate2 透過 **PATH** 尋找 cuBLAS 與 cuDNN，`os.add_dll_directory()` 無效——模型會載入成功，第一次 encode 才報 `cublas64_12.dll is not found`。`server/asr_gpu.py` 在 import 時處理這件事
 
 ## 已知限制
 
-- **越南語與台灣國語的辨識率尚未驗證**。開發過程只有英語測試音，這是目前最大的未知。有會議錄影就用上面的 `scripts/bench_wav.py` 量
-- 同音字替換只對中文有效，越南語的專有名詞沒有對應機制
+- **越南語的幻覺率明顯高於中文**。large-v3 的越南語訓練資料多來自 YouTube 字幕，遇到聽不清的片段會吐出「請訂閱頻道」這類台詞。七場訪談實測佔越南語句數 14.8%（中文 0.2%、英語 0.1%），已用片語過濾器擋掉，但這代表越南語段落的可信度本來就較低
+- **辨識率仍無 CER 數字**。七場訪談已產出逐字稿，但沒有人工聽打的參考稿可比對，只能定性判斷「可讀」
+- 同音字修正只對中文有效，且只接受發音完全相同。越南語的專有名詞沒有對應機制
+- 詞彙表放常見雙字詞有風險。`採購` 會把「才夠」改掉，`料號` 會把「料耗」改掉——同音本身就是歧義。適合放的是公司、產品、模組名稱這類獨特詞
 - **僅在 Windows 實測過**。macOS 路徑已寫好但未在實機驗證
 - 遠端與會者看不到會議室電視。字幕只服務現場
 - 兩人同時講話時，切出的片段混有兩人聲音，語者分離會不穩
