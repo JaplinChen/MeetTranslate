@@ -66,6 +66,23 @@ def is_degenerate(text: str) -> bool:
     return len(set(tokens)) / len(tokens) < 0.3
 
 
+# Whisper was trained on YouTube subtitles and reproduces their sign-offs when handed audio it
+# cannot read. Measured over seven real interviews: 39 of 265 Vietnamese lines were channel
+# promotion, none of it spoken. Matched as phrases, not keywords — a meeting may legitimately say
+# "subscribe" or "訂閱", but not "subscribe to our channel".
+_HALLUCINATIONS = re.compile(
+    r"đăng ký kênh|theo dõi và (hẹn|đăng)|hẹn gặp lại|subscribe cho kênh|la la school"
+    r"|thanks for watching|subscribe to (our|the) channel|please subscribe"
+    r"|訂閱(我們的)?頻道|點選訂閱|歡迎訂閱|請不吝|點贊|打賞|明鏡|點點欄目",
+    re.IGNORECASE,
+)
+
+
+def is_hallucination(text: str) -> bool:
+    """True for Whisper's YouTube boilerplate, which is never something a participant said."""
+    return bool(_HALLUCINATIONS.search(text))
+
+
 def is_noise(text: str) -> bool:
     """True for Whisper's non-speech annotations: `[MUSIC PLAYING]`, `(static)`, `[BLANK_AUDIO]`.
 
@@ -126,16 +143,17 @@ class Transcriber:
     """Whisper recognizers, one per language, created on first use."""
 
     def __init__(self, model_dir: Path | None = None, num_threads: int | None = None,
-                 provider: str = "cpu", quantized: bool = True, homophones: bool = False):
+                 provider: str = "cpu", quantized: bool = True,
+                 languages: list[str] | None = None):
         self._dir = model_dir or config.WHISPER_DIRS["small"]
         self._threads = num_threads or default_threads()
         self._provider = provider
         # Quantized weights for live use; postprocess has no latency budget and prefers float32.
         self._quantized = quantized
-        # Whisper has no hotword biasing in sherpa-onnx (contextual biasing is transducer-only).
-        # The homophone replacer is the substitute: it rewrites decoded Chinese by pinyin, so a
-        # glossary term the model hears right but spells wrong comes out correct.
-        self._hr = config.hr_files() if homophones else None
+        # Whisper auto-detect ranks every language it knows, so a noisy segment in a zh/vi/en
+        # meeting comes back as Portuguese or Tibetan. Both were measured on a real recording.
+        # Anything outside the configured set is a detection failure, not a participant.
+        self._languages = list(languages or [])
         self._cache: dict[str, sherpa_onnx.OfflineRecognizer] = {}
 
     def _paths(self) -> tuple[str, str, str]:
@@ -154,17 +172,9 @@ class Transcriber:
             raise FileNotFoundError(f"Whisper tokens file missing: {tok}")
         return str(pick("encoder")), str(pick("decoder")), str(tok)
 
-    def _hr_for(self, language: str) -> dict[str, str]:
-        """Chinese only. The replacer round-trips text through pinyin, which loses the spaces in
-        anything Latin — measured on a real recording, "You gotta take those from them" came back
-        as one word. Auto-detect is excluded for the same reason: it decodes every language, so it
-        cannot be handed a Chinese-only rewrite."""
-        return self._hr if (self._hr and language.startswith("zh")) else {}
-
     def _recognizer(self, language: str) -> sherpa_onnx.OfflineRecognizer:
         if language not in self._cache:
             enc, dec, tok = self._paths()
-            hr = self._hr_for(language)
             self._cache[language] = sherpa_onnx.OfflineRecognizer.from_whisper(
                 encoder=enc,
                 decoder=dec,
@@ -172,7 +182,6 @@ class Transcriber:
                 language=language,  # '' means auto-detect
                 num_threads=self._threads,
                 provider=self._provider,
-                **hr,
             )
         return self._cache[language]
 
@@ -197,6 +206,13 @@ class Transcriber:
         text = " ".join(t for t, _ in parts if t)
         return text, next((lang for _, lang in parts if lang), language)
 
+    def _allowed(self, detected: str) -> bool:
+        """Whisper reports bare codes ('zh'), settings may carry a region ('zh-TW'); match the base."""
+        if not self._languages or not detected:
+            return True
+        base = detected.split("-")[0]
+        return any(base == code.split("-")[0] for code in self._languages)
+
     def transcribe(self, samples: np.ndarray, language: str) -> tuple[str, str]:
         """Return (text, language_actually_used).
 
@@ -204,12 +220,12 @@ class Transcriber:
         language produced the text it got so the speaker's language stats stay honest.
         """
         text, detected = self._decode(samples, language)
-        if is_noise(text):
+        if is_noise(text) or is_hallucination(text) or not self._allowed(detected):
             return "", detected
 
         if language and is_degenerate(text):
             fallback, fallback_lang = self._decode(samples, "")
-            if is_noise(fallback):
+            if is_noise(fallback) or is_hallucination(fallback):
                 return "", fallback_lang
             if not is_degenerate(fallback):
                 return _post(fallback, fallback_lang), fallback_lang

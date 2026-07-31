@@ -109,6 +109,7 @@ macOS 用 `./start.command`。腳本會清掉佔用 port 的舊程序、建立�
 | `llm_keys.json` | 輪替用的 API 金鑰 |
 | `meettranslate.db` | 詞彙表、會議紀錄、逐字稿 |
 | `recordings/` | 原始錄音 |
+| `transcripts/` | `bench_wav` 產出的逐字稿 |
 
 環境變數可覆寫：`ANTHROPIC_API_KEY`、`MEETTRANSLATE_INPUT_DEVICE`、`MEETTRANSLATE_LANGUAGES`、`MEETTRANSLATE_WHISPER_MODEL`。
 
@@ -129,35 +130,36 @@ ffmpeg -i meeting.mp4 -ac 1 -ar 16000 -c:a pcm_s16le recordings/test01.wav
 
 輸出分段逐字稿、realtime factor、每位語者的主導語言，以及詞彙表裡哪些詞被辨識出來。`--ref` 給一份人工聽打的參考逐字稿就會算 CER（中文沒有詞邊界，用字錯誤率而非 WER）。`--model medium` 可比較不同模型層級。
 
-### 同音字修正
+### 專有名詞與辨識錯誤修正
 
-sherpa-onnx 的 Whisper 沒有 hotwords（contextual biasing 只支援 transducer），公司與產品名稱常常音對字錯。改用同音字替換器：以拼音比對解碼結果，命中就換成詞彙表裡的寫法。僅適用中文。
+三層，由便宜到昂貴，各自擋不同的錯：
 
-```bash
-mkdir -p models/hr && cd models/hr
-curl -L -o dict.tar.bz2 https://github.com/k2-fsa/sherpa-onnx/releases/download/hr-files/dict.tar.bz2
-tar -xjf dict.tar.bz2 && rm dict.tar.bz2
-curl -L -O https://github.com/k2-fsa/sherpa-onnx/releases/download/hr-files/lexicon.txt
-cd ../.. && .venv\Scripts\python.exe -m scripts.build_hr
-```
+**1. 解碼時偏置** — GPU 路徑把詞彙表當作 faster-whisper 的原生 hotwords 傳進模型。sherpa-onnx 的 Whisper 沒有這個能力（contextual biasing 只支援 transducer），CPU 路徑沒有這一層。
 
-`models/hr/` 三個檔（`dict/`、`lexicon.txt`、`replace.fst`）齊全後，即時管線與會後重跑都會自動套用；缺任一個就整組略過，不會半套。詞彙表改了要重跑 `build_hr.py`。
+**2. 解碼後拼音修正**（`server/correct.py`，一律啟用）— 把結果和詞彙表逐詞比對去聲調拼音，發音完全相同就換成詞彙表的寫法：`公單 → 工單`、`微剛科技 → 威剛科技`、`生館 → 生管`。
 
-只對中文辨識器套用。替換器會把文字轉成拼音再轉回來，拉丁字母的空白會在這趟來回中消失——實測 `You gotta take those from them` 會變成一個字。自動偵測的辨識器同理排除。
+中文只接受發音完全相同。七份真實逐字稿實測，容許一個編輯距離會把「知道」改成「製造」156 次、「生產」改成「生管」146 次，共 1578 處誤改——中文音節密度太高。英文與越南語詞容許 25%（`incent → Vincent`），拉丁詞彙夠稀疏。
 
-產生 `replace.fst` 需要 pynini，而 pynini 沒有 Windows wheel。在 Windows 上 `build_hr.py` 只會寫出 `replace.txt`（拼音對照表，可人工檢查），`.fst` 用 Docker 產生：
+詞彙表適合放公司、產品、模組名稱。放 `採購` 這種常見雙字詞會把「才夠」改掉。
+
+**3. LLM 上下文修正**（`scripts/refine_transcript.py`，手動執行）— 辨識器一次只看一句，不知道自己身處一場 SAP ERP 訪談。把逐字稿分批送給 LLM，附上會議主題與詞彙表，讓它依上下文修正。
 
 ```bash
-docker run --rm -v "D:/Works/MeetTranslate/models/hr:/w" -w /w python:3.12-slim bash -c \
-  "pip install -q --only-binary :all: pynini && python -c \"
-import pynini
-from pynini.lib import utf8
-rules = [l.rstrip().split('\t') for l in open('replace.txt', encoding='utf-8') if l.strip()]
-c = None
-for p, t in rules:
-    o = pynini.cross(p, t); c = o if c is None else (c | o)
-pynini.cdrewrite(c.optimize(), '', '', utf8.VALID_UTF8_CHAR.star).write('replace.fst')\""
+.venv\Scripts\python.exe -m scripts.refine_transcript transcripts/會議.txt --ollama qwen3:14b
 ```
+
+`--ollama` 走本機模型，逐字稿不離開這台機器——對客戶訪談而言這是預設選擇。不加 `--ollama` 則用 `llm.json` 設定的雲端模型。輸出寫到 `<檔名>.refined.txt`，並印出每一處改動，原檔不動。
+
+危險的地方和有用的地方是同一件事：模型被要求修逐字稿時會順手潤飾，而潤飾出來的句子沒人說過。四道防線：
+
+| 防線 | 擋掉什麼 |
+|---|---|
+| 行數必須相同 | 整批重組 |
+| 單行變動 ≤ 30% | 改寫成更通順的句子 |
+| 語音距離 ≤ 20% | 憑語意猜測（`延伸 → 選項` 不是聽錯，是猜的） |
+| 詞彙表詞條放寬到 50% | 保留 `一夕變更 → 工程變更` 這類辨識器不可能知道的詞 |
+
+不確定一律保留原文。寧可留錯，不可造假。
 
 前端另外開一個 dev server（會透過 `VITE_API_URL` 連到後端）：
 
@@ -167,20 +169,37 @@ cd dashboard && npm run dev
 
 ## 效能
 
-Whisper small、int8、4 執行緒，20 邏輯核心：
+量測環境：20 邏輯核心 + RTX 5060 Ti 16 GB。
 
-| 指標 | 數值 |
-|---|---|
-| Realtime factor | 0.20 |
-| 一般短句上字幕 | 約 2 秒 |
-| 16 秒長句上字幕 | 4.8 秒（含模型首次載入） |
+| 路徑 | 模型 | Realtime factor | 機器可用性 |
+|---|---|---|---|
+| GPU（有顯卡時自動使用） | large-v3 float16 | 0.15 – 0.30 | CPU 約 12%，可正常工作 |
+| CPU | small int8、4 執行緒 | 0.20 | 尚可 |
+| CPU | small float32、全部核心 | 0.57 | 整台機器卡死 |
 
-CPU 足夠，不需要顯示卡。有 NVIDIA 顯卡或 Apple Silicon 會自動使用。
+會後重跑七場訪談共 9.5 小時音訊，GPU 上 1 小時 30 分完成。同樣的量在 CPU 上約需 8.5 小時，且期間無法使用電腦——這是 `--threads` 預設只取一半核心的原因。
+
+即時字幕延遲：一般短句約 2 秒，16 秒長句 4.8 秒（含模型首次載入）。
+
+沒有顯卡也能跑，退回 sherpa-onnx CPU 路徑；設 `MEETTRANSLATE_NO_GPU=1` 可強制不用 GPU。
+
+### GPU 安裝
+
+```bash
+.venv\Scripts\python.exe -m pip install -r requirements-gpu.txt
+```
+
+CUDA runtime 來自 pip wheel，不需要另外裝 CUDA Toolkit。兩個踩過的坑：
+
+- **Blackwell（RTX 50 系列，sm_120）需要 CTranslate2 4.8 以上**。多數教學釘的 CUDA 12.1 版本不涵蓋這代顯卡
+- CTranslate2 透過 **PATH** 尋找 cuBLAS 與 cuDNN，`os.add_dll_directory()` 無效——模型會載入成功，第一次 encode 才報 `cublas64_12.dll is not found`。`server/asr_gpu.py` 在 import 時處理這件事
 
 ## 已知限制
 
-- **越南語與台灣國語的辨識率尚未驗證**。開發過程只有英語測試音，這是目前最大的未知。有會議錄影就用上面的 `scripts/bench_wav.py` 量
-- 同音字替換只對中文有效，越南語的專有名詞沒有對應機制
+- **越南語的幻覺率明顯高於中文**。large-v3 的越南語訓練資料多來自 YouTube 字幕，遇到聽不清的片段會吐出「請訂閱頻道」這類台詞。七場訪談實測佔越南語句數 14.8%（中文 0.2%、英語 0.1%），已用片語過濾器擋掉，但這代表越南語段落的可信度本來就較低
+- **辨識率仍無 CER 數字**。七場訪談已產出逐字稿，但沒有人工聽打的參考稿可比對，只能定性判斷「可讀」
+- 拼音修正只對中文有效。越南語的專有名詞沒有對應機制
+- 詞彙表放常見雙字詞有風險。`採購` 會把「才夠」改掉，`料號` 會把「料耗」改掉——同音本身就是歧義。適合放的是公司、產品、模組名稱這類獨特詞
 - **僅在 Windows 實測過**。macOS 路徑已寫好但未在實機驗證
 - 遠端與會者看不到會議室電視。字幕只服務現場
 - 兩人同時講話時，切出的片段混有兩人聲音，語者分離會不穩

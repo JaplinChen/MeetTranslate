@@ -21,9 +21,6 @@ BLOCK_SIZE = 1600
 
 VAD_MODEL = MODELS_DIR / "silero_vad.onnx"
 SPEAKER_MODEL = MODELS_DIR / "speaker_embedding.onnx"
-# Homophone replacer: dict/, lexicon.txt from the sherpa-onnx hr-files release, replace.fst built
-# from the glossary. Chinese only — pinyin is the matching key.
-HR_DIR = MODELS_DIR / "hr"
 
 # Whisper model directories, smallest first. The realtime tier is picked from `whisper_model`;
 # postprocess always uses the largest available.
@@ -36,7 +33,13 @@ WHISPER_DIRS = {
 }
 
 # Below this cosine similarity to every known centroid, a segment starts a new speaker.
-SPEAKER_THRESHOLD = 0.55
+#
+# Swept over two real interview recordings, counting clusters per threshold. At 0.55 a three-person
+# interview split into fourteen speakers, twelve of them holding a single utterance; the room mic
+# and Teams' noise suppression leave the same voice further from itself than a studio recording
+# would. 0.45 is the knee on both recordings — three balanced clusters on the multi-speaker one,
+# one dominant cluster on the single-presenter one, and no singleton tail on either.
+SPEAKER_THRESHOLD = 0.45
 # Segments shorter than this give unstable embeddings; they inherit the previous speaker.
 MIN_EMBED_SECONDS = 1.0
 
@@ -100,17 +103,20 @@ def load() -> Config:
     return cfg
 
 
-def hr_files() -> dict[str, str] | None:
-    """Homophone replacer paths for sherpa-onnx, or None if not set up.
+def gpu_model(languages: list[str] | None = None) -> str:
+    """CTranslate2 model for the GPU path.
 
-    All three must be present: the dict and lexicon convert decoded Chinese to pinyin, replace.fst
-    holds the pinyin→term rules built from the glossary by scripts/build_hr.py.
+    Breeze ASR 25, a large-v2 fine-tune for Taiwanese Mandarin and Mandarin-English code-switching,
+    was tried here and dropped. On a real interview it and large-v3 differed on five lines out of
+    a hundred and thirty-seven, all of them pre-meeting chatter where neither was clearly right,
+    at the same realtime factor. What actually improved the transcript was leaving Whisper small
+    behind; the fine-tune added nothing on top of that, and it does not know Vietnamese, which
+    every meeting in this room contains.
+
+    `languages` is accepted because the choice is language-dependent in principle — it just has
+    one answer today.
     """
-    paths = {"hr_dict_dir": HR_DIR / "dict", "hr_lexicon": HR_DIR / "lexicon.txt",
-             "hr_rule_fsts": HR_DIR / "replace.fst"}
-    if not all(p.exists() for p in paths.values()):
-        return None
-    return {k: str(v) for k, v in paths.items()}
+    return os.environ.get("MEETTRANSLATE_GPU_MODEL", "large-v3")
 
 
 def available_whisper_models() -> list[str]:

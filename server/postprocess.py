@@ -12,11 +12,12 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 import numpy as np
 import soundfile as sf
 
-from . import asr, config, diarize, translate
+from . import asr, asr_gpu, config, correct, diarize, translate
 from .store import Store
 
 log = logging.getLogger("meettranslate.postprocess")
@@ -93,11 +94,19 @@ def dominant_languages(utterances: list[Utterance]) -> dict[str, str]:
     return {code: max(langs, key=langs.get) for code, langs in counts.items() if langs}
 
 
-def transcribe_all(utterances: list[Utterance], transcriber: asr.Transcriber) -> None:
+def transcribe_all(utterances: list[Utterance], transcriber: asr.Transcriber,
+                   progress: Callable[[Utterance, int, int], None] | None = None) -> None:
     """Two passes: detect each speaker's language, then re-transcribe anyone who was decoded
-    under a language that disagrees with their majority."""
-    for u in utterances:
+    under a language that disagrees with their majority.
+
+    `progress` is called after each first-pass decode. A ninety-minute recording spends most of an
+    hour in that first loop, and a caller with somewhere to put partial results should not have to
+    wait for the whole thing to survive an interruption.
+    """
+    for i, u in enumerate(utterances, 1):
         u.text, u.lang = transcriber.transcribe(u.samples, "")
+        if progress:
+            progress(u, i, len(utterances))
 
     dominant = dominant_languages(utterances)
     for u in utterances:
@@ -113,9 +122,11 @@ def transcribe_all(utterances: list[Utterance], transcriber: asr.Transcriber) ->
 def rewrite_session(store: Store, session_id: int, wav: Path, cfg: config.Config,
                     translator: translate.Translator | None = None) -> list[Utterance]:
     """Re-derive the transcript and replace the stored lines for this session."""
-    # float32 weights and every core: this runs after the meeting, so accuracy is the only concern.
-    transcriber = asr.Transcriber(model_dir=best_model(), quantized=False, num_threads=os.cpu_count() or 4,
-                                  homophones=config.hr_files() is not None)
+    # GPU first. The CPU fallback keeps float32 weights and every core: this runs after the
+    # meeting, so accuracy is the only concern — but it also makes the machine unusable while it
+    # runs, which is the other reason the GPU path exists.
+    transcriber = asr_gpu.maybe(cfg.languages, asr_gpu.hotwords_from(store.glossary()))         or asr.Transcriber(model_dir=best_model(), quantized=False, num_threads=os.cpu_count() or 4,
+                           languages=cfg.languages)
     diarizer = diarize.Diarizer(cfg=cfg)
 
     utterances = segment(wav)
@@ -128,11 +139,13 @@ def rewrite_session(store: Store, session_id: int, wav: Path, cfg: config.Config
 
     store.clear_lines(session_id)
     terms = store.glossary()
+    corrector = correct.Corrector(terms)
     context: list[translate.Line] = []
 
     for u in utterances:
         if not u.text:
             continue
+        u.text = corrector.fix(u.text)
         line = translate.Line(text=u.text, lang=u.lang, speaker=u.speaker)
         targets = [c for c in cfg.languages if c != u.lang]
         translations: dict[str, str] = {}

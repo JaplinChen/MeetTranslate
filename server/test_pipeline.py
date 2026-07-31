@@ -9,7 +9,79 @@ from __future__ import annotations
 
 import numpy as np
 
-from . import asr, config, diarize
+from . import asr, config, correct, diarize, refine, store
+
+
+def test_refine_keeps_the_original_when_the_model_rewrites() -> None:
+    """The LLM pass may substitute, never restructure.
+
+    Asked to fix a transcript a model will happily improve it, and an improved sentence is one
+    nobody said. Anything that changes too much of a line, or that changes the number of lines,
+    is discarded in favour of the recognised text.
+    """
+    lines = [refine.Line("S1", "zh", "我們的料耗其實變動很大"),
+             refine.Line("S1", "zh", "生技這邊先開始")]
+    fixed = ["我們的料號其實變動很大", "生管這邊先開始"]
+    rewrite = "我們的料號變動幅度相當大，這點需要注意"
+    terms = [store.Term(id=0, source="生管", lang="", mode="hint", category="", targets={})]
+    reply = lambda rows: chr(10).join(f"{i}: {t}" for i, t in enumerate(rows, 1))
+
+    assert refine.parse_response(reply(fixed), lines, terms) == fixed
+
+    # A fluent rewrite of the same meaning must be refused.
+    assert refine.parse_response(reply([rewrite, fixed[1]]), lines, terms)[0] == lines[0].text
+
+    # Wrong line count means the transcript was restructured; keep everything.
+    assert refine.parse_response(reply(fixed[:1]), lines, terms) == [l.text for l in lines]
+    assert refine.parse_response("nothing numbered here", lines, terms) == [l.text for l in lines]
+
+
+def test_refine_rejects_corrections_that_do_not_sound_alike() -> None:
+    """A recognition error is something the recogniser heard. A correction that sounds nothing
+    like the text it replaces was invented from context, not recovered from audio.
+
+    All five cases came out of a local model correcting a real interview transcript.
+    """
+    term = lambda source: store.Term(id=0, source=source, lang="", mode="hint",
+                                     category="", targets={})
+    terms = [term("工程變更"), term("生管")]
+
+    # Heard: 稍 as 早, 料號 as 料耗, 生管 as 生技.
+    assert refine.accept("有聽到聲音嗎早等我一下", "有聽到聲音嗎稍等我一下", terms)
+    assert refine.accept("我們的料耗其實變動很大", "我們的料號其實變動很大", terms)
+    assert refine.accept("生技這邊先開始", "生管這邊先開始", terms)
+
+    # Guessed: nothing that sounds like 選項 was spoken.
+    assert not refine.accept("用延伸的吧他還沒投出來", "用選項的吧他還沒跳出來", terms)
+
+    # Two nonsense characters inside a long sentence are a rounding error to a ratio and still
+    # nonsense, so the sound test has an absolute ceiling as well. Both of these were proposed by
+    # a local model on a real transcript.
+    long_before = "因為你所有的夢表那些什麼包含你的一些標準工時那些全部都要工單的管理"
+    assert not refine.accept(long_before, long_before.replace("夢表", "模具"), terms)
+    # The same span may still be corrected when the glossary names the destination.
+    assert refine.accept(long_before, long_before.replace("夢表", "報表"),
+                         terms + [term("報表")])
+
+    # Re-spacing is not a correction.
+    assert not refine.accept("呃right nowswitch", "呃 right now switch", terms)
+
+    # A glossary term may travel further, because the recogniser never knew it existed.
+    assert refine.accept("一夕變更的流程", "工程變更的流程", terms)
+    assert not refine.accept("一夕變更的流程", "工程變更的流程", [])
+
+
+def test_refine_prompt_states_the_domain_and_the_terms() -> None:
+    said, earlier, term = "一夕變更的流程", "前面說過的話", "工程變更"
+    prompt = refine.build_prompt(
+        [refine.Line("S1", "zh", said)],
+        [refine.Line("S1", "zh", earlier)],
+        [store.Term(id=0, source=term, lang="", mode="hint", category="", targets={})],
+        "SAP ERP interview",
+    )
+    assert "SAP ERP interview" in prompt
+    assert term in prompt and earlier in prompt
+    assert f"1: {said}" in prompt
 
 
 def test_degenerate_detects_collapsed_decode() -> None:
@@ -24,10 +96,76 @@ def test_noise_annotations_are_dropped() -> None:
         assert asr.is_noise(text), text
 
 
+def test_youtube_boilerplate_is_dropped() -> None:
+    """Whisper answers unreadable audio with subtitle sign-offs. On seven real interviews these
+    were 15% of every Vietnamese line, and none of it was spoken."""
+    for text in ("Cảm ơn các bạn đã theo dõi và đăng ký kênh của mình.",
+                 "Hãy subscribe cho kênh La La School",
+                 "Cảm ơn các bạn đã theo dõi và hẹn gặp lại.",
+                 "您可以訂閱我們的頻道,並且請點選訂閱",
+                 "明鏡及點點欄目",
+                 "I'll see you in a minute. Thanks for watching."):
+        assert asr.is_hallucination(text), text
+
+
+def test_hallucination_filter_spares_real_speech() -> None:
+    """Matched as phrases: a meeting may say 訂閱 or subscribe without meaning a channel."""
+    for text in ("Bây giờ mình hiện tại đang làm thủ công bằng Excel.",
+                 "我們要訂閱這個服務嗎",
+                 "我們的料號其實變動很大",
+                 "這個 schedule 要 delay 一週"):
+        assert not asr.is_hallucination(text), text
+
+
 def test_noise_keeps_speech_containing_brackets() -> None:
     assert not asr.is_noise("這個 (ERP) 系統要換掉")
     assert not asr.is_noise("- All right")
     assert not asr.is_noise("")
+
+
+def test_language_whitelist_rejects_what_was_never_configured() -> None:
+    """A zh/vi/en meeting produced pt, bo, ja, ko and it on a real recording — all from noise."""
+    tr = asr.Transcriber(languages=["zh", "vi", "en"])
+    assert tr._allowed("zh") and tr._allowed("vi") and tr._allowed("en")
+    assert not tr._allowed("pt") and not tr._allowed("bo") and not tr._allowed("ja")
+    # Whisper reports bare codes, settings may carry a region; both must match.
+    assert asr.Transcriber(languages=["zh-TW", "en"])._allowed("zh")
+    # Auto-detect that reported nothing, and an unconfigured meeting, stay permissive.
+    assert tr._allowed("") and asr.Transcriber()._allowed("pt")
+
+
+def test_corrector_fixes_near_misses_only() -> None:
+    def term(source: str) -> store.Term:
+        return store.Term(id=0, source=source, lang="", mode="hint", category="", targets={})
+
+    c = correct.Corrector([term("工單"), term("威剛科技"), term("Vincent"), term("治具")])
+    # Wrong character, same sound — what the decode-time replacer misses once the tone is wrong.
+    assert c.fix("公單的管理") == "工單的管理"
+    assert c.fix("微剛科技的部分") == "威剛科技的部分"
+    assert c.fix("直距的管理") == "治具的管理"
+    assert c.fix("線上還有問incent") == "線上還有問Vincent"
+    # Different words that merely rhyme must survive untouched.
+    assert c.fix("我們公司的工作單位") == "我們公司的工作單位"
+    assert c.fix("這個 schedule 要 delay 一週") == "這個 schedule 要 delay 一週"
+    assert correct.Corrector([]).fix("原文不動") == "原文不動"
+
+
+def test_corrector_never_rewrites_a_near_rhyme() -> None:
+    """A single edit of Mandarin pinyin is a different word, not a misspelling of the same one.
+
+    Allowing one, over seven real transcripts and a thirty-three term glossary, rewrote 知道 to
+    製造 156 times and 生產 to 生管 146 times — 1578 corruptions. Chinese must match exactly.
+    """
+    def term(source: str) -> store.Term:
+        return store.Term(id=0, source=source, lang="", mode="hint", category="", targets={})
+
+    c = correct.Corrector([term("製造"), term("生管"), term("呆料"), term("委外")])
+    assert c.fix("我不知道這件事") == "我不知道這件事"
+    assert c.fix("生產線的狀況") == "生產線的狀況"
+    assert c.fix("這批材料還在") == "這批材料還在"
+    assert c.fix("未來五年的規劃") == "未來五年的規劃"
+    # What it must still catch: the same sound, a different character.
+    assert c.fix("生館的排程") == "生管的排程"
 
 
 def test_degenerate_accepts_normal_speech() -> None:

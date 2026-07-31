@@ -16,7 +16,7 @@ from typing import Callable
 
 import numpy as np
 
-from . import asr, config, diarize, translate
+from . import asr, asr_gpu, config, correct, diarize, translate
 from .store import Store
 
 log = logging.getLogger("meettranslate.pipeline")
@@ -71,10 +71,11 @@ class Pipeline:
 
         self.tap: queue.Queue[np.ndarray | None] = queue.Queue(maxsize=TAP_CAPACITY)
         self._vad = asr.Vad()
-        # Homophone rules are used whenever they have been built; there is no reason to decode a
-        # glossary term into the wrong characters live and only fix it after the meeting.
-        self._transcriber = asr.Transcriber(model_dir=cfg.whisper_dir(),
-                                            homophones=config.hr_files() is not None)
+        # GPU first: measured on this box it is both faster and markedly more accurate. Hotwords
+        # are read once here — a term added mid-meeting biases nothing until the next session, but
+        # the post-decode corrector picks it up immediately, which is the half that matters.
+        self._transcriber = asr_gpu.maybe(cfg.languages,
+                                          asr_gpu.hotwords_from(store.glossary()))             or asr.Transcriber(model_dir=cfg.whisper_dir(), languages=cfg.languages)
         self._diarizer = diarize.Diarizer(cfg=cfg)
         self._thread: threading.Thread | None = None
 
@@ -114,6 +115,9 @@ class Pipeline:
             if not text:
                 return
             self._diarizer.observe_language(speaker, used)
+            # The glossary is read per utterance so a term added mid-meeting takes effect at once,
+            # which is how the glossary page is used in practice.
+            text = correct.Corrector(self._store.glossary()).fix(text)
 
             line = translate.Line(text=text, lang=used or forced, speaker=speaker.code)
             targets = [c for c in self._cfg.languages if c != line.lang]
