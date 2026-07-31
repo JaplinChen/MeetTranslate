@@ -36,7 +36,13 @@ WHISPER_DIRS = {
 }
 
 # Below this cosine similarity to every known centroid, a segment starts a new speaker.
-SPEAKER_THRESHOLD = 0.55
+#
+# Swept over two real interview recordings, counting clusters per threshold. At 0.55 a three-person
+# interview split into fourteen speakers, twelve of them holding a single utterance; the room mic
+# and Teams' noise suppression leave the same voice further from itself than a studio recording
+# would. 0.45 is the knee on both recordings — three balanced clusters on the multi-speaker one,
+# one dominant cluster on the single-presenter one, and no singleton tail on either.
+SPEAKER_THRESHOLD = 0.45
 # Segments shorter than this give unstable embeddings; they inherit the previous speaker.
 MIN_EMBED_SECONDS = 1.0
 
