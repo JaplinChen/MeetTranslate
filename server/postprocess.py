@@ -94,7 +94,8 @@ def rewrite_session(store: Store, session_id: int, wav: Path, cfg: config.Config
                     translator: translate.Translator | None = None) -> list[Utterance]:
     """Re-derive the transcript and replace the stored lines for this session."""
     # float32 weights and every core: this runs after the meeting, so accuracy is the only concern.
-    transcriber = asr.Transcriber(model_dir=best_model(), quantized=False, num_threads=os.cpu_count() or 4)
+    transcriber = asr.Transcriber(model_dir=best_model(), quantized=False, num_threads=os.cpu_count() or 4,
+                                  homophones=config.hr_files() is not None)
     diarizer = diarize.Diarizer(cfg=cfg)
 
     utterances = segment(wav)

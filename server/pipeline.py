@@ -71,7 +71,10 @@ class Pipeline:
 
         self.tap: queue.Queue[np.ndarray | None] = queue.Queue(maxsize=TAP_CAPACITY)
         self._vad = asr.Vad()
-        self._transcriber = asr.Transcriber(model_dir=cfg.whisper_dir())
+        # Homophone rules are used whenever they have been built; there is no reason to decode a
+        # glossary term into the wrong characters live and only fix it after the meeting.
+        self._transcriber = asr.Transcriber(model_dir=cfg.whisper_dir(),
+                                            homophones=config.hr_files() is not None)
         self._diarizer = diarize.Diarizer(cfg=cfg)
         self._thread: threading.Thread | None = None
 

@@ -7,3 +7,4 @@ sherpa-onnx==1.13.4
 opencc-python-reimplemented==0.1.7
 anthropic==0.120.2
 soxr==1.1.0
+pypinyin==0.53.0

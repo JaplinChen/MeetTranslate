@@ -109,12 +109,16 @@ class Transcriber:
     """Whisper recognizers, one per language, created on first use."""
 
     def __init__(self, model_dir: Path | None = None, num_threads: int | None = None,
-                 provider: str = "cpu", quantized: bool = True):
+                 provider: str = "cpu", quantized: bool = True, homophones: bool = False):
         self._dir = model_dir or config.WHISPER_DIRS["small"]
         self._threads = num_threads or default_threads()
         self._provider = provider
         # Quantized weights for live use; postprocess has no latency budget and prefers float32.
         self._quantized = quantized
+        # Whisper has no hotword biasing in sherpa-onnx (contextual biasing is transducer-only).
+        # The homophone replacer is the substitute: it rewrites decoded Chinese by pinyin, so a
+        # glossary term the model hears right but spells wrong comes out correct.
+        self._hr = config.hr_files() if homophones else None
         self._cache: dict[str, sherpa_onnx.OfflineRecognizer] = {}
 
     def _paths(self) -> tuple[str, str, str]:
@@ -136,6 +140,7 @@ class Transcriber:
     def _recognizer(self, language: str) -> sherpa_onnx.OfflineRecognizer:
         if language not in self._cache:
             enc, dec, tok = self._paths()
+            hr = self._hr or {}
             self._cache[language] = sherpa_onnx.OfflineRecognizer.from_whisper(
                 encoder=enc,
                 decoder=dec,
@@ -143,6 +148,7 @@ class Transcriber:
                 language=language,  # '' means auto-detect
                 num_threads=self._threads,
                 provider=self._provider,
+                **hr,
             )
         return self._cache[language]
 

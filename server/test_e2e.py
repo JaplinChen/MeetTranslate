@@ -193,6 +193,29 @@ def test_weight_selection_prefers_quantized_for_live(tmp: Path) -> None:
     assert 2 <= asr.default_threads() <= 4
 
 
+def test_homophone_rules_are_used_only_when_complete(tmp: Path) -> None:
+    """A half-built models/hr must not reach sherpa-onnx, which would fail at recognizer creation.
+
+    Both the live pipeline and postprocess enable the replacer off `hr_files()`, so this gate is
+    what keeps a partial download from breaking capture entirely.
+    """
+    original = config.HR_DIR
+    try:
+        config.HR_DIR = tmp / "hr"
+        (config.HR_DIR / "dict").mkdir(parents=True)
+        assert config.hr_files() is None, "incomplete hr dir must not be used"
+
+        (config.HR_DIR / "lexicon.txt").write_text("x", encoding="utf-8")
+        (config.HR_DIR / "replace.fst").write_bytes(b"x")
+        files = config.hr_files()
+        assert files and set(files) == {"hr_dict_dir", "hr_lexicon", "hr_rule_fsts"}, files
+
+        assert asr.Transcriber(homophones=False)._hr is None
+        assert asr.Transcriber(homophones=True)._hr == files
+    finally:
+        config.HR_DIR = original
+
+
 def test_autodetect_reports_the_language(tmp: Path) -> None:
     """Auto-detect must return which language it decoded in.
 
