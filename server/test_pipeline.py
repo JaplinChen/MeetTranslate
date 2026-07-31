@@ -18,6 +18,18 @@ def test_degenerate_detects_collapsed_decode() -> None:
     assert asr.is_degenerate("the the the the the the the the the the the")
 
 
+def test_noise_annotations_are_dropped() -> None:
+    """Every one of these came out of ten minutes of room noise before a real meeting started."""
+    for text in ("[MUSIC PLAYING]", "(static)", "[BLANK_AUDIO]", "(upbeat music)", "(indistinct)", "[static"):
+        assert asr.is_noise(text), text
+
+
+def test_noise_keeps_speech_containing_brackets() -> None:
+    assert not asr.is_noise("這個 (ERP) 系統要換掉")
+    assert not asr.is_noise("- All right")
+    assert not asr.is_noise("")
+
+
 def test_degenerate_accepts_normal_speech() -> None:
     assert not asr.is_degenerate("這個 schedule 要 delay 一週，我們下週再確認一次時程")
     assert not asr.is_degenerate("After early nightfall the yellow lamps would light up the squalid quarter")

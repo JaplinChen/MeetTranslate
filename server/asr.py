@@ -29,7 +29,12 @@ from . import config
 # meeting-room TV are an immediately visible failure.
 _to_traditional = OpenCC("s2twp")
 
-_CJK_OR_WORD = re.compile(r"[一-鿿]|[A-Za-zÀ-ỹ]+")
+# Han, kana and hangul count as one token each; Latin words as one per word. Kana and hangul are
+# here because Whisper reaches for them when decoding noise, and that output collapses too.
+_CJK_OR_WORD = re.compile(r"[一-鿿ぁ-ヿ가-힣]|[A-Za-zÀ-ỹ]+")
+# Bracketed spans, closing bracket optional: Whisper truncates these as often as it closes them
+# ("[static" and "[Bell" both showed up in a 15-minute sample).
+_ANNOTATION = re.compile(r"[\[(（【][^\])）】]*[\])）】]?")
 
 # Whisper accepts at most 30 seconds and silently discards the rest — sherpa logs a warning and
 # returns a transcript of the first 30 s only. VAD is configured to cut before this, but a guard
@@ -59,6 +64,18 @@ def is_degenerate(text: str) -> bool:
     if len(tokens) < 8:
         return False  # too short to tell repetition from a genuinely terse utterance
     return len(set(tokens)) / len(tokens) < 0.3
+
+
+def is_noise(text: str) -> bool:
+    """True for Whisper's non-speech annotations: `[MUSIC PLAYING]`, `(static)`, `[BLANK_AUDIO]`.
+
+    Whisper does not stay silent when handed silence — it emits one of these tags. Measured on a
+    real interview recording, every one of the first ten minutes of room noise before the meeting
+    started produced one, and each became its own phantom speaker with its own phantom language.
+    Only a decode that is *nothing but* annotation is dropped, so a real utterance that happens to
+    contain a parenthesis survives.
+    """
+    return bool(text.strip()) and not _ANNOTATION.sub("", text).strip(" \t-–—.,")
 
 
 class Vad:
@@ -180,9 +197,13 @@ class Transcriber:
         language produced the text it got so the speaker's language stats stay honest.
         """
         text, detected = self._decode(samples, language)
+        if is_noise(text):
+            return "", detected
 
         if language and is_degenerate(text):
             fallback, fallback_lang = self._decode(samples, "")
+            if is_noise(fallback):
+                return "", fallback_lang
             if not is_degenerate(fallback):
                 return _post(fallback, fallback_lang), fallback_lang
 

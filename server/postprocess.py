@@ -61,16 +61,34 @@ def assign_speakers(utterances: list[Utterance], diarizer: diarize.Diarizer) -> 
     This is what the online pass could not do: a speaker whose first few seconds were atypical
     gets merged with their later segments instead of living on as a phantom second participant.
     """
-    embeddings = [diarizer.embed(u.samples) for u in utterances]
-    for utterance, label in zip(utterances, diarize.cluster_offline(embeddings)):
+    # Same rule the live path applies in Diarizer.assign: a clip too short to embed reliably
+    # inherits the previous speaker. Clustering it instead mints a phantom participant per blip —
+    # on a real recording the ten idle minutes before the meeting produced fourteen of them.
+    long = [u for u in utterances if len(u.samples) / config.SAMPLE_RATE >= config.MIN_EMBED_SECONDS]
+    if not long:
+        for u in utterances:
+            u.speaker = "S1"
+        return
+
+    labels = diarize.cluster_offline([diarizer.embed(u.samples) for u in long])
+    for utterance, label in zip(long, labels):
         utterance.speaker = f"S{label + 1}"
+
+    previous = f"S{labels[0] + 1}"
+    for u in utterances:
+        if u.speaker:
+            previous = u.speaker
+        else:
+            u.speaker = previous
 
 
 def dominant_languages(utterances: list[Utterance]) -> dict[str, str]:
     """Majority language per speaker, computed after clustering rather than as the meeting ran."""
     counts: dict[str, dict[str, int]] = {}
     for u in utterances:
-        if u.lang:
+        # Text-less utterances are dropped noise; their detected language is Whisper guessing at
+        # static and must not vote.
+        if u.lang and u.text:
             counts.setdefault(u.speaker, {})[u.lang] = counts.setdefault(u.speaker, {}).get(u.lang, 0) + 1
     return {code: max(langs, key=langs.get) for code, langs in counts.items() if langs}
 
@@ -86,8 +104,10 @@ def transcribe_all(utterances: list[Utterance], transcriber: asr.Transcriber) ->
         want = dominant.get(u.speaker, "")
         if want and want != u.lang:
             text, used = transcriber.transcribe(u.samples, want)
-            if text:
-                u.text, u.lang = text, used
+            # Empty means the speaker's own language decoded this as a noise annotation, which is
+            # what static sounds like to Whisper. The stray foreign-language first pass was the
+            # hallucination, so drop it rather than keep it as a phantom line.
+            u.text, u.lang = (text, used) if text else ("", u.lang)
 
 
 def rewrite_session(store: Store, session_id: int, wav: Path, cfg: config.Config,
