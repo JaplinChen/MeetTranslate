@@ -12,5 +12,6 @@ llm.json
 llm_keys.json
 meettranslate.db*
 recordings/
+transcripts/
 models/
 .env
