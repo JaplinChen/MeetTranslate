@@ -1,0 +1,217 @@
+"""LLM pass that repairs recognition errors using the surrounding conversation.
+
+Whisper decodes one utterance at a time and cannot know it is sitting in an SAP ERP interview. A
+reader who does knows that `一夕變更` is `工程變更` and that `生技` should be `生管`, because the
+sentence around it is about change control and production planning. That is the only signal left
+once the acoustics have been squeezed dry, and it is not available to the recogniser.
+
+The danger is the same thing that makes it work: a model asked to fix a transcript will happily
+rewrite it into something more fluent than what was said. Every guard here exists to keep it to
+substitutions it can justify — same line count, same speakers, and a per-line ceiling on how much
+may change before the result is treated as invention and thrown away.
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+from dataclasses import dataclass
+
+from .correct import edit_distance, pinyin_of
+from .store import Term
+
+log = logging.getLogger("meettranslate.refine")
+
+# Lines per request. Large enough that a term corrected early informs the rest, small enough that
+# the model still has every line in view when it answers.
+CHUNK_LINES = 25
+# Lines of already-refined text sent as read-only lead-in, so a chunk boundary does not sit in the
+# middle of a sentence with no history.
+CONTEXT_LINES = 4
+# A correction that changes more than this fraction of a line is a rewrite. Measured against the
+# original: `生技` for `生管` is 0.5 of a two-character word but a rounding error in a sentence,
+# which is why this is applied per line rather than per term.
+MAX_CHANGE = 0.30
+# How far a correction may move the line's pronunciation. A recognition error is something the
+# recogniser heard; a correction that sounds nothing like what it produced was invented instead.
+MAX_SOUND_CHANGE = 0.20
+# Glossary terms are exempt from most of that. The recogniser cannot know a term exists, so the
+# text it produced may be acoustically far from the truth — and the glossary is the user saying
+# this term belongs in this meeting.
+MAX_TERM_SOUND_CHANGE = 0.50
+# And a hard ceiling in edits, because the ratio is measured over the whole line: two nonsense
+# characters inside a sixty-character sentence are a rounding error to a ratio and still nonsense.
+# `夢表` for `模具` and `監獄` for `零件` both slipped through on ratio alone.
+MAX_SOUND_EDITS = 3
+
+NUMBERED = re.compile(r"^\s*(\d+)\s*[:：.]\s*(.*)$")
+
+
+@dataclass
+class Line:
+    speaker: str
+    lang: str
+    text: str
+
+
+def build_prompt(lines: list[Line], context: list[Line], terms: list[Term], topic: str) -> str:
+    """Ask for substitutions, not improvements."""
+    parts = [
+        f"以下是一場「{topic}」的逐字稿片段，由語音辨識產生，含有辨識錯誤。",
+        "",
+        "你的工作是根據上下文修正**辨識錯誤**，不是改寫。規則：",
+        "- 只改明顯錯字：同音字、專有名詞、術語。判斷依據是上下文語意",
+        "- 不補字、不刪字、不潤飾語句、不改語氣、不合併或拆分句子",
+        "- 口語的重複與贅字是說話者原本就有的，保留",
+        "- 不確定的地方保持原樣。寧可留錯，不可改成沒說過的內容",
+        "- 中文一律繁體。英文與越南語維持原文",
+        "- 不要增刪空白或標點。加空白不算修正",
+        "",
+        "輸出格式：每行 `編號: 修正後的文字`，行數與輸入完全相同，不加任何說明。",
+    ]
+
+    if terms:
+        parts += ["", "會議專有名詞（出現近似音時應修正為這些寫法）：",
+                  "、".join(t.source for t in terms)]
+
+    if context:
+        parts += ["", "前文（僅供理解，不要輸出）："]
+        parts += [f"{l.speaker}（{l.lang}）：{l.text}" for l in context]
+
+    parts += ["", "待修正："]
+    parts += [f"{i}: {l.text}" for i, l in enumerate(lines, 1)]
+    return "\n".join(parts)
+
+
+def _squeeze(text: str) -> str:
+    return re.sub(r"\s+", "", text)
+
+
+def accept(original: str, candidate: str, terms: list[Term] | None = None) -> bool:
+    """Whether a proposed line is a correction rather than a replacement.
+
+    Two questions, and both must pass. Is it small enough to be a substitution rather than a
+    rewrite? And could the recogniser plausibly have produced the original from the corrected
+    audio — that is, do they sound alike?
+
+    The second is what separates a fix from a guess. Measured on a local model's output: `早等`
+    for `稍等` is 0.06 of the line's pinyin apart and right; `延伸` for `選項` is 0.23 apart and
+    invented, because nothing that sounds like 選項 was ever spoken.
+
+    A glossary term is allowed to travel much further. `一夕變更` and `工程變更` are 0.41 apart
+    and the correction is still right — the recogniser had no idea the term existed, and the
+    glossary is the user asserting that it does.
+    """
+    candidate = candidate.strip()
+    if not candidate or candidate == original:
+        return False
+    # Re-spacing is not a correction. Asked not to think, a model reaches for the cheapest edit it
+    # can justify, and inserting spaces between words is the cheapest of all.
+    if _squeeze(candidate) == _squeeze(original):
+        return False
+
+    # A short line has no room for a ratio to mean anything; allow one or two characters.
+    if edit_distance(original, candidate) > max(2, int(len(original) * MAX_CHANGE)):
+        return False
+
+    before, after = pinyin_of(original, tones=False), pinyin_of(candidate, tones=False)
+    if not before or not after:
+        return True  # nothing Chinese in it; the size check above is all there is to go on
+    introduces_term = any(t.source in candidate and t.source not in original for t in terms or [])
+    moved = edit_distance(before, after)
+    if introduces_term:
+        return moved / len(before) <= MAX_TERM_SOUND_CHANGE
+    return moved <= min(MAX_SOUND_CHANGE * len(before), MAX_SOUND_EDITS)
+
+
+def parse_response(raw: str, lines: list[Line], terms: list[Term] | None = None) -> list[str]:
+    """Map the numbered reply back onto the input, keeping originals wherever it disagrees.
+
+    A reply with the wrong number of lines means the model restructured the transcript instead of
+    correcting it; the whole chunk is discarded rather than guessed at.
+    """
+    got: dict[int, str] = {}
+    for row in raw.splitlines():
+        if m := NUMBERED.match(row):
+            got[int(m.group(1))] = m.group(2)
+
+    if len(got) != len(lines):
+        log.warning("refine returned %d lines for %d, keeping originals", len(got), len(lines))
+        return [l.text for l in lines]
+
+    out = []
+    for i, line in enumerate(lines, 1):
+        candidate = got.get(i, "")
+        out.append(candidate.strip() if accept(line.text, candidate, terms) else line.text)
+    return out
+
+
+THINK = re.compile(r"<think>.*?</think>", re.DOTALL)
+
+
+def anthropic_chat(api_key: str, model: str, max_tokens: int = 4000):
+    from anthropic import Anthropic
+
+    client = Anthropic(api_key=api_key)
+
+    def chat(prompt: str) -> str:
+        message = client.messages.create(model=model, max_tokens=max_tokens,
+                                         messages=[{"role": "user", "content": prompt}])
+        return "".join(b.text for b in message.content if b.type == "text")
+
+    return chat
+
+
+def ollama_chat(model: str, endpoint: str = "http://127.0.0.1:11434", timeout: float = 900,
+                think: bool = False):
+    """Local models over Ollama's HTTP API — no key, and the transcript never leaves the machine.
+
+    That second point is the reason to prefer it here: these are client interview recordings.
+    """
+    import json
+    import urllib.request
+
+    def chat(prompt: str) -> str:
+        body = json.dumps({
+            "model": model,
+            "prompt": prompt,
+            "stream": False,
+            # Reasoning costs minutes per chunk and buys a different failure mode rather than a
+            # better one — see --think in scripts/refine_transcript.py. Models with no thinking
+            # mode ignore the field.
+            "think": think,
+            # Deterministic: the same transcript should not correct differently on a re-run.
+            "options": {"temperature": 0, "num_ctx": 8192},
+        }).encode()
+        req = urllib.request.Request(f"{endpoint}/api/generate", data=body,
+                                     headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            text = json.load(r).get("response", "")
+        # Qwen and other reasoning models narrate before answering; the answer is what follows.
+        return THINK.sub("", text)
+
+    return chat
+
+
+class Refiner:
+    """Correction driven by whatever `chat` is given — cloud or local, the guards are the same."""
+
+    def __init__(self, chat, topic: str = "會議"):
+        self._chat = chat
+        self._topic = topic
+
+    def refine(self, lines: list[Line], terms: list[Term] | None = None) -> list[str]:
+        """Correct a whole transcript, chunk by chunk. Returns one string per input line."""
+        out: list[str] = []
+        for start in range(0, len(lines), CHUNK_LINES):
+            chunk = lines[start : start + CHUNK_LINES]
+            context = [Line(l.speaker, l.lang, t)
+                       for l, t in zip(lines[max(0, start - CONTEXT_LINES) : start],
+                                       out[max(0, start - CONTEXT_LINES) : start])]
+            prompt = build_prompt(chunk, context, terms or [], self._topic)
+            try:
+                out += parse_response(self._chat(prompt), chunk, terms)
+            except Exception:
+                log.exception("refine failed at line %d, keeping originals", start)
+                out += [l.text for l in chunk]
+        return out

@@ -9,7 +9,79 @@ from __future__ import annotations
 
 import numpy as np
 
-from . import asr, config, correct, diarize, store
+from . import asr, config, correct, diarize, refine, store
+
+
+def test_refine_keeps_the_original_when_the_model_rewrites() -> None:
+    """The LLM pass may substitute, never restructure.
+
+    Asked to fix a transcript a model will happily improve it, and an improved sentence is one
+    nobody said. Anything that changes too much of a line, or that changes the number of lines,
+    is discarded in favour of the recognised text.
+    """
+    lines = [refine.Line("S1", "zh", "我們的料耗其實變動很大"),
+             refine.Line("S1", "zh", "生技這邊先開始")]
+    fixed = ["我們的料號其實變動很大", "生管這邊先開始"]
+    rewrite = "我們的料號變動幅度相當大，這點需要注意"
+    terms = [store.Term(id=0, source="生管", lang="", mode="hint", category="", targets={})]
+    reply = lambda rows: chr(10).join(f"{i}: {t}" for i, t in enumerate(rows, 1))
+
+    assert refine.parse_response(reply(fixed), lines, terms) == fixed
+
+    # A fluent rewrite of the same meaning must be refused.
+    assert refine.parse_response(reply([rewrite, fixed[1]]), lines, terms)[0] == lines[0].text
+
+    # Wrong line count means the transcript was restructured; keep everything.
+    assert refine.parse_response(reply(fixed[:1]), lines, terms) == [l.text for l in lines]
+    assert refine.parse_response("nothing numbered here", lines, terms) == [l.text for l in lines]
+
+
+def test_refine_rejects_corrections_that_do_not_sound_alike() -> None:
+    """A recognition error is something the recogniser heard. A correction that sounds nothing
+    like the text it replaces was invented from context, not recovered from audio.
+
+    All five cases came out of a local model correcting a real interview transcript.
+    """
+    term = lambda source: store.Term(id=0, source=source, lang="", mode="hint",
+                                     category="", targets={})
+    terms = [term("工程變更"), term("生管")]
+
+    # Heard: 稍 as 早, 料號 as 料耗, 生管 as 生技.
+    assert refine.accept("有聽到聲音嗎早等我一下", "有聽到聲音嗎稍等我一下", terms)
+    assert refine.accept("我們的料耗其實變動很大", "我們的料號其實變動很大", terms)
+    assert refine.accept("生技這邊先開始", "生管這邊先開始", terms)
+
+    # Guessed: nothing that sounds like 選項 was spoken.
+    assert not refine.accept("用延伸的吧他還沒投出來", "用選項的吧他還沒跳出來", terms)
+
+    # Two nonsense characters inside a long sentence are a rounding error to a ratio and still
+    # nonsense, so the sound test has an absolute ceiling as well. Both of these were proposed by
+    # a local model on a real transcript.
+    long_before = "因為你所有的夢表那些什麼包含你的一些標準工時那些全部都要工單的管理"
+    assert not refine.accept(long_before, long_before.replace("夢表", "模具"), terms)
+    # The same span may still be corrected when the glossary names the destination.
+    assert refine.accept(long_before, long_before.replace("夢表", "報表"),
+                         terms + [term("報表")])
+
+    # Re-spacing is not a correction.
+    assert not refine.accept("呃right nowswitch", "呃 right now switch", terms)
+
+    # A glossary term may travel further, because the recogniser never knew it existed.
+    assert refine.accept("一夕變更的流程", "工程變更的流程", terms)
+    assert not refine.accept("一夕變更的流程", "工程變更的流程", [])
+
+
+def test_refine_prompt_states_the_domain_and_the_terms() -> None:
+    said, earlier, term = "一夕變更的流程", "前面說過的話", "工程變更"
+    prompt = refine.build_prompt(
+        [refine.Line("S1", "zh", said)],
+        [refine.Line("S1", "zh", earlier)],
+        [store.Term(id=0, source=term, lang="", mode="hint", category="", targets={})],
+        "SAP ERP interview",
+    )
+    assert "SAP ERP interview" in prompt
+    assert term in prompt and earlier in prompt
+    assert f"1: {said}" in prompt
 
 
 def test_degenerate_detects_collapsed_decode() -> None:
