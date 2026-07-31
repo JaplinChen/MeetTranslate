@@ -69,6 +69,15 @@ class _Rule:
 
     @property
     def limit(self) -> int:
+        """Chinese must match exactly; Latin may differ by a quarter of its length.
+
+        Scanned over seven real transcripts, allowing Chinese a single edit rewrote 知道 to 製造
+        156 times, 生產 to 生管 146 times and 材料 to 呆料 71 times — 1578 corruptions from a
+        33-term glossary. Mandarin syllables are packed too densely for edit distance to mean
+        anything at this length. Latin words are sparse enough for it: incent -> Vincent.
+        """
+        if self.chinese:
+            return 0
         return int(len(self.key) * MAX_DISTANCE) if len(self.key) >= MIN_KEY else 0
 
 

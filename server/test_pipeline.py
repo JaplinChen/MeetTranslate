@@ -78,6 +78,24 @@ def test_corrector_fixes_near_misses_only() -> None:
     assert correct.Corrector([]).fix("原文不動") == "原文不動"
 
 
+def test_corrector_never_rewrites_a_near_rhyme() -> None:
+    """A single edit of Mandarin pinyin is a different word, not a misspelling of the same one.
+
+    Allowing one, over seven real transcripts and a thirty-three term glossary, rewrote 知道 to
+    製造 156 times and 生產 to 生管 146 times — 1578 corruptions. Chinese must match exactly.
+    """
+    def term(source: str) -> store.Term:
+        return store.Term(id=0, source=source, lang="", mode="hint", category="", targets={})
+
+    c = correct.Corrector([term("製造"), term("生管"), term("呆料"), term("委外")])
+    assert c.fix("我不知道這件事") == "我不知道這件事"
+    assert c.fix("生產線的狀況") == "生產線的狀況"
+    assert c.fix("這批材料還在") == "這批材料還在"
+    assert c.fix("未來五年的規劃") == "未來五年的規劃"
+    # What it must still catch: the same sound, a different character.
+    assert c.fix("生館的排程") == "生管的排程"
+
+
 def test_degenerate_accepts_normal_speech() -> None:
     assert not asr.is_degenerate("這個 schedule 要 delay 一週，我們下週再確認一次時程")
     assert not asr.is_degenerate("After early nightfall the yellow lamps would light up the squalid quarter")
