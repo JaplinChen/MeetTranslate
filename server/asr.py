@@ -143,17 +143,13 @@ class Transcriber:
     """Whisper recognizers, one per language, created on first use."""
 
     def __init__(self, model_dir: Path | None = None, num_threads: int | None = None,
-                 provider: str = "cpu", quantized: bool = True, homophones: bool = False,
+                 provider: str = "cpu", quantized: bool = True,
                  languages: list[str] | None = None):
         self._dir = model_dir or config.WHISPER_DIRS["small"]
         self._threads = num_threads or default_threads()
         self._provider = provider
         # Quantized weights for live use; postprocess has no latency budget and prefers float32.
         self._quantized = quantized
-        # Whisper has no hotword biasing in sherpa-onnx (contextual biasing is transducer-only).
-        # The homophone replacer is the substitute: it rewrites decoded Chinese by pinyin, so a
-        # glossary term the model hears right but spells wrong comes out correct.
-        self._hr = config.hr_files() if homophones else None
         # Whisper auto-detect ranks every language it knows, so a noisy segment in a zh/vi/en
         # meeting comes back as Portuguese or Tibetan. Both were measured on a real recording.
         # Anything outside the configured set is a detection failure, not a participant.
@@ -176,17 +172,9 @@ class Transcriber:
             raise FileNotFoundError(f"Whisper tokens file missing: {tok}")
         return str(pick("encoder")), str(pick("decoder")), str(tok)
 
-    def _hr_for(self, language: str) -> dict[str, str]:
-        """Chinese only. The replacer round-trips text through pinyin, which loses the spaces in
-        anything Latin — measured on a real recording, "You gotta take those from them" came back
-        as one word. Auto-detect is excluded for the same reason: it decodes every language, so it
-        cannot be handed a Chinese-only rewrite."""
-        return self._hr if (self._hr and language.startswith("zh")) else {}
-
     def _recognizer(self, language: str) -> sherpa_onnx.OfflineRecognizer:
         if language not in self._cache:
             enc, dec, tok = self._paths()
-            hr = self._hr_for(language)
             self._cache[language] = sherpa_onnx.OfflineRecognizer.from_whisper(
                 encoder=enc,
                 decoder=dec,
@@ -194,7 +182,6 @@ class Transcriber:
                 language=language,  # '' means auto-detect
                 num_threads=self._threads,
                 provider=self._provider,
-                **hr,
             )
         return self._cache[language]
 

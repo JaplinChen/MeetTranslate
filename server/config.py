@@ -21,9 +21,6 @@ BLOCK_SIZE = 1600
 
 VAD_MODEL = MODELS_DIR / "silero_vad.onnx"
 SPEAKER_MODEL = MODELS_DIR / "speaker_embedding.onnx"
-# Homophone replacer: dict/, lexicon.txt from the sherpa-onnx hr-files release, replace.fst built
-# from the glossary. Chinese only — pinyin is the matching key.
-HR_DIR = MODELS_DIR / "hr"
 
 # Whisper model directories, smallest first. The realtime tier is picked from `whisper_model`;
 # postprocess always uses the largest available.
@@ -120,19 +117,6 @@ def gpu_model(languages: list[str] | None = None) -> str:
     one answer today.
     """
     return os.environ.get("MEETTRANSLATE_GPU_MODEL", "large-v3")
-
-
-def hr_files() -> dict[str, str] | None:
-    """Homophone replacer paths for sherpa-onnx, or None if not set up.
-
-    All three must be present: the dict and lexicon convert decoded Chinese to pinyin, replace.fst
-    holds the pinyin→term rules built from the glossary by scripts/build_hr.py.
-    """
-    paths = {"hr_dict_dir": HR_DIR / "dict", "hr_lexicon": HR_DIR / "lexicon.txt",
-             "hr_rule_fsts": HR_DIR / "replace.fst"}
-    if not all(p.exists() for p in paths.values()):
-        return None
-    return {k: str(v) for k, v in paths.items()}
 
 
 def available_whisper_models() -> list[str]:

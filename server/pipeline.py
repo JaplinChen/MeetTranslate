@@ -74,12 +74,8 @@ class Pipeline:
         # GPU first: measured on this box it is both faster and markedly more accurate. Hotwords
         # are read once here — a term added mid-meeting biases nothing until the next session, but
         # the post-decode corrector picks it up immediately, which is the half that matters.
-        # Homophone rules are used whenever they have been built; there is no reason to decode a
-        # glossary term into the wrong characters live and only fix it after the meeting.
         self._transcriber = asr_gpu.maybe(cfg.languages,
-                                          asr_gpu.hotwords_from(store.glossary()))             or asr.Transcriber(model_dir=cfg.whisper_dir(),
-                               homophones=config.hr_files() is not None,
-                               languages=cfg.languages)
+                                          asr_gpu.hotwords_from(store.glossary()))             or asr.Transcriber(model_dir=cfg.whisper_dir(), languages=cfg.languages)
         self._diarizer = diarize.Diarizer(cfg=cfg)
         self._thread: threading.Thread | None = None
 

@@ -1,9 +1,8 @@
 """Proper-noun correction over decoded text.
 
-Whisper picks the wrong character far more often than it mishears the syllable. The decode-time
-homophone replacer only fires on an exact tone-for-tone pinyin match, so it misses the ordinary
-case where the tone is what went wrong. Comparing toneless pinyin within a small edit distance
-catches those.
+Whisper picks the wrong character far more often than it mishears the syllable, and the wrong
+character usually differs only in tone. Comparing toneless pinyin catches those: `公單` and `工單`
+are one edit apart with tones and identical without.
 
 It does not catch everything, and is not meant to: `生管` decoded as `生氣` is a different syllable,
 not a different character for the same one. That is an acoustic error and belongs to the model,

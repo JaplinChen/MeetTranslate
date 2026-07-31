@@ -126,7 +126,7 @@ def rewrite_session(store: Store, session_id: int, wav: Path, cfg: config.Config
     # meeting, so accuracy is the only concern — but it also makes the machine unusable while it
     # runs, which is the other reason the GPU path exists.
     transcriber = asr_gpu.maybe(cfg.languages, asr_gpu.hotwords_from(store.glossary()))         or asr.Transcriber(model_dir=best_model(), quantized=False, num_threads=os.cpu_count() or 4,
-                           homophones=config.hr_files() is not None, languages=cfg.languages)
+                           languages=cfg.languages)
     diarizer = diarize.Diarizer(cfg=cfg)
 
     utterances = segment(wav)

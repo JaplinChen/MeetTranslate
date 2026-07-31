@@ -43,8 +43,8 @@ def edit_distance(a: str, b: str) -> int:
 def report_glossary(hypothesis: str) -> None:
     """Which glossary terms survived recognition.
 
-    A Chinese term that misses is a candidate for the homophone replacer; an English or Vietnamese
-    one has no such fallback, so it either needs a better model tier or has to be lived with.
+    A term that misses is one the post-decode corrector had no near-miss to work from — it either
+    needs a better model tier, or it has to be lived with.
     """
     terms = Store().glossary()
     if not terms:
@@ -70,15 +70,10 @@ def main() -> int:
     ap.add_argument("wav", type=Path)
     ap.add_argument("--model", choices=list(config.WHISPER_DIRS), help="default: largest on disk")
     ap.add_argument("--ref", type=Path, help="reference transcript for CER")
-    ap.add_argument("--hr", action="store_true", help="apply homophone replacer (models/hr, Chinese only)")
     ap.add_argument("--threads", type=int, default=max(2, (os.cpu_count() or 4) // 2),
                     help="decode threads; the default leaves half the machine usable")
     ap.add_argument("--gpu", action="store_true", help="decode on the GPU via CTranslate2")
     args = ap.parse_args()
-
-    if args.hr and config.hr_files() is None:
-        print(f"homophone replacer not set up under {config.HR_DIR} — run scripts/build_hr.py", file=sys.stderr)
-        return 1
 
     model = config.WHISPER_DIRS[args.model] if args.model else postprocess.best_model()
     if not args.gpu and not model.is_dir():
@@ -96,7 +91,7 @@ def main() -> int:
         label = config.gpu_model(cfg.languages)
     else:
         transcriber = asr.Transcriber(model_dir=model, quantized=False, num_threads=args.threads,
-                                      homophones=args.hr, languages=cfg.languages)
+                                      languages=cfg.languages)
         label = model.name
     diarizer = diarize.Diarizer(cfg=cfg)
 
