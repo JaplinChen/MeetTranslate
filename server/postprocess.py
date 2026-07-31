@@ -17,7 +17,7 @@ from typing import Callable
 import numpy as np
 import soundfile as sf
 
-from . import asr, config, correct, diarize, translate
+from . import asr, asr_gpu, config, correct, diarize, translate
 from .store import Store
 
 log = logging.getLogger("meettranslate.postprocess")
@@ -122,9 +122,11 @@ def transcribe_all(utterances: list[Utterance], transcriber: asr.Transcriber,
 def rewrite_session(store: Store, session_id: int, wav: Path, cfg: config.Config,
                     translator: translate.Translator | None = None) -> list[Utterance]:
     """Re-derive the transcript and replace the stored lines for this session."""
-    # float32 weights and every core: this runs after the meeting, so accuracy is the only concern.
-    transcriber = asr.Transcriber(model_dir=best_model(), quantized=False, num_threads=os.cpu_count() or 4,
-                                  homophones=config.hr_files() is not None, languages=cfg.languages)
+    # GPU first. The CPU fallback keeps float32 weights and every core: this runs after the
+    # meeting, so accuracy is the only concern — but it also makes the machine unusable while it
+    # runs, which is the other reason the GPU path exists.
+    transcriber = asr_gpu.maybe(cfg.languages, asr_gpu.hotwords_from(store.glossary()))         or asr.Transcriber(model_dir=best_model(), quantized=False, num_threads=os.cpu_count() or 4,
+                           homophones=config.hr_files() is not None, languages=cfg.languages)
     diarizer = diarize.Diarizer(cfg=cfg)
 
     utterances = segment(wav)

@@ -106,6 +106,30 @@ def load() -> Config:
     return cfg
 
 
+BREEZE_DIR = MODELS_DIR / "breeze-asr-25-ct2"
+# Breeze ASR 25 was fine-tuned on Mandarin and English only.
+BREEZE_LANGUAGES = {"zh", "en"}
+
+
+def gpu_model(languages: list[str] | None = None) -> str:
+    """CTranslate2 model for the GPU path.
+
+    Breeze ASR 25 is a Whisper large-v2 fine-tune for Taiwanese Mandarin and Mandarin-English
+    code-switching — 13.01 WER against large-v3's 26.43 on CSZS-zh-en, which is exactly what this
+    meeting room speaks.
+
+    It is used only when every configured language is one it was trained on. Handed English audio
+    from a zh/en meeting it already leans Chinese; a Vietnamese session would be decoded as Mandarin
+    outright, so those fall back to large-v3, which is worse at code-switching and knows Vietnamese.
+    """
+    if env := os.environ.get("MEETTRANSLATE_GPU_MODEL"):
+        return env
+    wanted = {code.split("-")[0] for code in (languages or [])}
+    if BREEZE_DIR.is_dir() and wanted and wanted <= BREEZE_LANGUAGES:
+        return str(BREEZE_DIR)
+    return "large-v3"
+
+
 def hr_files() -> dict[str, str] | None:
     """Homophone replacer paths for sherpa-onnx, or None if not set up.
 

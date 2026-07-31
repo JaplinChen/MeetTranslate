@@ -1,0 +1,15 @@
+# GPU recognition, installed on top of requirements.txt. Optional: without it the CPU path runs.
+#
+# The CUDA runtime comes from pip rather than a system CUDA install, and CTranslate2 finds those
+# DLLs through PATH — server/asr_gpu.py prepends them at import. Blackwell cards (RTX 50xx, sm_120)
+# need this CTranslate2 generation; the CUDA 12.1 builds common in older guides do not cover them.
+faster-whisper==1.2.1
+ctranslate2==4.8.1
+nvidia-cublas-cu12
+nvidia-cudnn-cu12
+
+# Only needed to convert Breeze ASR 25 from Hugging Face into CTranslate2 format, once:
+#   ct2-transformers-converter --model MediaTek-Research/Breeze-ASR-25 \
+#     --output_dir models/breeze-asr-25-ct2 --quantization float16 \
+#     --copy_files tokenizer.json preprocessor_config.json
+# transformers[torch]

@@ -18,7 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from server import asr, config, diarize, postprocess  # noqa: E402
+from server import asr, asr_gpu, config, diarize, postprocess  # noqa: E402
 from server.store import Store  # noqa: E402
 
 PUNCT = re.compile(r"[\s，。、！？：；「」『』（）,.!?:;\"'()\-—…]+")
@@ -73,6 +73,7 @@ def main() -> int:
     ap.add_argument("--hr", action="store_true", help="apply homophone replacer (models/hr, Chinese only)")
     ap.add_argument("--threads", type=int, default=max(2, (os.cpu_count() or 4) // 2),
                     help="decode threads; the default leaves half the machine usable")
+    ap.add_argument("--gpu", action="store_true", help="decode on the GPU via CTranslate2")
     args = ap.parse_args()
 
     if args.hr and config.hr_files() is None:
@@ -80,13 +81,23 @@ def main() -> int:
         return 1
 
     model = config.WHISPER_DIRS[args.model] if args.model else postprocess.best_model()
-    if not model.is_dir():
+    if not args.gpu and not model.is_dir():
         print(f"model not found: {model}", file=sys.stderr)
         return 1
 
     cfg = config.load()
-    transcriber = asr.Transcriber(model_dir=model, quantized=False, num_threads=args.threads,
-                                  homophones=args.hr, languages=cfg.languages)
+    if args.gpu:
+        if not asr_gpu.available():
+            print("no CUDA device or CTranslate2 runtime found", file=sys.stderr)
+            return 1
+        terms = Store().glossary()
+        transcriber = asr_gpu.Transcriber(languages=cfg.languages,
+                                          hotwords=asr_gpu.hotwords_from(terms))
+        label = config.gpu_model(cfg.languages)
+    else:
+        transcriber = asr.Transcriber(model_dir=model, quantized=False, num_threads=args.threads,
+                                      homophones=args.hr, languages=cfg.languages)
+        label = model.name
     diarizer = diarize.Diarizer(cfg=cfg)
 
     started = time.monotonic()
@@ -116,7 +127,7 @@ def main() -> int:
     for u in corrected:
         print(line(u))
 
-    print(f"\nmodel={model.name} hr={'on' if args.hr else 'off'} threads={args.threads} "
+    print(f"\nmodel={label} hr={'on' if args.hr else 'off'} threads={args.threads} "
           f"utterances={len(utterances)} speech={audio_seconds:.1f}s wall={elapsed:.1f}s "
           f"rtf={elapsed / audio_seconds:.2f}")
     print("languages: " + ", ".join(f"{s}={l}" for s, l in postprocess.dominant_languages(utterances).items()))

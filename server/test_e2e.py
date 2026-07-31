@@ -11,6 +11,7 @@ subtitle in place rather than appending a duplicate.
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import threading
 import time
@@ -19,7 +20,7 @@ from pathlib import Path
 import numpy as np
 from fastapi.testclient import TestClient
 
-from . import asr, config, llm, main, store as store_mod, translate
+from . import asr, asr_gpu, config, llm, main, store as store_mod, translate
 from .pipeline import Pipeline
 
 
@@ -140,6 +141,10 @@ def test_pipeline_emits_line_then_update(tmp: Path) -> None:
     audio, sr = sf.read(str(wav), dtype="float32")
     assert sr == config.SAMPLE_RATE
 
+    # This test is about the sherpa-onnx wiring and a known-language wav; the GPU model would
+    # substitute a different recogniser and decode this English clip as Mandarin.
+    os.environ["MEETTRANSLATE_NO_GPU"] = "1"
+
     st = store_mod.Store(tmp / "pipeline.db")
     session = st.start_session("now", str(wav))
     events: list[dict] = []
@@ -220,6 +225,18 @@ def test_homophone_rules_are_used_only_when_complete(tmp: Path) -> None:
         assert tr._hr_for("en") == {} and tr._hr_for("vi") == {} and tr._hr_for("") == {}
     finally:
         config.HR_DIR = original
+
+
+def test_gpu_backend_declines_cleanly_when_disabled(tmp: Path) -> None:
+    """The GPU path must be optional: every caller falls back to sherpa-onnx when it says no."""
+    original = os.environ.get("MEETTRANSLATE_NO_GPU")
+    try:
+        os.environ["MEETTRANSLATE_NO_GPU"] = "1"
+        assert asr_gpu.maybe(["zh", "en"]) is None
+    finally:
+        os.environ.pop("MEETTRANSLATE_NO_GPU", None)
+        if original is not None:
+            os.environ["MEETTRANSLATE_NO_GPU"] = original
 
 
 def test_autodetect_reports_the_language(tmp: Path) -> None:
