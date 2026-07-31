@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+# A superseded run on the same branch has nothing left to tell us.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    name: server
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      # sounddevice binds PortAudio at import time, so importing anything under server/
+      # fails on a bare runner without it.
+      - name: Install PortAudio
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libportaudio2
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt httpx
+
+      # Models are ~1.5 GB and not in version control. The checks that need them skip
+      # themselves; everything else — device resolution, language rules, the HTTP API,
+      # the WebSocket fan-out — runs without a model on disk.
+      - name: Device and config checks
+        run: python -m server.test_audio
+
+      - name: Pipeline logic checks
+        run: python -m server.test_pipeline
+
+      - name: End-to-end API checks
+        run: python -m server.test_e2e
+
+  dashboard:
+    name: dashboard
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
+      - run: npm ci
+
+      # `npm run build` runs tsc first, so this covers type checking too.
+      - run: npm run build
+
+      - run: npm run lint
+
+  i18n:
+    name: i18n parity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # A missing key renders as the raw key path on screen, and nothing else catches it:
+      # the build passes and TypeScript has no view into JSON translation files.
+      - name: Every locale defines the same keys
+        run: python scripts/check_i18n_parity.py
