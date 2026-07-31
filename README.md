@@ -148,7 +148,7 @@ CPU 足夠，不需要顯示卡。有 NVIDIA 顯卡或 Apple Silicon 會自動�
 
 ## 授權與致謝
 
-MIT，見 [LICENSE](LICENSE)。
+MIT，見 [LICENSE](LICENSE)。第三方授權聲明見 [NOTICE](NOTICE)。
 
 管理介面衍生自 [OpenWA-Lab](https://github.com/JaplinChen/OpenWA-Lab)（MIT）。整體架構參考 [meetily](https://github.com/Zackriya-Solutions/meetily)，但改為本機服務加瀏覽器，未採用其 Tauri 外殼。
 
