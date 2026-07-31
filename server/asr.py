@@ -126,7 +126,8 @@ class Transcriber:
     """Whisper recognizers, one per language, created on first use."""
 
     def __init__(self, model_dir: Path | None = None, num_threads: int | None = None,
-                 provider: str = "cpu", quantized: bool = True, homophones: bool = False):
+                 provider: str = "cpu", quantized: bool = True, homophones: bool = False,
+                 languages: list[str] | None = None):
         self._dir = model_dir or config.WHISPER_DIRS["small"]
         self._threads = num_threads or default_threads()
         self._provider = provider
@@ -136,6 +137,10 @@ class Transcriber:
         # The homophone replacer is the substitute: it rewrites decoded Chinese by pinyin, so a
         # glossary term the model hears right but spells wrong comes out correct.
         self._hr = config.hr_files() if homophones else None
+        # Whisper auto-detect ranks every language it knows, so a noisy segment in a zh/vi/en
+        # meeting comes back as Portuguese or Tibetan. Both were measured on a real recording.
+        # Anything outside the configured set is a detection failure, not a participant.
+        self._languages = list(languages or [])
         self._cache: dict[str, sherpa_onnx.OfflineRecognizer] = {}
 
     def _paths(self) -> tuple[str, str, str]:
@@ -197,6 +202,13 @@ class Transcriber:
         text = " ".join(t for t, _ in parts if t)
         return text, next((lang for _, lang in parts if lang), language)
 
+    def _allowed(self, detected: str) -> bool:
+        """Whisper reports bare codes ('zh'), settings may carry a region ('zh-TW'); match the base."""
+        if not self._languages or not detected:
+            return True
+        base = detected.split("-")[0]
+        return any(base == code.split("-")[0] for code in self._languages)
+
     def transcribe(self, samples: np.ndarray, language: str) -> tuple[str, str]:
         """Return (text, language_actually_used).
 
@@ -204,7 +216,7 @@ class Transcriber:
         language produced the text it got so the speaker's language stats stay honest.
         """
         text, detected = self._decode(samples, language)
-        if is_noise(text):
+        if is_noise(text) or not self._allowed(detected):
             return "", detected
 
         if language and is_degenerate(text):
