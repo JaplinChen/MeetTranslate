@@ -145,3 +145,11 @@ CPU 足夠，不需要顯示卡。有 NVIDIA 顯卡或 Apple Silicon 會自動�
 - 遠端與會者看不到會議室電視。字幕只服務現場
 - 兩人同時講話時，切出的片段混有兩人聲音，語者分離會不穩
 - 會議室發言經 Teams 壓縮與降噪後才進來，辨識率低於直接收音
+
+## 授權與致謝
+
+MIT，見 [LICENSE](LICENSE)。
+
+管理介面衍生自 [OpenWA-Lab](https://github.com/JaplinChen/OpenWA-Lab)（MIT）。整體架構參考 [meetily](https://github.com/Zackriya-Solutions/meetily)，但改為本機服務加瀏覽器，未採用其 Tauri 外殼。
+
+語音處理使用 [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)：Silero VAD、Whisper、3D-Speaker 語者嵌入。簡繁轉換使用 [OpenCC](https://github.com/BYVoid/OpenCC)。
