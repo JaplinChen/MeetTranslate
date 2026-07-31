@@ -29,7 +29,12 @@ from . import config
 # meeting-room TV are an immediately visible failure.
 _to_traditional = OpenCC("s2twp")
 
-_CJK_OR_WORD = re.compile(r"[一-鿿]|[A-Za-zÀ-ỹ]+")
+# Han, kana and hangul count as one token each; Latin words as one per word. Kana and hangul are
+# here because Whisper reaches for them when decoding noise, and that output collapses too.
+_CJK_OR_WORD = re.compile(r"[一-鿿ぁ-ヿ가-힣]|[A-Za-zÀ-ỹ]+")
+# Bracketed spans, closing bracket optional: Whisper truncates these as often as it closes them
+# ("[static" and "[Bell" both showed up in a 15-minute sample).
+_ANNOTATION = re.compile(r"[\[(（【][^\])）】]*[\])）】]?")
 
 # Whisper accepts at most 30 seconds and silently discards the rest — sherpa logs a warning and
 # returns a transcript of the first 30 s only. VAD is configured to cut before this, but a guard
@@ -59,6 +64,18 @@ def is_degenerate(text: str) -> bool:
     if len(tokens) < 8:
         return False  # too short to tell repetition from a genuinely terse utterance
     return len(set(tokens)) / len(tokens) < 0.3
+
+
+def is_noise(text: str) -> bool:
+    """True for Whisper's non-speech annotations: `[MUSIC PLAYING]`, `(static)`, `[BLANK_AUDIO]`.
+
+    Whisper does not stay silent when handed silence — it emits one of these tags. Measured on a
+    real interview recording, every one of the first ten minutes of room noise before the meeting
+    started produced one, and each became its own phantom speaker with its own phantom language.
+    Only a decode that is *nothing but* annotation is dropped, so a real utterance that happens to
+    contain a parenthesis survives.
+    """
+    return bool(text.strip()) and not _ANNOTATION.sub("", text).strip(" \t-–—.,")
 
 
 class Vad:
@@ -109,12 +126,16 @@ class Transcriber:
     """Whisper recognizers, one per language, created on first use."""
 
     def __init__(self, model_dir: Path | None = None, num_threads: int | None = None,
-                 provider: str = "cpu", quantized: bool = True):
+                 provider: str = "cpu", quantized: bool = True, homophones: bool = False):
         self._dir = model_dir or config.WHISPER_DIRS["small"]
         self._threads = num_threads or default_threads()
         self._provider = provider
         # Quantized weights for live use; postprocess has no latency budget and prefers float32.
         self._quantized = quantized
+        # Whisper has no hotword biasing in sherpa-onnx (contextual biasing is transducer-only).
+        # The homophone replacer is the substitute: it rewrites decoded Chinese by pinyin, so a
+        # glossary term the model hears right but spells wrong comes out correct.
+        self._hr = config.hr_files() if homophones else None
         self._cache: dict[str, sherpa_onnx.OfflineRecognizer] = {}
 
     def _paths(self) -> tuple[str, str, str]:
@@ -133,9 +154,17 @@ class Transcriber:
             raise FileNotFoundError(f"Whisper tokens file missing: {tok}")
         return str(pick("encoder")), str(pick("decoder")), str(tok)
 
+    def _hr_for(self, language: str) -> dict[str, str]:
+        """Chinese only. The replacer round-trips text through pinyin, which loses the spaces in
+        anything Latin — measured on a real recording, "You gotta take those from them" came back
+        as one word. Auto-detect is excluded for the same reason: it decodes every language, so it
+        cannot be handed a Chinese-only rewrite."""
+        return self._hr if (self._hr and language.startswith("zh")) else {}
+
     def _recognizer(self, language: str) -> sherpa_onnx.OfflineRecognizer:
         if language not in self._cache:
             enc, dec, tok = self._paths()
+            hr = self._hr_for(language)
             self._cache[language] = sherpa_onnx.OfflineRecognizer.from_whisper(
                 encoder=enc,
                 decoder=dec,
@@ -143,6 +172,7 @@ class Transcriber:
                 language=language,  # '' means auto-detect
                 num_threads=self._threads,
                 provider=self._provider,
+                **hr,
             )
         return self._cache[language]
 
@@ -174,9 +204,13 @@ class Transcriber:
         language produced the text it got so the speaker's language stats stay honest.
         """
         text, detected = self._decode(samples, language)
+        if is_noise(text):
+            return "", detected
 
         if language and is_degenerate(text):
             fallback, fallback_lang = self._decode(samples, "")
+            if is_noise(fallback):
+                return "", fallback_lang
             if not is_degenerate(fallback):
                 return _post(fallback, fallback_lang), fallback_lang
 
