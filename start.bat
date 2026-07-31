@@ -13,6 +13,14 @@ if not exist ".venv\Scripts\python.exe" (
     echo Creating virtual environment...
     python -m venv .venv || goto :fail
     .venv\Scripts\python.exe -m pip install -q -r requirements.txt || goto :fail
+
+    rem A machine with an NVIDIA card runs recognition nine times faster on it. Installed here
+    rem rather than left to the README, because the CPU fallback is silent — you would never
+    rem know the card was idle.
+    nvidia-smi >nul 2>&1 && (
+        echo NVIDIA GPU detected, installing GPU recognition...
+        .venv\Scripts\python.exe -m pip install -q -r requirements-gpu.txt
+    )
 )
 
 if not exist "dashboard\dist\index.html" (
