@@ -76,7 +76,7 @@ class Transcriber:
         text = "".join(s.text for s in segments).strip()
         detected = (info.language or language or "").strip()
 
-        if asr.is_noise(text) or not self._allowed(detected):
+        if asr.is_noise(text) or asr.is_hallucination(text) or not self._allowed(detected):
             return "", detected
         return asr._post(text, detected), detected
 

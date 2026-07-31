@@ -24,6 +24,27 @@ def test_noise_annotations_are_dropped() -> None:
         assert asr.is_noise(text), text
 
 
+def test_youtube_boilerplate_is_dropped() -> None:
+    """Whisper answers unreadable audio with subtitle sign-offs. On seven real interviews these
+    were 15% of every Vietnamese line, and none of it was spoken."""
+    for text in ("Cảm ơn các bạn đã theo dõi và đăng ký kênh của mình.",
+                 "Hãy subscribe cho kênh La La School",
+                 "Cảm ơn các bạn đã theo dõi và hẹn gặp lại.",
+                 "您可以訂閱我們的頻道,並且請點選訂閱",
+                 "明鏡及點點欄目",
+                 "I'll see you in a minute. Thanks for watching."):
+        assert asr.is_hallucination(text), text
+
+
+def test_hallucination_filter_spares_real_speech() -> None:
+    """Matched as phrases: a meeting may say 訂閱 or subscribe without meaning a channel."""
+    for text in ("Bây giờ mình hiện tại đang làm thủ công bằng Excel.",
+                 "我們要訂閱這個服務嗎",
+                 "我們的料號其實變動很大",
+                 "這個 schedule 要 delay 一週"):
+        assert not asr.is_hallucination(text), text
+
+
 def test_noise_keeps_speech_containing_brackets() -> None:
     assert not asr.is_noise("這個 (ERP) 系統要換掉")
     assert not asr.is_noise("- All right")

@@ -66,6 +66,23 @@ def is_degenerate(text: str) -> bool:
     return len(set(tokens)) / len(tokens) < 0.3
 
 
+# Whisper was trained on YouTube subtitles and reproduces their sign-offs when handed audio it
+# cannot read. Measured over seven real interviews: 39 of 265 Vietnamese lines were channel
+# promotion, none of it spoken. Matched as phrases, not keywords — a meeting may legitimately say
+# "subscribe" or "訂閱", but not "subscribe to our channel".
+_HALLUCINATIONS = re.compile(
+    r"đăng ký kênh|theo dõi và (hẹn|đăng)|hẹn gặp lại|subscribe cho kênh|la la school"
+    r"|thanks for watching|subscribe to (our|the) channel|please subscribe"
+    r"|訂閱(我們的)?頻道|點選訂閱|歡迎訂閱|請不吝|點贊|打賞|明鏡|點點欄目",
+    re.IGNORECASE,
+)
+
+
+def is_hallucination(text: str) -> bool:
+    """True for Whisper's YouTube boilerplate, which is never something a participant said."""
+    return bool(_HALLUCINATIONS.search(text))
+
+
 def is_noise(text: str) -> bool:
     """True for Whisper's non-speech annotations: `[MUSIC PLAYING]`, `(static)`, `[BLANK_AUDIO]`.
 
@@ -216,12 +233,12 @@ class Transcriber:
         language produced the text it got so the speaker's language stats stay honest.
         """
         text, detected = self._decode(samples, language)
-        if is_noise(text) or not self._allowed(detected):
+        if is_noise(text) or is_hallucination(text) or not self._allowed(detected):
             return "", detected
 
         if language and is_degenerate(text):
             fallback, fallback_lang = self._decode(samples, "")
-            if is_noise(fallback):
+            if is_noise(fallback) or is_hallucination(fallback):
                 return "", fallback_lang
             if not is_degenerate(fallback):
                 return _post(fallback, fallback_lang), fallback_lang
