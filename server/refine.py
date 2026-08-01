@@ -67,7 +67,8 @@ def build_prompt(lines: list[Line], context: list[Line], terms: list[Term], topi
         "- 中文一律繁體。英文與越南語維持原文",
         "- 不要增刪空白或標點。加空白不算修正",
         "",
-        "輸出格式：每行 `編號: 修正後的文字`，行數與輸入完全相同，不加任何說明。",
+        "輸出格式：**只輸出需要修改的行**，每行 `編號: 修正後的完整句子`。",
+        "沒有問題的行不要輸出。全部都沒問題就輸出 NONE。不要加任何說明。",
     ]
 
     if terms:
@@ -127,16 +128,22 @@ def accept(original: str, candidate: str, terms: list[Term] | None = None) -> bo
 def parse_response(raw: str, lines: list[Line], terms: list[Term] | None = None) -> list[str]:
     """Map the numbered reply back onto the input, keeping originals wherever it disagrees.
 
-    A reply with the wrong number of lines means the model restructured the transcript instead of
-    correcting it; the whole chunk is discarded rather than guessed at.
+    Only changed lines come back. Asking for the whole chunk made the model copy out two dozen
+    correct sentences to deliver two corrections — measured at 570 output tokens per 25 lines
+    against 42 tokens a second, which was most of the runtime.
+
+    An index outside the chunk means the model lost track of the numbering; that line is dropped
+    rather than applied to whatever happens to sit at that position.
     """
     got: dict[int, str] = {}
     for row in raw.splitlines():
         if m := NUMBERED.match(row):
-            got[int(m.group(1))] = m.group(2)
+            index = int(m.group(1))
+            if 1 <= index <= len(lines):
+                got[index] = m.group(2)
 
-    if len(got) != len(lines):
-        log.warning("refine returned %d lines for %d, keeping originals", len(got), len(lines))
+    if len(got) > len(lines) // 2:
+        log.warning("refine rewrote %d of %d lines, keeping originals", len(got), len(lines))
         return [l.text for l in lines]
 
     out = []

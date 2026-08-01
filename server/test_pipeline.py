@@ -24,16 +24,21 @@ def test_refine_keeps_the_original_when_the_model_rewrites() -> None:
     fixed = ["我們的料號其實變動很大", "生管這邊先開始"]
     rewrite = "我們的料號變動幅度相當大，這點需要注意"
     terms = [store.Term(id=0, source="生管", lang="", mode="hint", category="", targets={})]
-    reply = lambda rows: chr(10).join(f"{i}: {t}" for i, t in enumerate(rows, 1))
 
-    assert refine.parse_response(reply(fixed), lines, terms) == fixed
+    # Only changed lines come back, and an unmentioned line keeps its original text.
+    assert refine.parse_response("1: " + fixed[0], lines, terms) == [fixed[0], lines[1].text]
 
     # A fluent rewrite of the same meaning must be refused.
-    assert refine.parse_response(reply([rewrite, fixed[1]]), lines, terms)[0] == lines[0].text
+    assert refine.parse_response("1: " + rewrite, lines, terms)[0] == lines[0].text
 
-    # Wrong line count means the transcript was restructured; keep everything.
-    assert refine.parse_response(reply(fixed[:1]), lines, terms) == [l.text for l in lines]
+    # An index outside the chunk is the model losing count; it must not land on another line.
+    assert refine.parse_response("7: " + fixed[0], lines, terms) == [l.text for l in lines]
     assert refine.parse_response("nothing numbered here", lines, terms) == [l.text for l in lines]
+
+    # Rewriting most of a chunk is restructuring, not correcting; keep all of it.
+    many = [refine.Line("S1", "zh", f"第{i}句話沒有問題") for i in range(6)]
+    reply_all = chr(10).join(f"{i}: 第{i}句話有問題" for i in range(1, 6))
+    assert refine.parse_response(reply_all, many, terms) == [l.text for l in many]
 
 
 def test_refine_rejects_corrections_that_do_not_sound_alike() -> None:
