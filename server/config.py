@@ -34,17 +34,30 @@ WHISPER_DIRS = {
 
 # Below this cosine similarity to every known centroid, a segment starts a new speaker.
 #
-# Swept over two real interview recordings, counting clusters per threshold. At 0.55 a three-person
-# interview split into fourteen speakers, twelve of them holding a single utterance; the room mic
-# and Teams' noise suppression leave the same voice further from itself than a studio recording
-# would. 0.45 is the knee on both recordings — three balanced clusters on the multi-speaker one,
-# one dominant cluster on the single-presenter one, and no singleton tail on either.
-SPEAKER_THRESHOLD = 0.45
+# Chosen on how the speech divides, not on how many clusters appear. Counting clusters is what
+# produced the previous value of 0.45, which looked tidy — no tail of one-utterance speakers — and
+# was tidy because everyone had been merged into one. Measured across two full interviews:
+#
+#   threshold   warehouse interview (37 min)   sales interview (67 min)
+#   0.45        one cluster, 100%              49 / 14 / 3 / 1
+#   0.55        one cluster, 100%              23 / 14 / 12 / 9 / 4 / 3
+#   0.65        29 / 7                         21 / 14 / 12 / 8 / 4 / 3
+#
+# 0.65 is the only value that separates anyone in the first recording while staying stable in the
+# second. Even there it is fragile: a room microphone behind Teams' noise suppression flattens the
+# differences between voices, and on some recordings nothing separates them at all.
+SPEAKER_THRESHOLD = 0.65
 # Segments shorter than this give unstable embeddings; they inherit the previous speaker.
 MIN_EMBED_SECONDS = 1.0
-# Similarity required before a stored voiceprint puts a name on a speaker. Deliberately stricter
-# than SPEAKER_THRESHOLD: a wrong merge inside one meeting shows up as a split transcript, while a
-# wrong name from last month is attributed to a real person and nobody thinks to check it.
+# Similarity required before a stored voiceprint puts a name on a speaker.
+#
+# Unvalidated, and honestly so. The material that should have tested it — seven interviews across
+# two firms sharing participants — could not, because clustering had merged each meeting into a
+# single speaker, so comparing meetings compared everyone against everyone. Those pairs scored
+# 0.69 to 0.94, which says nothing about whether two people are the same person.
+#
+# Kept equal to SPEAKER_THRESHOLD until a recording exists where clustering works and a known
+# person appears twice.
 KNOWN_SPEAKER_THRESHOLD = 0.65
 
 
