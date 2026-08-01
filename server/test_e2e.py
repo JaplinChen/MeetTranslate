@@ -89,6 +89,29 @@ def test_glossary_crud(client: TestClient) -> None:
     assert [t["source"] for t in left] == ["產能"]
 
 
+def test_glossary_reports_what_a_term_would_overwrite(client: TestClient) -> None:
+    """Adding a term is not obviously destructive, which is the problem.
+
+    料號 and 料耗 are both liaohao and 料耗 is a term of the trade; adding 料號 rewrote it
+    forty-two times across seven interviews and nothing said so. The answer comes from the
+    meetings already recorded — what these people say, not what Mandarin permits.
+    """
+    session = main.store.start_session("now", "x.wav")
+    for text in ("這個料耗的部分", "料耗變動原則", "刀具的料耗很多"):
+        main.store.add_line(session, 1.0, "S1", "zh", text, {})
+
+    hits = client.get("/api/glossary/collisions", params={"source": "料號"}).json()
+    assert hits["collisions"] == [{"text": "料耗", "count": 3}]
+
+    # A word already in the glossary is not collateral: registering it is how two real
+    # homophones are made to coexist.
+    client.post("/api/glossary", json={"source": "料耗", "mode": "protect"})
+    assert client.get("/api/glossary/collisions", params={"source": "料號"}).json()["collisions"] == []
+
+    assert client.get("/api/glossary/collisions", params={"source": "交貨"}).json()["collisions"] == []
+    assert client.get("/api/glossary/collisions", params={"source": " "}).status_code == 400
+
+
 def test_llm_config_never_returns_the_key(client: TestClient) -> None:
     client.put("/api/translate/config", json={
         "llmProvider": "anthropic", "llmModel": "claude-opus-5", "llmApiKey": "sk-secret-value-1234",

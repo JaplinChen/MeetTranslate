@@ -7,7 +7,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { appApi, type GlossaryTerm } from '../services/app.api';
 import './Glossary.css';
 
-const MODES = ['translate', 'keep', 'hint'] as const;
+const MODES = ['translate', 'keep', 'hint', 'protect'] as const;
 
 const emptyDraft = () => ({
   source: '',
@@ -26,6 +26,7 @@ export function Glossary() {
   const [draft, setDraft] = useState(emptyDraft());
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [clash, setClash] = useState<{ text: string; count: number }[]>([]);
 
   const fail = (err: unknown) => toast.error(err instanceof Error ? err.message : String(err));
 
@@ -46,14 +47,40 @@ export function Glossary() {
 
   const add = async () => {
     if (!draft.source.trim()) return;
+
+    // The first press reports what this term would overwrite; the second goes ahead. Nothing is
+    // blocked — a homophone may be exactly what you meant — but it is never silent.
+    if (!clash.length) {
+      const found = await collisionsFor(draft.source);
+      if (found.length) return setClash(found);
+    }
+
     setBusy(true);
     try {
       setTerms(await appApi.addTerm(draft));
       setDraft(emptyDraft());
+      setClash([]);
     } catch (err) {
       fail(err);
     } finally {
       setBusy(false);
+    }
+  };
+
+  // The corrector rewrites anything whose pinyin matches a term, and Mandarin supplies
+  // homophones for almost everything, so adding one is not obviously destructive: 料號 and 料耗
+  // are both liaohao, 料耗 is a term of the trade, and adding 料號 rewrote it forty-two times
+  // without saying so.
+  //
+  // Checked on the way in rather than as the field loses focus. Two interactions in this app have
+  // now depended on a focus event and not received one, and a warning that sometimes fires is
+  // worse than none. Asked against the meetings already recorded, so the answer is about what
+  // these people say rather than what Mandarin permits.
+  const collisionsFor = async (source: string) => {
+    try {
+      return (await appApi.termCollisions(source.trim())).collisions;
+    } catch {
+      return [];
     }
   };
 
@@ -81,12 +108,19 @@ export function Glossary() {
       <PageHeader title={t('glossary.title')} subtitle={t('glossary.subtitle')} />
 
       <section className="etable-panel">
+        {clash.length > 0 && (
+          <p className="gloss-clash">
+            {t('glossary.clashWarning', {
+              list: clash.map(c => `${c.text} (${c.count})`).join('、'),
+            })}
+          </p>
+        )}
         <div className="gloss-add">
           <input
             className="gloss-input"
             placeholder={t('glossary.sourcePlaceholder')}
             value={draft.source}
-            onChange={e => setDraft({ ...draft, source: e.target.value })}
+            onChange={e => { setDraft({ ...draft, source: e.target.value }); setClash([]); }}
             onKeyDown={e => e.key === 'Enter' && !busy && add()}
           />
           <select

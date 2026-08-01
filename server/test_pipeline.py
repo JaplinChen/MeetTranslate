@@ -287,6 +287,32 @@ def test_tones_decide_between_homophone_terms() -> None:
     assert c.fix("他終於昇官了") == "他終於升官了"
 
 
+def test_protected_words_are_vocabulary_not_destinations() -> None:
+    """Declaring a word real must not make it a target.
+
+    才夠 and 採購 are both caigou and both ordinary speech. Registering 才夠 to shield it from the
+    corrector turned it into a destination instead, and 採購 — 217 occurrences — was rewritten to
+    才夠 211 times before the corpus replay caught it.
+    """
+    def term(source: str, mode: str = "hint") -> store.Term:
+        return store.Term(id=0, source=source, lang="", mode=mode, category="", targets={})
+
+    c = correct.Corrector([term("才夠", "protect"), term("生管")])
+    assert c.fix("這次的採購單要重做") == "這次的採購單要重做"
+    assert c.fix("真的不是才夠算") == "真的不是才夠算"
+    # Ordinary terms still correct as before.
+    assert c.fix("那個生館會上系統") == "那個生管會上系統"
+
+
+def test_collisions_report_what_a_term_would_overwrite() -> None:
+    """The check that was missing when 料號 was added and destroyed 料耗 42 times."""
+    corpus = "這個料耗的部分料耗要看 才夠算 交貨時間"
+    assert correct.collisions("料號", corpus, set()) == {"料耗": 2}
+    # A word already in the glossary is not collateral.
+    assert correct.collisions("料號", corpus, {"料耗"}) == {}
+    assert correct.collisions("交貨", corpus, set()) == {}
+
+
 def test_a_term_is_never_rewritten_into_another() -> None:
     """The glossary saying a word exists is also the glossary saying it is not a mistake.
 

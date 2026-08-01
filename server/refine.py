@@ -20,7 +20,7 @@ from dataclasses import dataclass
 
 from opencc import OpenCC
 
-from .correct import edit_distance, pinyin_of
+from .correct import diff_terms, edit_distance, pinyin_of
 from .store import Term
 
 log = logging.getLogger("meettranslate.refine")
@@ -49,6 +49,9 @@ MAX_TERM_SOUND_CHANGE = 0.55
 # characters inside a sixty-character sentence are a rounding error to a ratio and still nonsense.
 # `夢表` for `模具` and `監獄` for `零件` both slipped through on ratio alone.
 MAX_SOUND_EDITS = 3
+# A word the meeting room says often is a word, whatever a model thinks it heard. Below this many
+# occurrences the corpus has not established anything either way.
+ESTABLISHED = 3
 
 NUMBERED = re.compile(r"^\s*(\d+)\s*[:：.]\s*(.*)$")
 
@@ -97,6 +100,28 @@ def build_prompt(lines: list[Line], context: list[Line], terms: list[Term], topi
 
 def _squeeze(text: str) -> str:
     return re.sub(r"\s+", "", text)
+
+
+def displaces_a_word(original: str, candidate: str, corpus: str) -> bool:
+    """Whether this correction replaces something the meeting room says with something rarer.
+
+    Reported, not enforced. As a guard it was measured and backed out: comparing bare spans
+    rejected 標準公司 -> 標準工時, which is right, because 公司 alone appears 83 times and nobody
+    says 標準公司. Adding two characters of context fixed that and broke the rest — 之後才是
+    appears twice in this corpus, too rare to establish anything, so the archaic 之後纔是 sailed
+    through. Three thousand lines is not enough vocabulary for either version to be trusted with
+    a veto.
+
+    It still separates signal from noise well enough to be worth reading, which is what
+    scripts/regress.py uses it for.
+    """
+    if not corpus:
+        return False
+    for was, now in diff_terms(original, candidate):
+        seen = corpus.count(was)
+        if seen >= ESTABLISHED and seen > corpus.count(now):
+            return True
+    return False
 
 
 def accept(original: str, candidate: str, terms: list[Term] | None = None) -> bool:

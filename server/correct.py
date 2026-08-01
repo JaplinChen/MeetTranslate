@@ -85,6 +85,10 @@ class _Rule:
 def _rules(terms: list[Term]) -> list[_Rule]:
     out: list[_Rule] = []
     for t in terms:
+        # A protected word is vocabulary, not a destination. Both halves matter: it is skipped as
+        # a window (below, via `_known`) and never used as a replacement.
+        if t.mode == "protect":
+            continue
         chinese = bool(HAN.search(t.source))
         key = pinyin_of(t.source, tones=False) if chinese else t.source.lower()
         if len(key) >= MIN_TERM_KEY:
@@ -107,7 +111,7 @@ class Corrector:
         # Two terms can be homophones of each other — 工序 and 供需 are both gongxu, and both are
         # ordinary vocabulary in a manufacturing interview. Text that already spells one of them
         # is left alone: the glossary saying a word exists is also the glossary saying it is not
-        # a mistake.
+        # a mistake. Protected words are here and nowhere else — known, never written.
         self._known = {t.source for t in terms}
         # Longest first: a correction that contains another must win.
         self._aliases = sorted((aliases or {}).items(), key=lambda kv: -len(kv[0]))
@@ -227,3 +231,22 @@ def diff_terms(original: str, candidate: str) -> list[tuple[str, str]]:
         if MIN_LEN <= len(after) <= MAX_LEN and before != after:
             out.append((before, after))
     return out
+
+
+def collisions(term: str, text: str, known: set[str]) -> dict[str, int]:
+    """Every other spelling in `text` this term would overwrite.
+
+    Adding a term is not obviously destructive, which is the problem: `料號` and `料耗` are both
+    liaohao, 料耗 is a term of the trade, and adding 料號 rewrote it forty-two times without
+    saying so. Anything already in the glossary is excluded — a registered word is not collateral.
+    """
+    key = pinyin_of(term, tones=False)
+    width = len(term)
+    found: dict[str, int] = {}
+    for i in range(len(text) - width + 1):
+        window = text[i : i + width]
+        if window == term or window in known or len(HAN.findall(window)) != width:
+            continue
+        if pinyin_of(window, tones=False) == key:
+            found[window] = found.get(window, 0) + 1
+    return found

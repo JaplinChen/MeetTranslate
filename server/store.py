@@ -19,7 +19,12 @@ DB_PATH = config.ROOT / "meettranslate.db"
 # How a glossary term is applied. `keep` exists because code-switched English terms
 # ("schedule", "delay") are shared vocabulary in cross-border teams — translating them into
 # Vietnamese makes the subtitle harder to read, not easier.
-TERM_MODES = ("translate", "keep", "hint")
+#
+# `protect` is the opposite of the others: it declares a word real so the corrector leaves it
+# alone, and never rewrites anything into it. Needed because 才夠 and 採購 are homophones and both
+# are ordinary speech — registering 才夠 to shield it made it a target instead, and 採購 was
+# rewritten to 才夠 211 times across seven interviews.
+TERM_MODES = ("translate", "keep", "hint", "protect")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS glossary (
@@ -304,6 +309,18 @@ class Store:
         with self._lock:
             self._db.execute("DELETE FROM known_speaker WHERE name=?", (name,))
             self._db.commit()
+
+    def transcript_text(self, limit: int = 20000) -> str:
+        """Every line this room has recorded, as one string.
+
+        The corpus for deciding whether a glossary term is safe is the meeting history itself —
+        what these people actually say, rather than a dictionary of what Mandarin permits.
+        """
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT source FROM line ORDER BY id DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return chr(10).join(r["source"] for r in rows)
 
     def speaker_names(self, session_id: int) -> dict[str, str]:
         with self._lock:
