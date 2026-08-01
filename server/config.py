@@ -42,6 +42,10 @@ WHISPER_DIRS = {
 SPEAKER_THRESHOLD = 0.45
 # Segments shorter than this give unstable embeddings; they inherit the previous speaker.
 MIN_EMBED_SECONDS = 1.0
+# Similarity required before a stored voiceprint puts a name on a speaker. Deliberately stricter
+# than SPEAKER_THRESHOLD: a wrong merge inside one meeting shows up as a split transcript, while a
+# wrong name from last month is attributed to a real person and nobody thinks to check it.
+KNOWN_SPEAKER_THRESHOLD = 0.65
 
 
 @dataclass

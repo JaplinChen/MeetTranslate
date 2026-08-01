@@ -23,6 +23,7 @@ export function Sessions() {
   const [lines, setLines] = useState<TranscriptLine[]>([]);
   const [names, setNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState<{ id: number; text: string } | null>(null);
 
   const fail = (err: unknown) => toast.error(err instanceof Error ? err.message : String(err));
 
@@ -54,6 +55,22 @@ export function Sessions() {
     if (selected === null) return;
     try {
       setNames(await appApi.setSpeakerNames(selected, { [code]: name }));
+    } catch (err) {
+      fail(err);
+    }
+  };
+
+  // Correcting a line is the only ground truth the system gets: someone who was in the room
+  // saying what was actually said. The backend learns the pair and applies it from then on.
+  //
+  // A textarea rather than contentEditable: this transcript is mostly Chinese, and an IME
+  // composing inside a contentEditable fires input and blur events mid-character.
+  const saveLine = async (lineId: number, source: string, previous: string) => {
+    setEditing(null);
+    if (selected === null || source.trim() === previous || !source.trim()) return;
+    try {
+      const r = await appApi.setLineSource(selected, lineId, source.trim());
+      setLines(r.lines);
     } catch (err) {
       fail(err);
     }
@@ -121,9 +138,35 @@ export function Sessions() {
                   <span className="sess-time">{clock(line.start)}</span>
                   <span className="sess-who">{names[line.speaker] || line.speaker}</span>
                   <div className="sess-body">
-                    <p className="sess-source" lang={line.lang}>
-                      {line.source}
-                    </p>
+                    {editing?.id === line.id ? (
+                      <textarea
+                        className="sess-source sess-editing"
+                        lang={line.lang}
+                        autoFocus
+                        rows={Math.max(1, Math.ceil(editing.text.length / 40))}
+                        value={editing.text}
+                        onChange={e => setEditing({ id: line.id, text: e.target.value })}
+                        onBlur={() => saveLine(line.id, editing.text, line.source)}
+                        onKeyDown={e => {
+                          if (e.key === 'Escape') setEditing(null);
+                          // Enter saves, shift+Enter breaks the line: a transcript line is one
+                          // utterance, so the common case is finishing rather than continuing.
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            e.currentTarget.blur();
+                          }
+                        }}
+                      />
+                    ) : (
+                      <p
+                        className="sess-source"
+                        lang={line.lang}
+                        title={t('sessions.editHint')}
+                        onClick={() => setEditing({ id: line.id, text: line.source })}
+                      >
+                        {line.source}
+                      </p>
+                    )}
                     {langs
                       .filter(l => line.translations[l])
                       .map(l => (

@@ -1,0 +1,70 @@
+.learned-note {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.learned-empty {
+  margin: 0;
+  padding: 20px 0;
+  color: var(--muted);
+  font-size: 14px;
+  text-align: center;
+}
+
+.learned-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.learned-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.learned-name,
+.learned-right {
+  font-weight: 600;
+}
+
+.learned-wrong {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.learned-arrow {
+  color: var(--muted);
+  flex: none;
+}
+
+.learned-forget {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  padding: 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.learned-forget:hover:not(:disabled) {
+  border-color: var(--border);
+  color: var(--danger, #dc2626);
+}
+
+.learned-forget:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

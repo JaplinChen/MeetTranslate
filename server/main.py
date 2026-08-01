@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import audio, config, llm, postprocess, translate
+from . import audio, config, correct, llm, postprocess, translate
 from .hub import Hub
 from .pipeline import Pipeline
 from .store import TERM_MODES, Store
@@ -227,8 +227,57 @@ def get_lines(session_id: int) -> dict:
 @app.put("/api/sessions/{session_id}/speakers")
 def put_speaker_names(session_id: int, body: dict) -> dict:
     for code, name in body.items():
-        store.set_speaker_name(session_id, str(code), str(name))
+        code, name = str(code), str(name).strip()
+        store.set_speaker_name(session_id, code, name)
+        # Naming a speaker is the only labelled data this system ever gets. Attaching it to the
+        # voiceprint is what stops the next meeting asking the same question.
+        if name and (centroid := store.voiceprint(session_id, code)):
+            store.remember_speaker(name, centroid)
     return store.speaker_names(session_id)
+
+
+@app.get("/api/speakers/known")
+def get_known_speakers() -> list[dict]:
+    return [{"name": name} for name, _ in store.known_speakers()]
+
+
+@app.delete("/api/speakers/known/{name}")
+def delete_known_speaker(name: str) -> list[dict]:
+    store.forget_speaker(name)
+    return get_known_speakers()
+
+
+@app.put("/api/sessions/{session_id}/lines/{line_id}")
+def put_line(session_id: int, line_id: int, body: dict) -> dict:
+    """Correct one transcript line, and learn the pair.
+
+    The edit is the only ground truth this system ever sees — someone who was in the room saying
+    what was actually said. Storing the before/after means the same mistake is fixed automatically
+    everywhere it appears next time, live as well as after the fact.
+    """
+    source = str(body.get("source", "")).strip()
+    if not source:
+        raise HTTPException(400, "source required")
+
+    before = next((l for l in store.lines(session_id) if l["id"] == line_id), None)
+    if before is None:
+        raise HTTPException(404, "no such line in this session")
+
+    store.update_line(line_id, source, before["translations"])
+    for wrong, right in correct.diff_terms(before["source"], source):
+        store.add_correction(wrong, right, before["lang"])
+    return {"lines": store.lines(session_id), "speakers": store.speaker_names(session_id)}
+
+
+@app.get("/api/corrections")
+def get_corrections() -> list[dict]:
+    return [{"wrong": w, "right": r} for w, r in store.corrections().items()]
+
+
+@app.delete("/api/corrections/{wrong}")
+def delete_correction(wrong: str) -> list[dict]:
+    store.forget_correction(wrong)
+    return get_corrections()
 
 
 @app.post("/api/sessions/{session_id}/reprocess")

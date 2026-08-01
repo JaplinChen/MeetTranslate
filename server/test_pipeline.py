@@ -24,16 +24,21 @@ def test_refine_keeps_the_original_when_the_model_rewrites() -> None:
     fixed = ["我們的料號其實變動很大", "生管這邊先開始"]
     rewrite = "我們的料號變動幅度相當大，這點需要注意"
     terms = [store.Term(id=0, source="生管", lang="", mode="hint", category="", targets={})]
-    reply = lambda rows: chr(10).join(f"{i}: {t}" for i, t in enumerate(rows, 1))
 
-    assert refine.parse_response(reply(fixed), lines, terms) == fixed
+    # Only changed lines come back, and an unmentioned line keeps its original text.
+    assert refine.parse_response("1: " + fixed[0], lines, terms) == [fixed[0], lines[1].text]
 
     # A fluent rewrite of the same meaning must be refused.
-    assert refine.parse_response(reply([rewrite, fixed[1]]), lines, terms)[0] == lines[0].text
+    assert refine.parse_response("1: " + rewrite, lines, terms)[0] == lines[0].text
 
-    # Wrong line count means the transcript was restructured; keep everything.
-    assert refine.parse_response(reply(fixed[:1]), lines, terms) == [l.text for l in lines]
+    # An index outside the chunk is the model losing count; it must not land on another line.
+    assert refine.parse_response("7: " + fixed[0], lines, terms) == [l.text for l in lines]
     assert refine.parse_response("nothing numbered here", lines, terms) == [l.text for l in lines]
+
+    # Rewriting most of a chunk is restructuring, not correcting; keep all of it.
+    many = [refine.Line("S1", "zh", f"第{i}句話沒有問題") for i in range(6)]
+    reply_all = chr(10).join(f"{i}: 第{i}句話有問題" for i in range(1, 6))
+    assert refine.parse_response(reply_all, many, terms) == [l.text for l in many]
 
 
 def test_refine_rejects_corrections_that_do_not_sound_alike() -> None:
@@ -70,6 +75,31 @@ def test_refine_rejects_corrections_that_do_not_sound_alike() -> None:
     assert refine.accept("一夕變更的流程", "工程變更的流程", terms)
     assert not refine.accept("一夕變更的流程", "工程變更的流程", [])
 
+    # Latitude, not immunity. The term is compared against the text it replaced: measured across
+    # the whole line instead, 土壤 became 交貨 and 祂 became 生管 on a real transcript, because
+    # two unrelated syllables inside a long sentence look like a rounding error.
+    delivery = [term("交貨"), term("生管"), term("收料")]
+    long_line = "然後我們這邊的狀況是說土壤的時間會影響到後面所有的排程跟人力安排這件事"
+    assert not refine.accept(long_line, long_line.replace("土壤", "交貨"), delivery)
+    assert not refine.accept("祂那邊的排程", "生管那邊的排程", delivery)
+    assert not refine.accept("浴室量的部分", "收料的部分", delivery)
+    # What the latitude is for: the recogniser mangled the term, but it still sounds like it.
+    assert refine.accept("那個申管會上系統", "那個生管會上系統", delivery)
+    assert refine.accept("收糧的部分", "收料的部分", delivery)
+
+
+def test_refine_converts_what_the_model_writes_in_simplified() -> None:
+    """The recogniser's output is already Traditional; a Simplified character in a correction can
+    only have come from the model. Converted character by character, not with the phrase table
+    used on ASR output — that one rewrites 對象 to 物件, which is the speaker's word, not an error.
+    """
+    lines = [refine.Line("S1", "zh", "申報的保税料件"),
+             refine.Line("S1", "zh", "這個對象要處理"),
+             refine.Line("S1", "en", "the tax iten")]
+    assert refine.parse_response("1: 申報的保税料號", lines)[0] == "申報的保稅料號"
+    assert refine.parse_response("2: 這個對象要處裡", lines)[1] == "這個對象要處裡"
+    assert refine.parse_response("3: the tax item", lines)[2] == "the tax item"
+
 
 def test_refine_prompt_states_the_domain_and_the_terms() -> None:
     said, earlier, term = "一夕變更的流程", "前面說過的話", "工程變更"
@@ -82,6 +112,97 @@ def test_refine_prompt_states_the_domain_and_the_terms() -> None:
     assert "SAP ERP interview" in prompt
     assert term in prompt and earlier in prompt
     assert f"1: {said}" in prompt
+
+
+def test_diff_terms_learns_the_word_that_was_wrong() -> None:
+    """An edit teaches a substitution, and that substitution is applied literally everywhere
+    afterwards — so what gets learned has to be the word, not a fragment of the sentence."""
+    # Widened to the shortest thing that is still a word: greedy widening would learn 認料耗 from
+    # 確認料耗, which then matches nothing else in the transcript.
+    assert correct.diff_terms("確認料耗的數量", "確認料號的數量") == [("料耗", "料號")]
+    assert correct.diff_terms("那個申管會上系統", "那個生管會上系統") == [("申管", "生管")]
+
+    # Widening steps over particles rather than absorbing them: 會的 -> 櫃的 would rewrite
+    # 開會的時間 to 開櫃的時間, so the widening goes left instead and learns the actual term.
+    assert correct.diff_terms("做一個排會的需求", "做一個排櫃的需求") == [("排會", "排櫃")]
+    assert correct.diff_terms("一樣的內容", "一樣的內容") == []
+
+
+def test_human_corrections_outrank_the_glossary() -> None:
+    """An edit is the only thing here labelled by someone who was in the room."""
+    c = correct.Corrector([], {"申管": "生管", "ELP系統": "ERP系統"})
+    assert c.fix("那個申管會上ELP系統") == "那個生管會上ERP系統"
+    assert c.fix("沒有問題的句子") == "沒有問題的句子"
+    assert correct.Corrector([], {}).fix("原文不動") == "原文不動"
+
+
+def test_refused_corrections_are_kept_as_evidence() -> None:
+    """What the guards throw away names the system's own blind spots.
+
+    A model that wants to write 工程變更 where the recogniser wrote 一夕變更 knows a term the
+    glossary does not. The correction is still refused — it sounds nothing like what was heard —
+    but the refusal is what scripts/learn_terms.py mines.
+    """
+    lines = [refine.Line("S1", "zh", "一夕變更的流程")]
+    rejected: list[refine.Rejected] = []
+    assert refine.parse_response("1: 工程變更的流程", lines, [], rejected) == [lines[0].text]
+    assert [(r.original, r.candidate) for r in rejected] == [("一夕變更的流程", "工程變更的流程")]
+
+    # Accepted corrections are not evidence of anything missing.
+    rejected.clear()
+    term = [store.Term(id=0, source="工程變更", lang="", mode="hint", category="", targets={})]
+    assert refine.parse_response("1: 工程變更的流程", lines, term, rejected)[0] == "工程變更的流程"
+    assert rejected == []
+
+
+def test_discarded_chunks_are_counted_not_hidden() -> None:
+    """A chunk thrown out whole leaves its lines exactly as recognised, which reads the same as a
+    chunk that needed nothing. Over seven interviews eleven chunks were discarded — 275 lines that
+    looked checked and were not."""
+    lines = [refine.Line("S1", "zh", f"第{i}句話沒有問題") for i in range(6)]
+    everything = chr(10).join(f"{i}: 第{i}句話有問題" for i in range(1, 6))
+
+    coverage = refine.Coverage()
+    coverage.lines = len(lines)
+    assert refine.parse_response(everything, lines, None, None, coverage) == [l.text for l in lines]
+    assert coverage.skipped == len(lines) and coverage.fraction == 1.0
+
+    # A chunk that was actually read counts as covered, corrections or not.
+    coverage = refine.Coverage()
+    coverage.lines = len(lines)
+    refine.parse_response("1: 第0句話有問題", lines, None, None, coverage)
+    assert coverage.skipped == 0
+
+
+def test_short_final_chunk_can_still_be_corrected() -> None:
+    """One correction is a majority of a one-line chunk, and the transcript's last few lines
+    always land in one. The restructuring guard needs a chunk to be about."""
+    lines = [refine.Line("S1", "zh", "料耗的問題")]
+    assert refine.parse_response("1: 料號的問題", lines) == ["料號的問題"]
+
+
+def test_known_voice_is_named_on_sight() -> None:
+    """A voice the room has met before arrives named instead of as another anonymous Sn.
+
+    Held to a stricter bar than in-meeting clustering: a wrong merge shows up as a split
+    transcript, a wrong name is attributed to a real person and nobody thinks to check it.
+    """
+    import numpy as np
+
+    vincent = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+    stranger = np.array([0.0, 1.0, 0.0], dtype=np.float32)
+    d = diarize.Diarizer.__new__(diarize.Diarizer)
+    d._known = [("Vincent", vincent)]
+
+    assert d._recognise(vincent) == "Vincent"
+    # Close, but not close enough to put someone's name on it.
+    nearly = np.array([1.0, 1.3, 0.0], dtype=np.float32)
+    assert diarize.cosine(nearly, vincent) < config.KNOWN_SPEAKER_THRESHOLD
+    assert d._recognise(nearly) == ""
+    assert d._recognise(stranger) == ""
+    # An empty roster never guesses.
+    d._known = []
+    assert d._recognise(vincent) == ""
 
 
 def test_degenerate_detects_collapsed_decode() -> None:
@@ -148,6 +269,39 @@ def test_corrector_fixes_near_misses_only() -> None:
     assert c.fix("我們公司的工作單位") == "我們公司的工作單位"
     assert c.fix("這個 schedule 要 delay 一週") == "這個 schedule 要 delay 一週"
     assert correct.Corrector([]).fix("原文不動") == "原文不動"
+
+
+def test_tones_decide_between_homophone_terms() -> None:
+    """Dropping tones is what makes the match work; keeping them is what makes it unambiguous.
+
+    生管 and 升官 are both shengguan with tones removed, so a misrecognition landed on whichever
+    rule happened to be checked first. Tones settle it: 生館 is sheng1guan3, which is 生管 exactly
+    and 升官 not at all.
+    """
+    def term(source: str) -> store.Term:
+        return store.Term(id=0, source=source, lang="", mode="hint", category="", targets={})
+
+    c = correct.Corrector([term("生管"), term("升官")])
+    assert c.fix("那個生館會上系統") == "那個生管會上系統"
+    assert c.fix("盛管那邊的排程") == "生管那邊的排程"
+    assert c.fix("他終於昇官了") == "他終於升官了"
+
+
+def test_a_term_is_never_rewritten_into_another() -> None:
+    """The glossary saying a word exists is also the glossary saying it is not a mistake.
+
+    工序 and 供需 are both gongxu and both ordinary vocabulary in a manufacturing interview.
+    Registering the one that was being overwritten is what lets them coexist — measured on real
+    transcripts, that is a better protection than a tone rule, which would have saved three real
+    words and cost seven genuine fixes.
+    """
+    def term(source: str) -> store.Term:
+        return store.Term(id=0, source=source, lang="", mode="hint", category="", targets={})
+
+    assert correct.Corrector([term("工序")]).fix("考慮你供需的狀況") == "考慮你工序的狀況"
+    both = correct.Corrector([term("工序"), term("供需")])
+    assert both.fix("考慮你供需的狀況") == "考慮你供需的狀況"
+    assert both.fix("工序的部分") == "工序的部分"
 
 
 def test_corrector_never_rewrites_a_near_rhyme() -> None:

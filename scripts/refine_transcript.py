@@ -67,7 +67,9 @@ def main() -> int:
 
     chunks = (len(lines) + refine.CHUNK_LINES - 1) // refine.CHUNK_LINES
     print(f"{len(lines)} lines, {chunks} requests, model {label}")
-    fixed = refine.Refiner(chat, topic=args.topic).refine(lines, Store().glossary())
+    coverage = refine.Coverage()
+    fixed = refine.Refiner(chat, topic=args.topic).refine(lines, Store().glossary(),
+                                                          coverage=coverage)
 
     changed = 0
     out = []

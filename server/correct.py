@@ -15,6 +15,7 @@ meeting-room TV that nobody said, which is worse than leaving the original mista
 
 from __future__ import annotations
 
+import difflib
 import re
 from dataclasses import dataclass
 
@@ -65,6 +66,7 @@ class _Rule:
     term: str
     key: str      # what we compare against: pinyin for Chinese, lowercase for Latin
     chinese: bool
+    toned: str = ""  # the term's pinyin with tones, for choosing between homophone terms
 
     @property
     def limit(self) -> int:
@@ -86,20 +88,36 @@ def _rules(terms: list[Term]) -> list[_Rule]:
         chinese = bool(HAN.search(t.source))
         key = pinyin_of(t.source, tones=False) if chinese else t.source.lower()
         if len(key) >= MIN_TERM_KEY:
-            out.append(_Rule(t.source, key, chinese))
+            out.append(_Rule(t.source, key, chinese, pinyin_of(t.source) if chinese else ""))
     # Longest first: a term that contains another must win, or the shorter one eats its prefix.
     return sorted(out, key=lambda r: -len(r.term))
 
 
 class Corrector:
-    """Rewrites near-misses of glossary terms to their canonical spelling."""
+    """Rewrites near-misses of glossary terms to their canonical spelling.
 
-    def __init__(self, terms: list[Term]):
+    Two sources, applied in that order of authority. `aliases` are pairs a human fixed on the
+    transcript page — what the recogniser wrote, and what was actually said. Nothing else here is
+    labelled by someone who was in the room, so they are applied literally and first. The glossary
+    rules that follow are inference from pinyin, and only get what the aliases did not already fix.
+    """
+
+    def __init__(self, terms: list[Term], aliases: dict[str, str] | None = None):
         self._rules = _rules(terms)
+        # Two terms can be homophones of each other — 工序 and 供需 are both gongxu, and both are
+        # ordinary vocabulary in a manufacturing interview. Text that already spells one of them
+        # is left alone: the glossary saying a word exists is also the glossary saying it is not
+        # a mistake.
+        self._known = {t.source for t in terms}
+        # Longest first: a correction that contains another must win.
+        self._aliases = sorted((aliases or {}).items(), key=lambda kv: -len(kv[0]))
 
     def fix(self, text: str) -> str:
-        if not text or not self._rules:
+        if not text:
             return text
+        for wrong, right in self._aliases:
+            if wrong in text:
+                text = text.replace(wrong, right)
         for rule in self._rules:
             text = self._fix_chinese(text, rule) if rule.chinese else self._fix_latin(text, rule)
         return text
@@ -115,15 +133,33 @@ class Corrector:
         i = 0
         while i + width <= len(text):
             window = text[i : i + width]
-            if len(HAN.findall(window)) != width or window == rule.term:
+            if len(HAN.findall(window)) != width or window in self._known:
                 i += 1
                 continue
-            if edit_distance(pinyin_of(window, tones=False), rule.key) <= limit:
+            if edit_distance(pinyin_of(window, tones=False), rule.key) <= limit                     and self._best_for(window, width) is rule:
                 text = text[:i] + rule.term + text[i + width :]
                 i += len(rule.term)
             else:
                 i += 1
         return text
+
+    def _best_for(self, window: str, width: int) -> _Rule | None:
+        """Which term wins when several are homophones of each other.
+
+        Dropping tones is what makes the match work at all — Whisper picks the wrong character far
+        more often than it mishears the syllable, and the wrong character usually differs only in
+        tone. But two terms can then collide: 生管 and 升官 are both shengguan, and 生館 was
+        rewritten to whichever rule happened to be checked first. Tones settle it — 生館 is
+        sheng1guan3, which is 生管 exactly and 升官 not at all.
+        """
+        toneless = pinyin_of(window, tones=False)
+        toned = pinyin_of(window)
+        rivals = [r for r in self._rules
+                  if r.chinese and len(r.term) == width
+                  and edit_distance(r.key, toneless) <= r.limit]
+        if not rivals:
+            return None
+        return min(rivals, key=lambda r: (edit_distance(r.toned, toned), r.term))
 
     def _fix_latin(self, text: str, rule: _Rule) -> str:
         limit = rule.limit
@@ -135,3 +171,59 @@ class Corrector:
             return rule.term if edit_distance(token.lower(), rule.key) <= limit else token
 
         return LATIN_TOKEN.sub(replace, text)
+
+
+# A candidate has to look like a term rather than a phrase or a stray character.
+MIN_LEN, MAX_LEN = 2, 8
+# Widening runs into whatever sits next to the edit, and in speech that is usually a particle.
+# Trimmed off both ends so the candidate is the term rather than the sentence around it.
+PARTICLES = set("的那個這些他她我你們是在了就也都有會要跟和把被對從")
+
+
+def _widenable(char: str) -> bool:
+    """A character worth absorbing into a candidate.
+
+    Particles are excluded, and that is the whole trick: widening 會 -> 櫃 rightwards inside
+    排會的需求 gives 會的 -> 櫃的, which as a literal substitution turns 開會的時間 into
+    開櫃的時間. Skipping the particle sends the widening left instead and yields 排會 -> 排櫃.
+    """
+    return bool(HAN.fullmatch(char)) and char not in PARTICLES
+
+
+def _trim(before: str, after: str) -> tuple[str, str]:
+    """Drop matching particles from both ends, keeping the two strings aligned."""
+    while len(after) > MIN_LEN and before[:1] == after[:1] and after[0] in PARTICLES:
+        before, after = before[1:], after[1:]
+    while len(after) > MIN_LEN and before[-1:] == after[-1:] and after[-1] in PARTICLES:
+        before, after = before[:-1], after[:-1]
+    return before, after
+
+
+def diff_terms(original: str, candidate: str) -> list[tuple[str, str]]:
+    """The pieces that differ between two versions of a line, widened to look like terms.
+
+    The interesting correction is usually one character — 申管 for 生管, ELP for ERP — and one
+    character is not a glossary entry. Widening into the Han characters on either side turns the
+    edit back into the word it sits in, which is what a reader can recognise and what the
+    corrector needs to match against.
+    """
+    out = []
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, original, candidate).get_opcodes():
+        if tag != "replace" or (j2 - j1) > MAX_LEN or (i2 - i1) > MAX_LEN:
+            continue
+        # Both strings share the text around the edit, so one offset widens both. Widened only
+        # as far as MIN_LEN needs, and to the right first: a one-character edit inside 確認料耗
+        # widened greedily becomes 認料耗, which then matches nothing else in the transcript,
+        # while the shortest widening is 料耗 — the word that was actually wrong.
+        left = right = 0
+        while (j2 - j1) + left + right < MIN_LEN:
+            if j2 + right < len(candidate) and i2 + right < len(original)                     and _widenable(candidate[j2 + right]):
+                right += 1
+            elif j1 - left - 1 >= 0 and i1 - left - 1 >= 0                     and _widenable(candidate[j1 - left - 1]):
+                left += 1
+            else:
+                break
+        before, after = _trim(original[i1 - left : i2 + right], candidate[j1 - left : j2 + right])
+        if MIN_LEN <= len(after) <= MAX_LEN and before != after:
+            out.append((before, after))
+    return out

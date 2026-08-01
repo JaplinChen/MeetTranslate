@@ -123,6 +123,43 @@ def test_keyproxy_masks_and_rotates(client: TestClient) -> None:
     assert client.delete("/api/keyproxy/keys/anthropic/0").json() == client.get("/api/keyproxy/keys").json()
 
 
+def test_naming_a_speaker_teaches_the_room_their_voice(client: TestClient) -> None:
+    """The one piece of labelled data this system ever gets, kept instead of discarded."""
+    session = main.store.start_session("now", "x.wav")
+    main.store.save_voiceprint(session, "S1", np.array([1.0], dtype="float32").tobytes())
+
+    client.put(f"/api/sessions/{session}/speakers", json={"S1": "Vincent"})
+    assert [s["name"] for s in client.get("/api/speakers/known").json()] == ["Vincent"]
+
+    # A speaker with no stored voiceprint is still nameable, it just teaches nothing.
+    client.put(f"/api/sessions/{session}/speakers", json={"S9": "Nobody"})
+    assert [s["name"] for s in client.get("/api/speakers/known").json()] == ["Vincent"]
+
+    assert client.delete("/api/speakers/known/Vincent").json() == []
+
+
+def test_editing_a_line_teaches_the_correction(client: TestClient) -> None:
+    """An edit on the transcript page is the only ground truth this system gets: someone who was
+    in the room saying what was actually said. Kept, the same mistake is fixed everywhere next
+    time — live as well as after the fact."""
+    session = main.store.start_session("now", "x.wav")
+    line = main.store.add_line(session, 1.0, "S1", "zh", "那個申管會上系統", {})
+
+    r = client.put(f"/api/sessions/{session}/lines/{line}", json={"source": "那個生管會上系統"})
+    assert r.status_code == 200, r.text
+    assert r.json()["lines"][0]["source"] == "那個生管會上系統"
+    assert {c["wrong"]: c["right"] for c in client.get("/api/corrections").json()} == {"申管": "生管"}
+
+    # What was learned is applied to text the recogniser has not seen yet.
+    from . import correct as correct_mod
+    fixed = correct_mod.Corrector([], main.store.corrections()).fix("剛剛申管講的")
+    assert fixed == "剛剛生管講的"
+
+    assert client.put(f"/api/sessions/{session}/lines/{line}", json={"source": " "}).status_code == 400
+    assert client.put(f"/api/sessions/{session}/lines/9999", json={"source": "x"}).status_code == 404
+    assert client.delete("/api/corrections/申管").json() == []
+
+
 def test_recording_lifecycle(client: TestClient) -> None:
     assert client.post("/api/recording/stop").status_code == 409
     status = client.get("/api/recording/status").json()

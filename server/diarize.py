@@ -38,7 +38,8 @@ class Diarizer:
     pass in postprocess sees every segment at once and corrects what this got wrong.
     """
 
-    def __init__(self, model: str | None = None, threshold: float | None = None, cfg: config.Config | None = None):
+    def __init__(self, model: str | None = None, threshold: float | None = None,
+                 cfg: config.Config | None = None, known: list[tuple[str, np.ndarray]] | None = None):
         ec = sherpa_onnx.SpeakerEmbeddingExtractorConfig(
             model=str(model or config.SPEAKER_MODEL), num_threads=1
         )
@@ -47,6 +48,10 @@ class Diarizer:
         self._cfg = cfg or config.Config()
         self.speakers: list[Speaker] = []
         self._last_code: str | None = None
+        # Voices this room has met before, as (name, centroid). A new speaker whose embedding
+        # matches one is named on the spot instead of arriving as another anonymous Sn.
+        self._known = list(known or [])
+        self.recognised: dict[str, str] = {}
 
     def embed(self, samples: np.ndarray) -> np.ndarray:
         stream = self._extractor.create_stream()
@@ -73,6 +78,8 @@ class Diarizer:
 
         if best is None or best_score < self._threshold:
             best = Speaker(code=f"S{len(self.speakers) + 1}", centroid=emb)
+            if name := self._recognise(emb):
+                self.recognised[best.code] = name
             self.speakers.append(best)
         else:
             # Running mean: later segments refine the centroid without a stored history.
@@ -82,6 +89,19 @@ class Diarizer:
         best.segments += 1
         self._last_code = best.code
         return best
+
+    def _recognise(self, emb: np.ndarray) -> str:
+        """Name a freshly minted speaker if a known voiceprint is close enough.
+
+        Held to a higher bar than in-meeting clustering. Merging two segments of one meeting wrongly
+        costs a split transcript; putting last week's name on this week's stranger is a mistake
+        nobody reading the transcript would think to check.
+        """
+        best, score = "", -1.0
+        for name, centroid in self._known:
+            if (s := cosine(emb, centroid)) > score:
+                best, score = name, s
+        return best if score >= config.KNOWN_SPEAKER_THRESHOLD else ""
 
     def language_for(self, speaker: Speaker) -> str:
         """Language to force on this speaker's next utterance. '' means let Whisper auto-detect."""
@@ -126,6 +146,11 @@ class Diarizer:
 
     def _by_code(self, code: str) -> Speaker:
         return next(s for s in self.speakers if s.code == code)
+
+
+def load_known(store) -> list[tuple[str, np.ndarray]]:
+    """Known voiceprints as arrays. Stored as raw float32 bytes — the embedder's own layout."""
+    return [(name, np.frombuffer(blob, dtype=np.float32)) for name, blob in store.known_speakers()]
 
 
 def cluster_offline(embeddings: list[np.ndarray], threshold: float | None = None) -> list[int]:

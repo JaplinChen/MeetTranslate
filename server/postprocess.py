@@ -139,7 +139,7 @@ def rewrite_session(store: Store, session_id: int, wav: Path, cfg: config.Config
 
     store.clear_lines(session_id)
     terms = store.glossary()
-    corrector = correct.Corrector(terms)
+    corrector = correct.Corrector(terms, store.corrections())
     context: list[translate.Line] = []
 
     for u in utterances:

@@ -76,7 +76,7 @@ class Pipeline:
         # the post-decode corrector picks it up immediately, which is the half that matters.
         self._transcriber = asr_gpu.maybe(cfg.languages,
                                           asr_gpu.hotwords_from(store.glossary()))             or asr.Transcriber(model_dir=cfg.whisper_dir(), languages=cfg.languages)
-        self._diarizer = diarize.Diarizer(cfg=cfg)
+        self._diarizer = diarize.Diarizer(cfg=cfg, known=diarize.load_known(store))
         self._thread: threading.Thread | None = None
 
         self._context: list[translate.Line] = []
@@ -110,6 +110,11 @@ class Pipeline:
     def _handle(self, segment: asr.Segment) -> None:
         try:
             speaker = self._diarizer.assign(segment.samples)
+            # A voice the room already knows arrives named. The centroid is stored either way, so
+            # naming an unknown speaker afterwards is enough to recognise them next time.
+            self._store.save_voiceprint(self._session, speaker.code, speaker.centroid.tobytes())
+            if name := self._diarizer.recognised.pop(speaker.code, ""):
+                self._store.set_speaker_name(self._session, speaker.code, name)
             forced = self._diarizer.language_for(speaker)
             text, used = self._transcriber.transcribe(segment.samples, forced)
             if not text:
@@ -117,7 +122,8 @@ class Pipeline:
             self._diarizer.observe_language(speaker, used)
             # The glossary is read per utterance so a term added mid-meeting takes effect at once,
             # which is how the glossary page is used in practice.
-            text = correct.Corrector(self._store.glossary()).fix(text)
+            text = correct.Corrector(self._store.glossary(),
+                                     self._store.corrections()).fix(text)
 
             line = translate.Line(text=text, lang=used or forced, speaker=speaker.code)
             targets = [c for c in self._cfg.languages if c != line.lang]
