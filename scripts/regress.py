@@ -97,14 +97,29 @@ def score_corrector(lines: list[tuple[str, str]], vocab: Counter[str]) -> dict:
     }
 
 
-def score_guards(pairs: list[tuple[str, str]]) -> dict:
-    """Which of the LLM's real proposals today's guards would let through."""
+def score_guards(pairs: list[tuple[str, str]], vocab: Counter[str], corpus: str) -> dict:
+    """Which of the LLM's real proposals today's guards would let through.
+
+    Judged the same way as the corrector, because it is the same failure: an accepted correction
+    that overwrites established vocabulary is how 土壤 became 交貨 three times. Symmetric checks
+    on both layers, so a change to either is measured against the same question.
+    """
     terms = Store().glossary()
     accepted = [(a, b) for a, b in pairs if refine.accept(a, b, terms)]
+    # Reported rather than enforced — see refine.displaces_a_word.
+    displaced = sum(refine.displaces_a_word(a, b, corpus) for a, b in accepted)
+    suspect: Counter[tuple[str, str]] = Counter()
+    for before, after in accepted:
+        for was, now in correct.diff_terms(before, after):
+            if vocab[was] >= ESTABLISHED:
+                suspect[(was, now)] += 1
     return {
         "proposals": len(pairs),
         "accepted": len(accepted),
         "rejected": len(pairs) - len(accepted),
+        "suspect": sum(suspect.values()),
+        "displaces": displaced,
+        "top_suspect": [[w, n, c] for (w, n), c in suspect.most_common(10)],
     }
 
 
@@ -136,16 +151,18 @@ def main() -> int:
     result = {"corrector": score_corrector(lines, vocab)}
     pairs = proposals(sorted(args.logs.glob("*.refine.log")))
     if pairs:
-        result["guards"] = score_guards(pairs)
+        result["guards"] = score_guards(pairs, vocab, chr(10).join(t for _, t in lines))
 
     before = json.loads(BASELINE.read_text(encoding="utf-8")) if BASELINE.exists() else None
     for name, block in result.items():
         compare(name, block, (before or {}).get(name))
 
-    if result["corrector"]["top_suspect"]:
-        print("\nsuspected corruptions — the corpus uses these as words:")
-        for was, now, n in result["corrector"]["top_suspect"]:
-            print(f"  {n:4d}  {was} -> {now}   ({vocab[was]} occurrences of {was})")
+    for layer in ("corrector", "guards"):
+        rows = result.get(layer, {}).get("top_suspect") or []
+        if rows:
+            print(f"\n{layer}: suspected corruptions — the corpus uses these as words:")
+            for was, now, n in rows:
+                print(f"  {n:4d}  {was} -> {now}   ({vocab[was]} occurrences of {was})")
 
     if args.save:
         BASELINE.parent.mkdir(parents=True, exist_ok=True)
@@ -157,11 +174,12 @@ def main() -> int:
     # Judged against the baseline rather than against zero. The heuristic cannot tell a real word
     # from a misrecognition that happens to recur — 生館 appears three times and is neither — so
     # some suspicion is permanent. What matters is whether a change added any.
-    was = (before or {}).get("corrector", {}).get("suspect")
-    if was is not None and result["corrector"]["suspect"] > was:
-        print(f"\nREGRESSION: suspected corruptions rose from {was} "
-              f"to {result['corrector']['suspect']}")
-        return 1
+    for layer in ("corrector", "guards"):
+        was = (before or {}).get(layer, {}).get("suspect")
+        now = result.get(layer, {}).get("suspect")
+        if was is not None and now is not None and now > was:
+            print(f"\nREGRESSION: {layer} suspected corruptions rose from {was} to {now}")
+            return 1
     return 0
 
 

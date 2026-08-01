@@ -16,27 +16,12 @@ from __future__ import annotations
 
 import argparse
 import sys
-from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from server.correct import HAN, pinyin_of  # noqa: E402
+from server.correct import collisions, pinyin_of  # noqa: E402
 from server.store import Store  # noqa: E402
-
-
-def collisions(term: str, text: str, known: set[str]) -> Counter[str]:
-    """Every other spelling in `text` that this term would overwrite."""
-    key = pinyin_of(term, tones=False)
-    width = len(term)
-    found: Counter[str] = Counter()
-    for i in range(len(text) - width + 1):
-        window = text[i : i + width]
-        if window == term or window in known or len(HAN.findall(window)) != width:
-            continue
-        if pinyin_of(window, tones=False) == key:
-            found[window] += 1
-    return found
 
 
 def main() -> int:
@@ -67,7 +52,7 @@ def main() -> int:
             continue
         total = sum(hits.values())
         print(f"{term}: would rewrite {total} occurrences of {len(hits)} other spellings")
-        for other, n in hits.most_common():
+        for other, n in sorted(hits.items(), key=lambda kv: -kv[1]):
             # Tones are shown, not enforced. Measured across every collision in seven interviews,
             # requiring them to match would have protected three real words (才夠, 升官, 供需) at
             # the cost of seven genuine fixes (財購, 盛管, 省管...), and would not have caught the
