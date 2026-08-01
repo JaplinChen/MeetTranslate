@@ -72,9 +72,11 @@
     "mode": {
       "translate": "Dịch cố định",
       "keep": "Giữ nguyên",
-      "hint": "Chỉ gợi ý nhận dạng"
+      "hint": "Chỉ gợi ý nhận dạng",
+      "protect": "Chỉ bảo vệ"
     },
-    "clashWarning": "Lưu ý: từ này phát âm giống hệt {{list}} đã có trong bản ghi, thêm vào sẽ ghi đè lên chúng. Nếu đó là từ thật, hãy thêm chúng ở chế độ protect."
+    "clashWarning": "Lưu ý: từ này phát âm giống hệt {{list}} đã có trong bản ghi, thêm vào sẽ ghi đè lên chúng. Nếu đó là từ thật, hãy thêm chúng ở chế độ protect.",
+    "protectHint": "Bảo vệ tuyên bố đây là từ thật: không bị sửa, và không có từ nào bị sửa thành nó. Dành cho từ thường ngày trùng âm với thuật ngữ."
   },
   "display": {
     "title": "Phụ đề",

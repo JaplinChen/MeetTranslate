@@ -72,9 +72,11 @@
     "mode": {
       "translate": "Fixed rendering",
       "keep": "Keep as-is",
-      "hint": "Recognition hint only"
+      "hint": "Recognition hint only",
+      "protect": "Protect only"
     },
-    "clashWarning": "Careful: this sounds identical to {{list}} already in your transcripts, and adding it would rewrite them. If those are real words, add them in protect mode too."
+    "clashWarning": "Careful: this sounds identical to {{list}} already in your transcripts, and adding it would rewrite them. If those are real words, add them in protect mode too.",
+    "protectHint": "Protect declares a word real: never corrected, and nothing is ever corrected into it. For everyday words that sound like a term — 才夠 against 採購."
   },
   "display": {
     "title": "Subtitles",
