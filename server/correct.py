@@ -33,7 +33,6 @@ MIN_KEY = 6
 MIN_TERM_KEY = 4
 
 HAN = re.compile(r"[一-鿿]")
-HAN_ONE = re.compile(r"[一-鿿]")
 LATIN_TOKEN = re.compile(r"[A-Za-zÀ-ỹ][A-Za-zÀ-ỹ'’-]*")
 
 
@@ -67,6 +66,7 @@ class _Rule:
     term: str
     key: str      # what we compare against: pinyin for Chinese, lowercase for Latin
     chinese: bool
+    toned: str = ""  # the term's pinyin with tones, for choosing between homophone terms
 
     @property
     def limit(self) -> int:
@@ -88,7 +88,7 @@ def _rules(terms: list[Term]) -> list[_Rule]:
         chinese = bool(HAN.search(t.source))
         key = pinyin_of(t.source, tones=False) if chinese else t.source.lower()
         if len(key) >= MIN_TERM_KEY:
-            out.append(_Rule(t.source, key, chinese))
+            out.append(_Rule(t.source, key, chinese, pinyin_of(t.source) if chinese else ""))
     # Longest first: a term that contains another must win, or the shorter one eats its prefix.
     return sorted(out, key=lambda r: -len(r.term))
 
@@ -156,10 +156,10 @@ class Corrector:
         toned = pinyin_of(window)
         rivals = [r for r in self._rules
                   if r.chinese and len(r.term) == width
-                  and edit_distance(pinyin_of(r.term, tones=False), toneless) <= r.limit]
+                  and edit_distance(r.key, toneless) <= r.limit]
         if not rivals:
             return None
-        return min(rivals, key=lambda r: (edit_distance(pinyin_of(r.term), toned), r.term))
+        return min(rivals, key=lambda r: (edit_distance(r.toned, toned), r.term))
 
     def _fix_latin(self, text: str, rule: _Rule) -> str:
         limit = rule.limit
@@ -187,7 +187,7 @@ def _widenable(char: str) -> bool:
     排會的需求 gives 會的 -> 櫃的, which as a literal substitution turns 開會的時間 into
     開櫃的時間. Skipping the particle sends the widening left instead and yields 排會 -> 排櫃.
     """
-    return bool(HAN_ONE.fullmatch(char)) and char not in PARTICLES
+    return bool(HAN.fullmatch(char)) and char not in PARTICLES
 
 
 def _trim(before: str, after: str) -> tuple[str, str]:
