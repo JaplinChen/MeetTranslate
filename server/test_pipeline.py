@@ -252,6 +252,39 @@ def test_corrector_fixes_near_misses_only() -> None:
     assert correct.Corrector([]).fix("原文不動") == "原文不動"
 
 
+def test_tones_decide_between_homophone_terms() -> None:
+    """Dropping tones is what makes the match work; keeping them is what makes it unambiguous.
+
+    生管 and 升官 are both shengguan with tones removed, so a misrecognition landed on whichever
+    rule happened to be checked first. Tones settle it: 生館 is sheng1guan3, which is 生管 exactly
+    and 升官 not at all.
+    """
+    def term(source: str) -> store.Term:
+        return store.Term(id=0, source=source, lang="", mode="hint", category="", targets={})
+
+    c = correct.Corrector([term("生管"), term("升官")])
+    assert c.fix("那個生館會上系統") == "那個生管會上系統"
+    assert c.fix("盛管那邊的排程") == "生管那邊的排程"
+    assert c.fix("他終於昇官了") == "他終於升官了"
+
+
+def test_a_term_is_never_rewritten_into_another() -> None:
+    """The glossary saying a word exists is also the glossary saying it is not a mistake.
+
+    工序 and 供需 are both gongxu and both ordinary vocabulary in a manufacturing interview.
+    Registering the one that was being overwritten is what lets them coexist — measured on real
+    transcripts, that is a better protection than a tone rule, which would have saved three real
+    words and cost seven genuine fixes.
+    """
+    def term(source: str) -> store.Term:
+        return store.Term(id=0, source=source, lang="", mode="hint", category="", targets={})
+
+    assert correct.Corrector([term("工序")]).fix("考慮你供需的狀況") == "考慮你工序的狀況"
+    both = correct.Corrector([term("工序"), term("供需")])
+    assert both.fix("考慮你供需的狀況") == "考慮你供需的狀況"
+    assert both.fix("工序的部分") == "工序的部分"
+
+
 def test_corrector_never_rewrites_a_near_rhyme() -> None:
     """A single edit of Mandarin pinyin is a different word, not a misspelling of the same one.
 

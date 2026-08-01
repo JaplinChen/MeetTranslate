@@ -104,6 +104,11 @@ class Corrector:
 
     def __init__(self, terms: list[Term], aliases: dict[str, str] | None = None):
         self._rules = _rules(terms)
+        # Two terms can be homophones of each other — 工序 and 供需 are both gongxu, and both are
+        # ordinary vocabulary in a manufacturing interview. Text that already spells one of them
+        # is left alone: the glossary saying a word exists is also the glossary saying it is not
+        # a mistake.
+        self._known = {t.source for t in terms}
         # Longest first: a correction that contains another must win.
         self._aliases = sorted((aliases or {}).items(), key=lambda kv: -len(kv[0]))
 
@@ -128,15 +133,33 @@ class Corrector:
         i = 0
         while i + width <= len(text):
             window = text[i : i + width]
-            if len(HAN.findall(window)) != width or window == rule.term:
+            if len(HAN.findall(window)) != width or window in self._known:
                 i += 1
                 continue
-            if edit_distance(pinyin_of(window, tones=False), rule.key) <= limit:
+            if edit_distance(pinyin_of(window, tones=False), rule.key) <= limit                     and self._best_for(window, width) is rule:
                 text = text[:i] + rule.term + text[i + width :]
                 i += len(rule.term)
             else:
                 i += 1
         return text
+
+    def _best_for(self, window: str, width: int) -> _Rule | None:
+        """Which term wins when several are homophones of each other.
+
+        Dropping tones is what makes the match work at all — Whisper picks the wrong character far
+        more often than it mishears the syllable, and the wrong character usually differs only in
+        tone. But two terms can then collide: 生管 and 升官 are both shengguan, and 生館 was
+        rewritten to whichever rule happened to be checked first. Tones settle it — 生館 is
+        sheng1guan3, which is 生管 exactly and 升官 not at all.
+        """
+        toneless = pinyin_of(window, tones=False)
+        toned = pinyin_of(window)
+        rivals = [r for r in self._rules
+                  if r.chinese and len(r.term) == width
+                  and edit_distance(pinyin_of(r.term, tones=False), toneless) <= r.limit]
+        if not rivals:
+            return None
+        return min(rivals, key=lambda r: (edit_distance(pinyin_of(r.term), toned), r.term))
 
     def _fix_latin(self, text: str, rule: _Rule) -> str:
         limit = rule.limit
