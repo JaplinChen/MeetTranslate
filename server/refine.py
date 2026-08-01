@@ -132,7 +132,20 @@ def accept(original: str, candidate: str, terms: list[Term] | None = None) -> bo
     return moved <= min(MAX_SOUND_CHANGE * len(before), MAX_SOUND_EDITS)
 
 
-def parse_response(raw: str, lines: list[Line], terms: list[Term] | None = None) -> list[str]:
+@dataclass
+class Rejected:
+    """A correction the guards refused, kept because it is the most useful thing they produce.
+
+    A model that repeatedly wants to write 工程變更 where the recogniser wrote 一夕變更 is telling
+    you the term exists and that the glossary does not know it. That is the one signal in this
+    system that names its own blind spots.
+    """
+    original: str
+    candidate: str
+
+
+def parse_response(raw: str, lines: list[Line], terms: list[Term] | None = None,
+                   rejected: list[Rejected] | None = None) -> list[str]:
     """Map the numbered reply back onto the input, keeping originals wherever it disagrees.
 
     Only changed lines come back. Asking for the whole chunk made the model copy out two dozen
@@ -149,7 +162,9 @@ def parse_response(raw: str, lines: list[Line], terms: list[Term] | None = None)
             if 1 <= index <= len(lines):
                 got[index] = m.group(2)
 
-    if len(got) > len(lines) // 2:
+    # "Most of the chunk" needs a chunk to be about: on the two or three lines left over at the
+    # end of a transcript, one correction is already a majority.
+    if len(lines) >= 4 and len(got) > len(lines) // 2:
         log.warning("refine rewrote %d of %d lines, keeping originals", len(got), len(lines))
         return [l.text for l in lines]
 
@@ -157,6 +172,8 @@ def parse_response(raw: str, lines: list[Line], terms: list[Term] | None = None)
     for i, line in enumerate(lines, 1):
         candidate = got.get(i, "")
         if not accept(line.text, candidate, terms):
+            if rejected is not None and candidate.strip() and candidate.strip() != line.text:
+                rejected.append(Rejected(line.text, candidate.strip()))
             out.append(line.text)
             continue
         candidate = candidate.strip()
@@ -218,7 +235,8 @@ class Refiner:
         self._chat = chat
         self._topic = topic
 
-    def refine(self, lines: list[Line], terms: list[Term] | None = None) -> list[str]:
+    def refine(self, lines: list[Line], terms: list[Term] | None = None,
+               rejected: list[Rejected] | None = None) -> list[str]:
         """Correct a whole transcript, chunk by chunk. Returns one string per input line."""
         out: list[str] = []
         for start in range(0, len(lines), CHUNK_LINES):
@@ -228,7 +246,7 @@ class Refiner:
                                        out[max(0, start - CONTEXT_LINES) : start])]
             prompt = build_prompt(chunk, context, terms or [], self._topic)
             try:
-                out += parse_response(self._chat(prompt), chunk, terms)
+                out += parse_response(self._chat(prompt), chunk, terms, rejected)
             except Exception:
                 log.exception("refine failed at line %d, keeping originals", start)
                 out += [l.text for l in chunk]

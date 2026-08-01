@@ -102,6 +102,32 @@ def test_refine_prompt_states_the_domain_and_the_terms() -> None:
     assert f"1: {said}" in prompt
 
 
+def test_refused_corrections_are_kept_as_evidence() -> None:
+    """What the guards throw away names the system's own blind spots.
+
+    A model that wants to write 工程變更 where the recogniser wrote 一夕變更 knows a term the
+    glossary does not. The correction is still refused — it sounds nothing like what was heard —
+    but the refusal is what scripts/learn_terms.py mines.
+    """
+    lines = [refine.Line("S1", "zh", "一夕變更的流程")]
+    rejected: list[refine.Rejected] = []
+    assert refine.parse_response("1: 工程變更的流程", lines, [], rejected) == [lines[0].text]
+    assert [(r.original, r.candidate) for r in rejected] == [("一夕變更的流程", "工程變更的流程")]
+
+    # Accepted corrections are not evidence of anything missing.
+    rejected.clear()
+    term = [store.Term(id=0, source="工程變更", lang="", mode="hint", category="", targets={})]
+    assert refine.parse_response("1: 工程變更的流程", lines, term, rejected)[0] == "工程變更的流程"
+    assert rejected == []
+
+
+def test_short_final_chunk_can_still_be_corrected() -> None:
+    """One correction is a majority of a one-line chunk, and the transcript's last few lines
+    always land in one. The restructuring guard needs a chunk to be about."""
+    lines = [refine.Line("S1", "zh", "料耗的問題")]
+    assert refine.parse_response("1: 料號的問題", lines) == ["料號的問題"]
+
+
 def test_known_voice_is_named_on_sight() -> None:
     """A voice the room has met before arrives named instead of as another anonymous Sn.
 
