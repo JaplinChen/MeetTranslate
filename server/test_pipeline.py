@@ -76,6 +76,19 @@ def test_refine_rejects_corrections_that_do_not_sound_alike() -> None:
     assert not refine.accept("一夕變更的流程", "工程變更的流程", [])
 
 
+def test_refine_converts_what_the_model_writes_in_simplified() -> None:
+    """The recogniser's output is already Traditional; a Simplified character in a correction can
+    only have come from the model. Converted character by character, not with the phrase table
+    used on ASR output — that one rewrites 對象 to 物件, which is the speaker's word, not an error.
+    """
+    lines = [refine.Line("S1", "zh", "申報的保税料件"),
+             refine.Line("S1", "zh", "這個對象要處理"),
+             refine.Line("S1", "en", "the tax iten")]
+    assert refine.parse_response("1: 申報的保税料號", lines)[0] == "申報的保稅料號"
+    assert refine.parse_response("2: 這個對象要處裡", lines)[1] == "這個對象要處裡"
+    assert refine.parse_response("3: the tax item", lines)[2] == "the tax item"
+
+
 def test_refine_prompt_states_the_domain_and_the_terms() -> None:
     said, earlier, term = "一夕變更的流程", "前面說過的話", "工程變更"
     prompt = refine.build_prompt(

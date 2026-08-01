@@ -17,6 +17,8 @@ import logging
 import re
 from dataclasses import dataclass
 
+from opencc import OpenCC
+
 from .correct import edit_distance, pinyin_of
 from .store import Term
 
@@ -45,6 +47,11 @@ MAX_TERM_SOUND_CHANGE = 0.50
 MAX_SOUND_EDITS = 3
 
 NUMBERED = re.compile(r"^\s*(\d+)\s*[:：.]\s*(.*)$")
+
+# Character-level Simplified -> Traditional, deliberately not the s2twp used on ASR output. The
+# model writes the odd Simplified character (保税 for 保稅) and that has to go, but s2twp also
+# rewrites vocabulary — 對象 to 物件, 軟件 to 軟體 — which would edit words the speaker chose.
+_to_traditional = OpenCC("s2t")
 
 
 @dataclass
@@ -149,7 +156,11 @@ def parse_response(raw: str, lines: list[Line], terms: list[Term] | None = None)
     out = []
     for i, line in enumerate(lines, 1):
         candidate = got.get(i, "")
-        out.append(candidate.strip() if accept(line.text, candidate, terms) else line.text)
+        if not accept(line.text, candidate, terms):
+            out.append(line.text)
+            continue
+        candidate = candidate.strip()
+        out.append(_to_traditional.convert(candidate) if line.lang.startswith("zh") else candidate)
     return out
 
 
