@@ -75,6 +75,18 @@ def test_refine_rejects_corrections_that_do_not_sound_alike() -> None:
     assert refine.accept("一夕變更的流程", "工程變更的流程", terms)
     assert not refine.accept("一夕變更的流程", "工程變更的流程", [])
 
+    # Latitude, not immunity. The term is compared against the text it replaced: measured across
+    # the whole line instead, 土壤 became 交貨 and 祂 became 生管 on a real transcript, because
+    # two unrelated syllables inside a long sentence look like a rounding error.
+    delivery = [term("交貨"), term("生管"), term("收料")]
+    long_line = "然後我們這邊的狀況是說土壤的時間會影響到後面所有的排程跟人力安排這件事"
+    assert not refine.accept(long_line, long_line.replace("土壤", "交貨"), delivery)
+    assert not refine.accept("祂那邊的排程", "生管那邊的排程", delivery)
+    assert not refine.accept("浴室量的部分", "收料的部分", delivery)
+    # What the latitude is for: the recogniser mangled the term, but it still sounds like it.
+    assert refine.accept("那個申管會上系統", "那個生管會上系統", delivery)
+    assert refine.accept("收糧的部分", "收料的部分", delivery)
+
 
 def test_refine_converts_what_the_model_writes_in_simplified() -> None:
     """The recogniser's output is already Traditional; a Simplified character in a correction can

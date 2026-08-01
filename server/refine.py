@@ -13,6 +13,7 @@ may change before the result is treated as invention and thrown away.
 
 from __future__ import annotations
 
+import difflib
 import logging
 import re
 from dataclasses import dataclass
@@ -40,7 +41,10 @@ MAX_SOUND_CHANGE = 0.20
 # Glossary terms are exempt from most of that. The recogniser cannot know a term exists, so the
 # text it produced may be acoustically far from the truth — and the glossary is the user saying
 # this term belongs in this meeting.
-MAX_TERM_SOUND_CHANGE = 0.50
+# Measured on real corrections: 一夕變更 -> 工程變更 sits at 0.53 and is right, 浴室量 -> 收料
+# at 0.60 and is not. There is not much room between them, and that is the honest width of this
+# signal — a glossary term buys latitude, not immunity.
+MAX_TERM_SOUND_CHANGE = 0.55
 # And a hard ceiling in edits, because the ratio is measured over the whole line: two nonsense
 # characters inside a sixty-character sentence are a rounding error to a ratio and still nonsense.
 # `夢表` for `模具` and `監獄` for `零件` both slipped through on ratio alone.
@@ -125,11 +129,18 @@ def accept(original: str, candidate: str, terms: list[Term] | None = None) -> bo
     before, after = pinyin_of(original, tones=False), pinyin_of(candidate, tones=False)
     if not before or not after:
         return True  # nothing Chinese in it; the size check above is all there is to go on
-    introduces_term = any(t.source in candidate and t.source not in original for t in terms or [])
-    moved = edit_distance(before, after)
-    if introduces_term:
-        return moved / len(before) <= MAX_TERM_SOUND_CHANGE
-    return moved <= min(MAX_SOUND_CHANGE * len(before), MAX_SOUND_EDITS)
+    introduced = [t.source for t in terms or []
+                  if t.source in candidate and t.source not in original]
+    if not introduced:
+        return edit_distance(before, after) <= min(MAX_SOUND_CHANGE * len(before), MAX_SOUND_EDITS)
+
+    # A glossary term may travel further than an ordinary correction, but it is compared against
+    # the text it replaced and nothing else. Measuring across the whole line let 土壤 become 交貨
+    # and 祂 become 生管 — two unrelated syllables inside a sixty-character sentence look like a
+    # rounding error. Measuring only the characters that differ is no better: 一夕 and 工程 share
+    # nothing either, and yet 一夕變更 -> 工程變更 is right. The term is the unit that works,
+    # because it carries the part both versions have in common.
+    return all(_sounds_like(_replaced_by(original, candidate, term), term) for term in introduced)
 
 
 @dataclass
@@ -142,6 +153,28 @@ class Rejected:
     """
     original: str
     candidate: str
+
+
+def _replaced_by(original: str, candidate: str, term: str) -> str:
+    """The text in `original` that sits where `term` now sits in `candidate`."""
+    start = candidate.index(term)
+    end = start + len(term)
+    out = []
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, original, candidate).get_opcodes():
+        if j1 < end and j2 > start:
+            lo = i1 + max(0, start - j1) if tag == "equal" else i1
+            hi = i1 + min(i2 - i1, end - j1) if tag == "equal" else i2
+            out.append(original[lo:hi])
+    return "".join(out)
+
+
+def _sounds_like(was: str, now: str) -> bool:
+    pa, pb = pinyin_of(was, tones=False), pinyin_of(now, tones=False)
+    if not pa or not pb:
+        return False
+    moved = edit_distance(pa, pb)
+    # Two edits is a misheard syllable at any length; past that it has to still sound similar.
+    return moved <= 2 or moved / max(len(pa), len(pb)) <= MAX_TERM_SOUND_CHANGE
 
 
 def parse_response(raw: str, lines: list[Line], terms: list[Term] | None = None,
