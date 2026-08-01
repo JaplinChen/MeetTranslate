@@ -73,7 +73,8 @@
       "translate": "Fixed rendering",
       "keep": "Keep as-is",
       "hint": "Recognition hint only"
-    }
+    },
+    "clashWarning": "Careful: this sounds identical to {{list}} already in your transcripts, and adding it would rewrite them. If those are real words, add them in protect mode too."
   },
   "display": {
     "title": "Subtitles",

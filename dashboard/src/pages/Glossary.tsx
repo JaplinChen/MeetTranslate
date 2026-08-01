@@ -26,6 +26,7 @@ export function Glossary() {
   const [draft, setDraft] = useState(emptyDraft());
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [clash, setClash] = useState<{ text: string; count: number }[]>([]);
 
   const fail = (err: unknown) => toast.error(err instanceof Error ? err.message : String(err));
 
@@ -57,6 +58,18 @@ export function Glossary() {
     }
   };
 
+  // The corrector rewrites anything whose pinyin matches a term, and Mandarin supplies
+  // homophones for almost everything. Checked against the meetings already recorded, so the
+  // answer is about what these people say rather than what the language permits.
+  const checkClash = async (source: string) => {
+    if (!source.trim()) return setClash([]);
+    try {
+      setClash((await appApi.termCollisions(source.trim())).collisions);
+    } catch {
+      setClash([]);
+    }
+  };
+
   const remove = async (term: GlossaryTerm) => {
     setBusy(true);
     try {
@@ -81,12 +94,20 @@ export function Glossary() {
       <PageHeader title={t('glossary.title')} subtitle={t('glossary.subtitle')} />
 
       <section className="etable-panel">
+        {clash.length > 0 && (
+          <p className="gloss-clash">
+            {t('glossary.clashWarning', {
+              list: clash.map(c => `${c.text} (${c.count})`).join('、'),
+            })}
+          </p>
+        )}
         <div className="gloss-add">
           <input
             className="gloss-input"
             placeholder={t('glossary.sourcePlaceholder')}
             value={draft.source}
             onChange={e => setDraft({ ...draft, source: e.target.value })}
+            onBlur={e => checkClash(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && !busy && add()}
           />
           <select

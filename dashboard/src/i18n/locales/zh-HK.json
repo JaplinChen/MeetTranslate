@@ -73,7 +73,8 @@
       "translate": "指定譯詞",
       "keep": "保留原文",
       "hint": "僅作辨識提示"
-    }
+    },
+    "clashWarning": "注意：這個詞和逐字稿裡的 {{list}} 完全同音，加入後會把它們改寫掉。若那些是真詞，請一併以 protect 模式加入。"
   },
   "display": {
     "title": "字幕顯示",

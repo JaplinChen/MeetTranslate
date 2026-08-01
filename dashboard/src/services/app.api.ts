@@ -103,6 +103,11 @@ export const appApi = {
     request<Record<string, string>>(`/sessions/${id}/speakers`, { method: 'PUT', body: JSON.stringify(names) }),
   // Editing a line also teaches the correction: the backend stores what was written against what
   // was said, and applies it to every future transcript.
+  // Asked before a term is added, not after: adding 料號 rewrote the real term 料耗 42 times
+  // across seven interviews, and nothing said so.
+  termCollisions: (source: string) =>
+    request<{ source: string; collisions: { text: string; count: number }[] }>(
+      `/glossary/collisions?source=${encodeURIComponent(source)}`),
   knownSpeakers: () => request<KnownSpeaker[]>('/speakers/known'),
   forgetSpeaker: (name: string) =>
     request<KnownSpeaker[]>(`/speakers/known/${encodeURIComponent(name)}`, { method: 'DELETE' }),

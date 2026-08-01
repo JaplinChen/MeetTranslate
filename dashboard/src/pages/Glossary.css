@@ -112,3 +112,14 @@
   padding: 2.5rem 1rem;
   color: var(--text-secondary);
 }
+
+/* Shown before a term is added, because afterwards the damage is already in the transcripts. */
+.gloss-clash {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--warning, #d97706);
+  border-radius: 8px;
+  color: var(--warning, #d97706);
+  font-size: 13px;
+  line-height: 1.6;
+}

@@ -73,7 +73,8 @@
       "translate": "Dịch cố định",
       "keep": "Giữ nguyên",
       "hint": "Chỉ gợi ý nhận dạng"
-    }
+    },
+    "clashWarning": "Lưu ý: từ này phát âm giống hệt {{list}} đã có trong bản ghi, thêm vào sẽ ghi đè lên chúng. Nếu đó là từ thật, hãy thêm chúng ở chế độ protect."
   },
   "display": {
     "title": "Phụ đề",

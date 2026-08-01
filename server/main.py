@@ -168,6 +168,23 @@ def post_glossary(body: dict) -> list[dict]:
     return get_glossary()
 
 
+@app.get("/api/glossary/collisions")
+def get_collisions(source: str) -> dict:
+    """What adding this term would overwrite in the meetings already recorded.
+
+    Called before the term is added, because afterwards is too late to be useful: adding 料號
+    rewrote 料耗 — a real term of the trade — forty-two times, silently.
+    """
+    source = source.strip()
+    if not source:
+        raise HTTPException(400, "source required")
+    known = {t.source for t in store.glossary()} | {source}
+    hits = correct.collisions(source, store.transcript_text(), known)
+    return {"source": source,
+            "collisions": [{"text": w, "count": n} for w, n in
+                           sorted(hits.items(), key=lambda kv: -kv[1])]}
+
+
 @app.delete("/api/glossary")
 def delete_glossary(source: str, lang: str = "") -> list[dict]:
     store.remove_term(source, lang)
