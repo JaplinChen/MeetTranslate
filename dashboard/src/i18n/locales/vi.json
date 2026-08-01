@@ -52,7 +52,8 @@
     "speakers": "Người nói",
     "speakersHint": "Ứng dụng phân biệt người nói bằng giọng, nhưng không lấy được danh sách người tham dự. Gán tên một lần ở đây để biên bản hiển thị tên thật.",
     "namePlaceholder": "Tên",
-    "transcript": "Bản ghi"
+    "transcript": "Bản ghi",
+    "editHint": "Nhấp để sửa. Bản sửa được ghi nhớ và áp dụng cho các cuộc họp sau."
   },
   "glossary": {
     "title": "Bảng thuật ngữ",

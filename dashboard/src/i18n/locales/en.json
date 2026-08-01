@@ -52,7 +52,8 @@
     "speakers": "Speakers",
     "speakersHint": "Speakers are told apart by voice, but the app never sees the participant list. Name them once here and the transcript shows real names.",
     "namePlaceholder": "Name",
-    "transcript": "Transcript"
+    "transcript": "Transcript",
+    "editHint": "Click to correct. The fix is remembered and applied to later meetings."
   },
   "glossary": {
     "title": "Glossary",

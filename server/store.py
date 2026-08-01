@@ -57,6 +57,12 @@ CREATE TABLE IF NOT EXISTS line_translation (
     text      TEXT NOT NULL,
     PRIMARY KEY (line_id, lang)
 );
+CREATE TABLE IF NOT EXISTS correction (
+    wrong  TEXT PRIMARY KEY,
+    right  TEXT NOT NULL,
+    lang   TEXT NOT NULL DEFAULT '',
+    count  INTEGER NOT NULL DEFAULT 1
+);
 CREATE TABLE IF NOT EXISTS voiceprint (
     session_id INTEGER REFERENCES session(id) ON DELETE CASCADE,
     code       TEXT NOT NULL,
@@ -221,6 +227,34 @@ class Store:
                 "ON CONFLICT(session_id, code) DO UPDATE SET name=excluded.name",
                 (session_id, code, name),
             )
+            self._db.commit()
+
+    # ── corrections ─────────────────────────────────────────────────────
+    #
+    # An edit made on the transcript page is ground truth: this is what the recogniser wrote and
+    # this is what was actually said. Nothing else in the system is labelled by a human who was in
+    # the room, so it outranks every heuristic that guesses from pinyin.
+
+    def add_correction(self, wrong: str, right: str, lang: str = "") -> None:
+        wrong, right = wrong.strip(), right.strip()
+        if not wrong or not right or wrong == right:
+            return
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO correction (wrong, right, lang) VALUES (?,?,?) "
+                "ON CONFLICT(wrong) DO UPDATE SET right=excluded.right, count=correction.count + 1",
+                (wrong, right, lang),
+            )
+            self._db.commit()
+
+    def corrections(self) -> dict[str, str]:
+        with self._lock:
+            return {r["wrong"]: r["right"] for r in
+                    self._db.execute("SELECT wrong, right FROM correction ORDER BY LENGTH(wrong) DESC")}
+
+    def forget_correction(self, wrong: str) -> None:
+        with self._lock:
+            self._db.execute("DELETE FROM correction WHERE wrong=?", (wrong,))
             self._db.commit()
 
     # ── voiceprints ─────────────────────────────────────────────────────

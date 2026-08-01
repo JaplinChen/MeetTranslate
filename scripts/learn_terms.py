@@ -16,7 +16,6 @@ look at the list before it changes anything.
 from __future__ import annotations
 
 import argparse
-import difflib
 import re
 import sys
 from collections import Counter
@@ -25,52 +24,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from server import correct, llm, refine  # noqa: E402
+from server.correct import diff_terms  # noqa: E402
 from server.store import Store  # noqa: E402
 
 LINE = re.compile(r"^\[(\d+:\d+)\] (S\d+) \((\w+)\) (.*)$")
 HAN = re.compile(r"[一-鿿]")
-# A candidate has to look like a term rather than a phrase or a stray character.
-MIN_LEN, MAX_LEN = 2, 8
-# Widening runs into whatever sits next to the edit, and in speech that is usually a particle.
-# Trimmed off both ends so the candidate is the term rather than the sentence around it.
-PARTICLES = set("的那個這些他她我你們是在了就也都有會要跟和把被對從")
-
-
-def _trim(before: str, after: str) -> tuple[str, str]:
-    """Drop matching particles from both ends, keeping the two strings aligned."""
-    while len(after) > MIN_LEN and before[:1] == after[:1] and after[0] in PARTICLES:
-        before, after = before[1:], after[1:]
-    while len(after) > MIN_LEN and before[-1:] == after[-1:] and after[-1] in PARTICLES:
-        before, after = before[:-1], after[:-1]
-    return before, after
-
-
-def spans(original: str, candidate: str) -> list[tuple[str, str]]:
-    """The pieces that differ, widened to something that looks like a term.
-
-    The interesting correction is usually one character — 申管 for 生管, ELP for ERP — and one
-    character is not a glossary entry. Widening into the Han characters on either side turns the
-    edit back into the word it sits in, which is what a reader can recognise and what the
-    corrector needs to match against.
-    """
-    out = []
-    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, original, candidate).get_opcodes():
-        if tag != "replace" or (j2 - j1) > MAX_LEN or (i2 - i1) > MAX_LEN:
-            continue
-        # Both strings share the text around the edit, so one offset widens both.
-        left = right = 0
-        while (left < 2 and j1 - left - 1 >= 0 and i1 - left - 1 >= 0
-               and HAN.fullmatch(candidate[j1 - left - 1] or "")):
-            left += 1
-        while (right < 2 and j2 + right < len(candidate) and i2 + right < len(original)
-               and HAN.fullmatch(candidate[j2 + right] or "")):
-            right += 1
-        before, after = _trim(original[i1 - left : i2 + right], candidate[j1 - left : j2 + right])
-        if MIN_LEN <= len(after) <= MAX_LEN and before != after:
-            out.append((before, after))
-    return out
-
-
 def read(path: Path) -> list[refine.Line]:
     lines = []
     for row in path.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -118,7 +76,7 @@ def main() -> int:
         rejected: list[refine.Rejected] = []
         refine.Refiner(chat, topic=args.topic).refine(lines, terms, rejected)
         for r in rejected:
-            for before, after in spans(r.original, r.candidate):
+            for before, after in diff_terms(r.original, r.candidate):
                 if HAN.search(after) and after not in known:
                     proposed[(before, after)] += 1
         print(f"{path.name}: {len(rejected)} refused corrections")

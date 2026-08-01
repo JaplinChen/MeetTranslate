@@ -122,7 +122,8 @@ class Pipeline:
             self._diarizer.observe_language(speaker, used)
             # The glossary is read per utterance so a term added mid-meeting takes effect at once,
             # which is how the glossary page is used in practice.
-            text = correct.Corrector(self._store.glossary()).fix(text)
+            text = correct.Corrector(self._store.glossary(),
+                                     self._store.corrections()).fix(text)
 
             line = translate.Line(text=text, lang=used or forced, speaker=speaker.code)
             targets = [c for c in self._cfg.languages if c != line.lang]

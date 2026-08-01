@@ -52,7 +52,8 @@
     "speakers": "發言者",
     "speakersHint": "程式以聲紋分辨發言者，但取不到與會者名單。在此對應一次姓名，逐字稿就會顯示真名。",
     "namePlaceholder": "姓名",
-    "transcript": "逐字稿"
+    "transcript": "逐字稿",
+    "editHint": "點擊即可修正。修正會被記住，並套用到之後的會議。"
   },
   "glossary": {
     "title": "詞彙表",

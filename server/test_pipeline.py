@@ -102,6 +102,28 @@ def test_refine_prompt_states_the_domain_and_the_terms() -> None:
     assert f"1: {said}" in prompt
 
 
+def test_diff_terms_learns_the_word_that_was_wrong() -> None:
+    """An edit teaches a substitution, and that substitution is applied literally everywhere
+    afterwards — so what gets learned has to be the word, not a fragment of the sentence."""
+    # Widened to the shortest thing that is still a word: greedy widening would learn 認料耗 from
+    # 確認料耗, which then matches nothing else in the transcript.
+    assert correct.diff_terms("確認料耗的數量", "確認料號的數量") == [("料耗", "料號")]
+    assert correct.diff_terms("那個申管會上系統", "那個生管會上系統") == [("申管", "生管")]
+
+    # Widening steps over particles rather than absorbing them: 會的 -> 櫃的 would rewrite
+    # 開會的時間 to 開櫃的時間, so the widening goes left instead and learns the actual term.
+    assert correct.diff_terms("做一個排會的需求", "做一個排櫃的需求") == [("排會", "排櫃")]
+    assert correct.diff_terms("一樣的內容", "一樣的內容") == []
+
+
+def test_human_corrections_outrank_the_glossary() -> None:
+    """An edit is the only thing here labelled by someone who was in the room."""
+    c = correct.Corrector([], {"申管": "生管", "ELP系統": "ERP系統"})
+    assert c.fix("那個申管會上ELP系統") == "那個生管會上ERP系統"
+    assert c.fix("沒有問題的句子") == "沒有問題的句子"
+    assert correct.Corrector([], {}).fix("原文不動") == "原文不動"
+
+
 def test_refused_corrections_are_kept_as_evidence() -> None:
     """What the guards throw away names the system's own blind spots.
 

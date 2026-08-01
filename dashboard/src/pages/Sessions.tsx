@@ -59,6 +59,18 @@ export function Sessions() {
     }
   };
 
+  // Correcting a line is the only ground truth the system gets: someone who was in the room
+  // saying what was actually said. The backend learns the pair and applies it from then on.
+  const saveLine = async (lineId: number, source: string, previous: string) => {
+    if (selected === null || source.trim() === previous || !source.trim()) return;
+    try {
+      const r = await appApi.setLineSource(selected, lineId, source.trim());
+      setLines(r.lines);
+    } catch (err) {
+      fail(err);
+    }
+  };
+
   const codes = [...new Set(lines.map(l => l.speaker))];
   const langs = [...new Set(lines.flatMap(l => Object.keys(l.translations)))];
 
@@ -121,7 +133,14 @@ export function Sessions() {
                   <span className="sess-time">{clock(line.start)}</span>
                   <span className="sess-who">{names[line.speaker] || line.speaker}</span>
                   <div className="sess-body">
-                    <p className="sess-source" lang={line.lang}>
+                    <p
+                      className="sess-source"
+                      lang={line.lang}
+                      contentEditable
+                      suppressContentEditableWarning
+                      title={t('sessions.editHint')}
+                      onBlur={e => saveLine(line.id, e.currentTarget.textContent || '', line.source)}
+                    >
                       {line.source}
                     </p>
                     {langs

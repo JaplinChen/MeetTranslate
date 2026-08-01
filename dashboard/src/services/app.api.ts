@@ -90,4 +90,9 @@ export const appApi = {
     request<{ lines: TranscriptLine[]; speakers: Record<string, string> }>(`/sessions/${id}/lines`),
   setSpeakerNames: (id: number, names: Record<string, string>) =>
     request<Record<string, string>>(`/sessions/${id}/speakers`, { method: 'PUT', body: JSON.stringify(names) }),
+  // Editing a line also teaches the correction: the backend stores what was written against what
+  // was said, and applies it to every future transcript.
+  setLineSource: (id: number, lineId: number, source: string) =>
+    request<{ lines: TranscriptLine[]; speakers: Record<string, string> }>(
+      `/sessions/${id}/lines/${lineId}`, { method: 'PUT', body: JSON.stringify({ source }) }),
 };
