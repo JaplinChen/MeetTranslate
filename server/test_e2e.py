@@ -123,6 +123,21 @@ def test_keyproxy_masks_and_rotates(client: TestClient) -> None:
     assert client.delete("/api/keyproxy/keys/anthropic/0").json() == client.get("/api/keyproxy/keys").json()
 
 
+def test_naming_a_speaker_teaches_the_room_their_voice(client: TestClient) -> None:
+    """The one piece of labelled data this system ever gets, kept instead of discarded."""
+    session = main.store.start_session("now", "x.wav")
+    main.store.save_voiceprint(session, "S1", np.array([1.0], dtype="float32").tobytes())
+
+    client.put(f"/api/sessions/{session}/speakers", json={"S1": "Vincent"})
+    assert [s["name"] for s in client.get("/api/speakers/known").json()] == ["Vincent"]
+
+    # A speaker with no stored voiceprint is still nameable, it just teaches nothing.
+    client.put(f"/api/sessions/{session}/speakers", json={"S9": "Nobody"})
+    assert [s["name"] for s in client.get("/api/speakers/known").json()] == ["Vincent"]
+
+    assert client.delete("/api/speakers/known/Vincent").json() == []
+
+
 def test_recording_lifecycle(client: TestClient) -> None:
     assert client.post("/api/recording/stop").status_code == 409
     status = client.get("/api/recording/status").json()

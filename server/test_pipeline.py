@@ -102,6 +102,30 @@ def test_refine_prompt_states_the_domain_and_the_terms() -> None:
     assert f"1: {said}" in prompt
 
 
+def test_known_voice_is_named_on_sight() -> None:
+    """A voice the room has met before arrives named instead of as another anonymous Sn.
+
+    Held to a stricter bar than in-meeting clustering: a wrong merge shows up as a split
+    transcript, a wrong name is attributed to a real person and nobody thinks to check it.
+    """
+    import numpy as np
+
+    vincent = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+    stranger = np.array([0.0, 1.0, 0.0], dtype=np.float32)
+    d = diarize.Diarizer.__new__(diarize.Diarizer)
+    d._known = [("Vincent", vincent)]
+
+    assert d._recognise(vincent) == "Vincent"
+    # Close, but not close enough to put someone's name on it.
+    nearly = np.array([1.0, 1.3, 0.0], dtype=np.float32)
+    assert diarize.cosine(nearly, vincent) < config.KNOWN_SPEAKER_THRESHOLD
+    assert d._recognise(nearly) == ""
+    assert d._recognise(stranger) == ""
+    # An empty roster never guesses.
+    d._known = []
+    assert d._recognise(vincent) == ""
+
+
 def test_degenerate_detects_collapsed_decode() -> None:
     # The real output of forcing zh on English audio.
     assert asr.is_degenerate("前來,前來,前來,前來,前來,前來,前來,前來,前來,前來,前來")

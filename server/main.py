@@ -227,8 +227,24 @@ def get_lines(session_id: int) -> dict:
 @app.put("/api/sessions/{session_id}/speakers")
 def put_speaker_names(session_id: int, body: dict) -> dict:
     for code, name in body.items():
-        store.set_speaker_name(session_id, str(code), str(name))
+        code, name = str(code), str(name).strip()
+        store.set_speaker_name(session_id, code, name)
+        # Naming a speaker is the only labelled data this system ever gets. Attaching it to the
+        # voiceprint is what stops the next meeting asking the same question.
+        if name and (centroid := store.voiceprint(session_id, code)):
+            store.remember_speaker(name, centroid)
     return store.speaker_names(session_id)
+
+
+@app.get("/api/speakers/known")
+def get_known_speakers() -> list[dict]:
+    return [{"name": name} for name, _ in store.known_speakers()]
+
+
+@app.delete("/api/speakers/known/{name}")
+def delete_known_speaker(name: str) -> list[dict]:
+    store.forget_speaker(name)
+    return get_known_speakers()
 
 
 @app.post("/api/sessions/{session_id}/reprocess")

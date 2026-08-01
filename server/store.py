@@ -57,6 +57,17 @@ CREATE TABLE IF NOT EXISTS line_translation (
     text      TEXT NOT NULL,
     PRIMARY KEY (line_id, lang)
 );
+CREATE TABLE IF NOT EXISTS voiceprint (
+    session_id INTEGER REFERENCES session(id) ON DELETE CASCADE,
+    code       TEXT NOT NULL,
+    centroid   BLOB NOT NULL,
+    PRIMARY KEY (session_id, code)
+);
+CREATE TABLE IF NOT EXISTS known_speaker (
+    name     TEXT PRIMARY KEY,
+    centroid BLOB NOT NULL,
+    sessions INTEGER NOT NULL DEFAULT 1
+);
 CREATE TABLE IF NOT EXISTS speaker_name (
     session_id INTEGER NOT NULL REFERENCES session(id) ON DELETE CASCADE,
     code       TEXT NOT NULL,
@@ -210,6 +221,54 @@ class Store:
                 "ON CONFLICT(session_id, code) DO UPDATE SET name=excluded.name",
                 (session_id, code, name),
             )
+            self._db.commit()
+
+    # ── voiceprints ─────────────────────────────────────────────────────
+    #
+    # Naming S1 as "Vincent" is knowledge the meeting room throws away every time. Kept here, the
+    # next meeting recognises the voice instead of asking again. Two tables because the two facts
+    # arrive at different times: the centroid exists while the meeting runs, the name usually
+    # arrives afterwards from the transcript page.
+
+    def save_voiceprint(self, session_id: int, code: str, centroid: bytes) -> None:
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO voiceprint (session_id, code, centroid) VALUES (?,?,?) "
+                "ON CONFLICT(session_id, code) DO UPDATE SET centroid=excluded.centroid",
+                (session_id, code, centroid),
+            )
+            self._db.commit()
+
+    def voiceprint(self, session_id: int, code: str) -> bytes | None:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT centroid FROM voiceprint WHERE session_id=? AND code=?", (session_id, code)
+            ).fetchone()
+        return row["centroid"] if row else None
+
+    def remember_speaker(self, name: str, centroid: bytes) -> None:
+        """Promote one session's voiceprint to a name this room knows.
+
+        The newest recording wins rather than being averaged in: a voice drifts with the room, the
+        mic and the codec, and the most recent sample is the closest to the next meeting.
+        """
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO known_speaker (name, centroid) VALUES (?,?) "
+                "ON CONFLICT(name) DO UPDATE SET centroid=excluded.centroid, "
+                "sessions=known_speaker.sessions + 1",
+                (name, centroid),
+            )
+            self._db.commit()
+
+    def known_speakers(self) -> list[tuple[str, bytes]]:
+        with self._lock:
+            return [(r["name"], r["centroid"]) for r in
+                    self._db.execute("SELECT name, centroid FROM known_speaker ORDER BY sessions DESC")]
+
+    def forget_speaker(self, name: str) -> None:
+        with self._lock:
+            self._db.execute("DELETE FROM known_speaker WHERE name=?", (name,))
             self._db.commit()
 
     def speaker_names(self, session_id: int) -> dict[str, str]:
