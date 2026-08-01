@@ -155,6 +155,25 @@ def test_refused_corrections_are_kept_as_evidence() -> None:
     assert rejected == []
 
 
+def test_discarded_chunks_are_counted_not_hidden() -> None:
+    """A chunk thrown out whole leaves its lines exactly as recognised, which reads the same as a
+    chunk that needed nothing. Over seven interviews eleven chunks were discarded — 275 lines that
+    looked checked and were not."""
+    lines = [refine.Line("S1", "zh", f"第{i}句話沒有問題") for i in range(6)]
+    everything = chr(10).join(f"{i}: 第{i}句話有問題" for i in range(1, 6))
+
+    coverage = refine.Coverage()
+    coverage.lines = len(lines)
+    assert refine.parse_response(everything, lines, None, None, coverage) == [l.text for l in lines]
+    assert coverage.skipped == len(lines) and coverage.fraction == 1.0
+
+    # A chunk that was actually read counts as covered, corrections or not.
+    coverage = refine.Coverage()
+    coverage.lines = len(lines)
+    refine.parse_response("1: 第0句話有問題", lines, None, None, coverage)
+    assert coverage.skipped == 0
+
+
 def test_short_final_chunk_can_still_be_corrected() -> None:
     """One correction is a majority of a one-line chunk, and the transcript's last few lines
     always land in one. The restructuring guard needs a chunk to be about."""

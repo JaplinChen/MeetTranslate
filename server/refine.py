@@ -144,6 +144,22 @@ def accept(original: str, candidate: str, terms: list[Term] | None = None) -> bo
 
 
 @dataclass
+class Coverage:
+    """How much of the transcript the pass actually looked at.
+
+    A chunk the guards throw out whole leaves its lines exactly as the recogniser wrote them, which
+    is indistinguishable from a chunk that needed no corrections. Counted, because "checked and
+    found clean" and "never checked" are not the same claim to make about a transcript.
+    """
+    lines: int = 0
+    skipped: int = 0
+
+    @property
+    def fraction(self) -> float:
+        return 0.0 if not self.lines else self.skipped / self.lines
+
+
+@dataclass
 class Rejected:
     """A correction the guards refused, kept because it is the most useful thing they produce.
 
@@ -178,7 +194,8 @@ def _sounds_like(was: str, now: str) -> bool:
 
 
 def parse_response(raw: str, lines: list[Line], terms: list[Term] | None = None,
-                   rejected: list[Rejected] | None = None) -> list[str]:
+                   rejected: list[Rejected] | None = None,
+                   coverage: Coverage | None = None) -> list[str]:
     """Map the numbered reply back onto the input, keeping originals wherever it disagrees.
 
     Only changed lines come back. Asking for the whole chunk made the model copy out two dozen
@@ -199,6 +216,8 @@ def parse_response(raw: str, lines: list[Line], terms: list[Term] | None = None,
     # end of a transcript, one correction is already a majority.
     if len(lines) >= 4 and len(got) > len(lines) // 2:
         log.warning("refine rewrote %d of %d lines, keeping originals", len(got), len(lines))
+        if coverage is not None:
+            coverage.skipped += len(lines)
         return [l.text for l in lines]
 
     out = []
@@ -269,9 +288,12 @@ class Refiner:
         self._topic = topic
 
     def refine(self, lines: list[Line], terms: list[Term] | None = None,
-               rejected: list[Rejected] | None = None) -> list[str]:
+               rejected: list[Rejected] | None = None,
+               coverage: Coverage | None = None) -> list[str]:
         """Correct a whole transcript, chunk by chunk. Returns one string per input line."""
         out: list[str] = []
+        if coverage is not None:
+            coverage.lines += len(lines)
         for start in range(0, len(lines), CHUNK_LINES):
             chunk = lines[start : start + CHUNK_LINES]
             context = [Line(l.speaker, l.lang, t)
@@ -279,8 +301,10 @@ class Refiner:
                                        out[max(0, start - CONTEXT_LINES) : start])]
             prompt = build_prompt(chunk, context, terms or [], self._topic)
             try:
-                out += parse_response(self._chat(prompt), chunk, terms, rejected)
+                out += parse_response(self._chat(prompt), chunk, terms, rejected, coverage)
             except Exception:
                 log.exception("refine failed at line %d, keeping originals", start)
+                if coverage is not None:
+                    coverage.skipped += len(chunk)
                 out += [l.text for l in chunk]
         return out
