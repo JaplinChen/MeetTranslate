@@ -47,6 +47,8 @@ def main() -> int:
     ap.add_argument("--topic", default="SAP ERP 導入訪談")
     ap.add_argument("--min-count", type=int, default=2,
                     help="times a term must be proposed before it counts as evidence")
+    ap.add_argument("--max-sound", type=float, default=0.45,
+                    help="how far a candidate may be from what was heard, as a fraction of pinyin")
     ap.add_argument("--apply", action="store_true", help="add the surviving candidates to the glossary")
     args = ap.parse_args()
 
