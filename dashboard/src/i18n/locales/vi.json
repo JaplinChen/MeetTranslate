@@ -17,7 +17,8 @@
     "settings": "Cài đặt",
     "display": "Phụ đề",
     "llm": "LLM",
-    "keyproxy": "Khoá LLM"
+    "keyproxy": "Khoá LLM",
+    "learned": "Đã học"
   },
   "lang": {
     "zh": "Tiếng Trung phồn thể",
@@ -157,5 +158,16 @@
       "title": "Mất kết nối",
       "message": "Không kết nối được tới dịch vụ cục bộ. Kiểm tra xem nó còn chạy không."
     }
+  },
+  "learned": {
+    "title": "Đã học",
+    "subtitle": "Những gì hệ thống tự học được khi dùng, và cách xoá đi",
+    "voices": "Giọng đã biết",
+    "voicesNote": "Đặt tên cho người nói trong bản ghi sẽ lưu lại dấu giọng. Các cuộc họp sau tự nhận ra giọng đó.",
+    "noVoices": "Chưa học được giọng nào. Hãy đặt tên người nói trong một bản ghi.",
+    "corrections": "Sửa lỗi đã học",
+    "correctionsNote": "Sửa một dòng trong bản ghi sẽ lưu lại cặp sai/đúng và áp dụng cho mọi bản ghi sau.",
+    "noCorrections": "Chưa học được sửa lỗi nào. Hãy sửa một dòng trong bản ghi.",
+    "forget": "Xoá mục này"
   }
 }

@@ -17,7 +17,8 @@
     "settings": "Settings",
     "display": "Subtitles",
     "llm": "LLM",
-    "keyproxy": "LLM keys"
+    "keyproxy": "LLM keys",
+    "learned": "Learned"
   },
   "lang": {
     "zh": "Traditional Chinese",
@@ -157,5 +158,16 @@
       "title": "Connection lost",
       "message": "Cannot reach the local service. Check that it is still running."
     }
+  },
+  "learned": {
+    "title": "Learned",
+    "subtitle": "What the room has picked up from ordinary use, and how to undo it",
+    "voices": "Known voices",
+    "voicesNote": "Naming a speaker on a transcript stores their voiceprint. Later meetings label that voice automatically.",
+    "noVoices": "No voices learned yet. Name a speaker on a transcript to teach one.",
+    "corrections": "Learned corrections",
+    "correctionsNote": "Correcting a line on a transcript stores what was written against what was said, and applies it to every transcript afterwards.",
+    "noCorrections": "No corrections learned yet. Edit a transcript line to teach one.",
+    "forget": "Forget this"
   }
 }

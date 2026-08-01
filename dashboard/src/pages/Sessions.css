@@ -110,3 +110,20 @@
     grid-column: 1 / -1;
   }
 }
+
+/* A line switches into a real textarea when clicked. contentEditable loses characters to the
+   IME on a transcript that is mostly Chinese. */
+.sess-source {
+  cursor: text;
+}
+
+.sess-editing {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--accent, #2563eb);
+  border-radius: 6px;
+  background: var(--panel);
+  color: inherit;
+  font: inherit;
+  resize: vertical;
+}

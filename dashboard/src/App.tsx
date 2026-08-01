@@ -10,6 +10,7 @@ import './App.css';
 const Capture = lazy(() => import('./pages/Capture').then(m => ({ default: m.Capture })));
 const Sessions = lazy(() => import('./pages/Sessions').then(m => ({ default: m.Sessions })));
 const Glossary = lazy(() => import('./pages/Glossary').then(m => ({ default: m.Glossary })));
+const Learned = lazy(() => import('./pages/Learned').then(m => ({ default: m.Learned })));
 const Live = lazy(() => import('./pages/Live').then(m => ({ default: m.Live })));
 const Display = lazy(() => import('./pages/Display').then(m => ({ default: m.Display })));
 const LlmSettings = lazy(() => import('./pages/LlmSettings').then(m => ({ default: m.LlmSettings })));
@@ -36,6 +37,7 @@ function App() {
                 <Route path="capture" element={<Capture />} />
                 <Route path="sessions" element={<Sessions />} />
                 <Route path="glossary" element={<Glossary />} />
+                <Route path="learned" element={<Learned />} />
                 <Route path="settings" element={<Settings />}>
                   <Route index element={<Navigate to="display" replace />} />
                   <Route path="display" element={<Display />} />
