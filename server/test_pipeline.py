@@ -181,6 +181,25 @@ def test_short_final_chunk_can_still_be_corrected() -> None:
     assert refine.parse_response("1: 料號的問題", lines) == ["料號的問題"]
 
 
+def test_clustering_is_judged_by_speech_not_cluster_count() -> None:
+    """Two speakers who each hold a real share of the meeting must not be merged.
+
+    The previous threshold was picked by counting clusters, which rewarded merging everyone into
+    one: on a 37-minute interview it produced a single speaker holding 100% of the speech, and on
+    a 67-minute one it produced 49 minutes against 14 where 0.65 finds 21 / 14 / 12 / 8.
+    """
+    import numpy as np
+
+    # Two voices that a room microphone would leave closer together than a studio would.
+    a = np.array([1.0, 0.35, 0.0], dtype=np.float32)
+    b = np.array([0.35, 1.0, 0.0], dtype=np.float32)
+    assert diarize.cosine(a, b) < config.SPEAKER_THRESHOLD, "the fixture must be separable"
+
+    labels = diarize.cluster_offline([a, a * 0.9, b, b * 1.1])
+    assert len(set(labels)) == 2, labels
+    assert labels[0] == labels[1] and labels[2] == labels[3]
+
+
 def test_known_voice_is_named_on_sight() -> None:
     """A voice the room has met before arrives named instead of as another anonymous Sn.
 
