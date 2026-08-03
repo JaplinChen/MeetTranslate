@@ -229,8 +229,14 @@
   margin-left: var(--sidebar-w, 260px);
   width: calc(100% - var(--sidebar-w, 260px));
   background: var(--bg-light);
-  min-height: 100dvh;
+  /* A definite height, not min-height: the list pages are `height: 100%` columns whose inner list
+     scrolls, and a percentage height cannot resolve against a min-height parent. Left as min-height,
+     those pages grew past the viewport and the document scrolled *as well as* the list inside them.
+     This is the same shape .main-content.mobile has always had. Anything taller than the viewport
+     with no inner scroller (a settings form, say) scrolls here instead — never clipped. */
+  height: 100dvh;
   overflow-x: hidden;
+  overflow-y: auto;
   transition:
     margin-left 0.3s ease,
     width 0.3s ease;
