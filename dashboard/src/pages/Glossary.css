@@ -1,15 +1,15 @@
 .gloss-add {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: var(--space-2);
   align-items: center;
 }
 
 .gloss-input,
 .gloss-add select {
-  padding: 0.5rem 0.65rem;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--bg-input, var(--bg-card));
   color: var(--text-primary);
   font-size: 0.9rem;
@@ -32,7 +32,7 @@
 }
 
 .gloss-hint {
-  margin: 0.75rem 0 0;
+  margin: var(--space-3) 0 0;
   font-size: 0.82rem;
   line-height: 1.5;
 }
@@ -49,7 +49,7 @@
 
 .gloss-table th,
 .gloss-table td {
-  padding: 0.55rem 0.6rem;
+  padding: var(--space-2) var(--space-2);
   text-align: left;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
@@ -68,8 +68,8 @@
 }
 
 .gloss-badge {
-  padding: 0.12rem 0.45rem;
-  border-radius: 4px;
+  padding: var(--space-05) var(--space-2);
+  border-radius: var(--radius-sm);
   font-size: 0.74rem;
   font-weight: 600;
 }
@@ -91,9 +91,9 @@
 
 .gloss-del {
   display: inline-flex;
-  padding: 0.3rem;
+  padding: var(--space-1);
   border: none;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: none;
   color: var(--text-secondary);
   cursor: pointer;
@@ -107,9 +107,9 @@
 .gloss-empty {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: var(--space-2);
   align-items: center;
-  padding: 2.5rem 1rem;
+  padding: var(--space-10) var(--space-4);
   color: var(--text-secondary);
 }
 
@@ -118,7 +118,7 @@
   margin: 0 0 12px;
   padding: 10px 12px;
   border: 1px solid var(--warning, #d97706);
-  border-radius: 8px;
+  border-radius: var(--radius);
   color: var(--warning, #d97706);
   font-size: 13px;
   line-height: 1.6;

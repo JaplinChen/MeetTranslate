@@ -1,5 +1,5 @@
 .etable-page{
-  padding: 2rem;
+  padding: var(--space-8);
   width: 100%;
   /* The rows are term pairs mirrored around an arrow, so their columns are 1fr each. Unbounded,
      that put 715px of dead space on either side of a two-character term on a wide screen and left
@@ -19,14 +19,14 @@
 }
 
 .etable-page .page-header{
-  margin-bottom: 1.5rem;
+  margin-bottom: var(--space-6);
 }
 
 .etable-page .btn-primary{
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.6rem 1rem;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
   background: var(--primary);
   color: var(--primary-ink);
   border: none;
@@ -48,9 +48,9 @@
 
 .etable-page .etable-tabs {
   display: inline-flex;
-  gap: 0.25rem;
-  margin-bottom: 1.25rem;
-  padding: 0.25rem;
+  gap: var(--space-1);
+  margin-bottom: var(--space-5);
+  padding: var(--space-1);
   background: var(--bg-light);
   border: 1px solid var(--border);
   border-radius: calc(var(--radius) + 0.25rem);
@@ -59,8 +59,8 @@
 .etable-page .etable-tab {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
   border: none;
   background: none;
   cursor: pointer;
@@ -102,7 +102,7 @@
   background: var(--bg-card, var(--bg-light));
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 1.25rem;
+  padding: var(--space-5);
 }
 
 /* The dup-check panel is a small collapsible control sharing the terms tab with the table below it,
@@ -112,13 +112,13 @@
 }
 
 .etable-page .etable-panel-title {
-  margin: 0 0 1rem;
+  margin: 0 0 var(--space-4);
   font-size: 1rem;
   font-weight: 600;
   color: var(--text-primary);
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .etable-page .etable-count {
@@ -128,7 +128,7 @@
   min-width: 22px;
   height: 22px;
   padding: 0 6px;
-  border-radius: 11px;
+  border-radius: var(--radius);
   background: var(--primary);
   color: var(--primary-ink);
   font-size: 0.75rem;
@@ -141,8 +141,8 @@
      (below) so inputs don't get crushed to 72px and clip their placeholders. */
   flex-wrap: nowrap;
   align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.75rem;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
 }
 
 @media (max-width: 640px) {
@@ -154,7 +154,7 @@
 .etable-page .etable-add input {
   flex: 1 1 6rem;
   min-width: 0;
-  padding: 0.6rem 0.75rem;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-light);
@@ -169,9 +169,9 @@
 
 .etable-page .etable-search {
   position: relative;
-  margin-top: 0.5rem;
+  margin-top: var(--space-2);
   display: flex;
-  gap: 0.5rem;
+  gap: var(--space-2);
   align-items: center;
 }
 
@@ -198,7 +198,7 @@
 .etable-page .etable-search input {
   width: 100%;
   box-sizing: border-box;
-  padding: 0.6rem 0.75rem 0.6rem 2.2rem;
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-8);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-light);
@@ -210,10 +210,10 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  margin-top: 0.75rem;
+  margin-top: var(--space-3);
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: var(--space-2);
 }
 
 .etable-page .etable-item {
@@ -224,8 +224,8 @@
      resolve the fr columns identically and stay aligned (auto columns would differ in content width). */
   grid-template-columns: var(--col-key, 1.6fr) 1.25rem var(--col-val, 2fr) var(--col-count, 3.5rem) 3.75rem;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.4rem 0.75rem;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   font-size: 0.8125rem;
@@ -256,7 +256,7 @@
 }
 
 .etable-page .etable-cat-select {
-  padding: 0.35rem 0.4rem;
+  padding: var(--space-1) var(--space-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-light);
@@ -269,7 +269,7 @@
   flex: 0 0 auto;
   width: auto;
   min-width: 8rem;
-  padding: 0.6rem 2rem 0.6rem 0.6rem;
+  padding: var(--space-2) var(--space-8) var(--space-2) var(--space-2);
   font-size: 0.9375rem;
 }
 
@@ -282,14 +282,14 @@
 .etable-page .etable-dup-terms {
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .etable-page .etable-dup-terms .etable-src {
   display: inline-flex;
   align-items: center;
-  gap: 0.125rem;
-  padding: 0.15rem 0.15rem 0.15rem 0.5rem;
+  gap: var(--space-05);
+  padding: var(--space-05) var(--space-05) var(--space-05) var(--space-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
 }
@@ -302,14 +302,14 @@
 .etable-page .etable-row-actions {
   display: flex;
   align-items: center;
-  gap: 0.125rem;
+  gap: var(--space-05);
 }
 
 .etable-page .etable-del {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0.35rem;
+  padding: var(--space-1);
   border: none;
   background: transparent;
   color: var(--text-secondary);
@@ -330,7 +330,7 @@
 .etable-page .etable-edit {
   width: 100%;
   min-width: 0;
-  padding: 0.3rem 0.5rem;
+  padding: var(--space-1) var(--space-2);
   border: 1px solid var(--primary);
   border-radius: var(--radius);
   background: var(--bg-light);
@@ -360,15 +360,15 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.75rem;
+  gap: var(--space-3);
   color: var(--text-muted);
   text-align: center;
-  padding: 2rem 1rem;
+  padding: var(--space-8) var(--space-4);
 }
 
 .etable-page .etable-panel--pending {
   flex: 0 0 auto;
-  margin-bottom: 1rem;
+  margin-bottom: var(--space-4);
 }
 
 .etable-page .etable-item--pending {
@@ -379,7 +379,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 /* Header row mirrors the item grid so its labels sit over the columns they sort. */
@@ -387,9 +387,9 @@
   display: grid;
   grid-template-columns: var(--col-key, 1.6fr) 1.25rem var(--col-val, 2fr) var(--col-count, 3.5rem) 3.75rem;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.35rem 0.75rem;
-  margin-top: 0.75rem;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-3);
+  margin-top: var(--space-3);
   border-bottom: 1px solid var(--border);
   /* Match the rows' 1px side borders so the fr columns resolve to the exact same widths. */
   border-left: 1px solid transparent;
@@ -401,7 +401,7 @@
   color: transparent;
   font-size: 1.1rem;
   user-select: none;
-  padding: 0 0.25rem;
+  padding: 0 var(--space-1);
 }
 
 /* Per-column drag handle pinned to the right edge of each resizable header cell. */
@@ -433,7 +433,7 @@
 .etable-page .etable-usage,
 .etable-page .etable-cat {
   border-right: 1px solid var(--border);
-  padding-right: 0.75rem;
+  padding-right: var(--space-3);
 }
 
 .etable-page .etable-col-sort {
@@ -467,6 +467,7 @@
   text-align: right;
   color: var(--text-muted);
   font-size: 0.8125rem;
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
 
@@ -481,16 +482,16 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.75rem;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
 }
 
 .etable-page .pagination button{
-  padding: 0.5rem 1rem;
+  padding: var(--space-2) var(--space-4);
   font-size: 0.875rem;
   background: var(--bg-white);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   color: var(--text-secondary);
   transition: all 0.2s;
@@ -507,12 +508,12 @@
 
 .etable-page .page-numbers{
   display: flex;
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 
 .etable-page .page-numbers button{
   min-width: 36px;
-  padding: 0.5rem;
+  padding: var(--space-2);
 }
 
 .etable-page .page-numbers button.active{
@@ -532,7 +533,7 @@
 
 .etable-page .senders-import{
   display: flex;
-  gap: 0.5rem;
+  gap: var(--space-2);
   align-items: center;
   /* Two buttons + the select overflow a narrow viewport, and .etable-page clips overflow-x, so the
      last control would be unreachable. Wrap instead. */
@@ -548,7 +549,7 @@
   /* btn-primary and btn-secondary carry different global padding (40.5px vs 46.7px tall); pin both
      to the select's 36px so the three toolbar controls line up. */
   height: 36px;
-  padding: 0 0.9rem;
+  padding: 0 var(--space-4);
 }
 
 .etable-page .senders-import select{
@@ -560,9 +561,9 @@
 
 .etable-page .senders-import select{
   height: 36px;
-  padding: 0 0.6rem;
+  padding: 0 var(--space-2);
   border: 1px solid var(--border, #e2e2e2);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--bg-white);
   color: inherit;
   max-width: 220px;

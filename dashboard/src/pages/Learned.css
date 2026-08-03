@@ -1,6 +1,6 @@
 .learned-note {
   margin: 0 0 12px;
-  color: var(--muted);
+  color: var(--text-muted);
   font-size: 13px;
   line-height: 1.6;
 }
@@ -8,7 +8,7 @@
 .learned-empty {
   margin: 0;
   padding: 20px 0;
-  color: var(--muted);
+  color: var(--text-muted);
   font-size: 14px;
   text-align: center;
 }
@@ -28,8 +28,8 @@
   gap: 10px;
   padding: 10px 12px;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--panel);
+  border-radius: var(--radius);
+  background: var(--bg-card);
 }
 
 .learned-name,
@@ -38,12 +38,12 @@
 }
 
 .learned-wrong {
-  color: var(--muted);
+  color: var(--text-muted);
   text-decoration: line-through;
 }
 
 .learned-arrow {
-  color: var(--muted);
+  color: var(--text-muted);
   flex: none;
 }
 
@@ -53,9 +53,9 @@
   align-items: center;
   padding: 6px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: none;
-  color: var(--muted);
+  color: var(--text-muted);
   cursor: pointer;
 }
 

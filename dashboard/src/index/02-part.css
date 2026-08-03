@@ -1,69 +1,13 @@
-/* The rule above is meant for TEXT inputs. Radios/checkboxes would otherwise stretch to width:100%
-   and shove their labels far to the right; reset them back to their native box. The :not() excludes
-   the visually-hidden toggle-switch checkbox (it must stay width:0) so this never ties with the
-   per-page `.toggle-switch input { width:0 }` rule on specificity. */
-.modal-body input[type='radio']:not(.toggle-switch input),
-.modal-body input[type='checkbox']:not(.toggle-switch input) {
-  width: auto;
-  padding: 0;
-  border: none;
-  border-radius: 0;
-  background: none;
-  box-shadow: none;
-  flex: none;
-}
-
-.modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.75rem;
-  padding: 1rem 1.5rem 1.5rem;
-  flex-shrink: 0;
-}
-
-/* Icon Button (modal close X) */
-.btn-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  background: var(--bg-light, #f8fafc);
-  border: 1px solid var(--border, #e2e8f0);
-  border-radius: 8px;
-  cursor: pointer;
-  color: var(--text-secondary, #64748b);
-  transition: all 0.2s;
-  flex-shrink: 0;
-  padding: 0;
-}
-
-.btn-icon svg {
-  width: 20px;
-  height: 20px;
-  stroke: var(--text-secondary, #64748b);
-}
-
-.btn-icon:hover {
-  background: rgba(239, 68, 68, 0.12);
-  border-color: rgba(239, 68, 68, 0.3);
-  color: var(--error-text);
-}
-
-.btn-icon:hover svg {
-  stroke: var(--error);
-}
-
 /* Secondary Button */
 .btn-secondary {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.75rem 1.25rem;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
   background: var(--bg-light, #f8fafc);
   color: var(--text-secondary, #64748b);
   border: 1px solid var(--border, #e2e8f0);
-  border-radius: 8px;
+  border-radius: var(--radius);
   font-size: 0.9375rem;
   font-weight: 600;
   cursor: pointer;
@@ -93,9 +37,9 @@
 /* Code element styling */
 code {
   background: var(--bg-light, #f1f5f9);
-  padding: 0.125rem 0.375rem;
-  border-radius: 4px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  padding: var(--space-05) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
   font-size: 0.875em;
   color: var(--text-primary, #1e293b);
 }
@@ -111,21 +55,13 @@ code {
   unicode-bidi: embed;
 }
 
-/* Modal footer: actions should align to the start of the writing direction */
-[dir='rtl'] .modal-footer {
-  justify-content: flex-end;
-  flex-direction: row-reverse;
-}
-
 /* Select dropdown caret on the opposite side */
 [dir='rtl'] select {
-  padding: 0.75rem 1rem 0.75rem 2.5rem;
+  padding: var(--space-3) var(--space-4) var(--space-3) var(--space-10);
   background-position: left 0.75rem center;
 }
 
-/* Inputs in modals: text aligns naturally */
-[dir='rtl'] .modal-body input,
-[dir='rtl'] .modal-body textarea,
+/* Text inputs align naturally with the writing direction */
 [dir='rtl'] input[type='text'],
 [dir='rtl'] input[type='url'],
 [dir='rtl'] input[type='password'],
@@ -146,6 +82,12 @@ code {
   flex-direction: row-reverse;
 }
 
+/* The learned-corrections row reads "wrong → right", so its arrow has to turn with the text.
+   Lives here rather than in Learned.css because that file's rules must stay under the page root. */
+[dir='rtl'] .learned-arrow {
+  transform: scaleX(-1);
+}
+
 /* Toast container — slide in from the opposite side */
 [dir='rtl'] .toast-container {
   right: auto;
@@ -158,31 +100,8 @@ code {
     font-size: 1.5rem;
   }
 
-  .modal {
-    width: 95%;
-    max-width: none;
-    margin: 1rem;
-    border-radius: 12px;
-  }
-
-  .modal-header {
-    padding: 1.25rem 1.25rem 0.875rem;
-  }
-
-  .modal-header h2 {
-    font-size: 1.125rem;
-  }
-
-  .modal-body {
-    padding: 1.25rem;
-  }
-
-  .modal-footer {
-    padding: 0.875rem 1.25rem 1.25rem;
-  }
-
   select {
-    padding: 0.625rem 2.25rem 0.625rem 0.875rem;
+    padding: var(--space-3) var(--space-10) var(--space-3) var(--space-4);
     font-size: 0.875rem;
   }
 }
@@ -190,17 +109,5 @@ code {
 @media (max-width: 480px) {
   h1 {
     font-size: 1.25rem;
-  }
-
-  .modal-overlay {
-    align-items: flex-end;
-  }
-
-  .modal {
-    width: 100%;
-    margin: 0;
-    border-radius: 16px 16px 0 0;
-    /* max-height + body scroll already come from the base .modal rule; the bottom-sheet only
-       changes width/anchoring. (Scrolling lives on .modal-body to avoid a double scrollbar.) */
   }
 }

@@ -1,10 +1,10 @@
 import { type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Sun, Moon, Monitor, Sparkles } from 'lucide-react';
+import { Sun, Moon, Monitor, Palette } from 'lucide-react';
 import { useTheme, type Theme } from '../hooks/useTheme';
 import { useDismissableMenu } from '../hooks/useDismissableMenu';
 
-const themeIcons = { light: Sun, dark: Moon, system: Monitor, anthropic: Sparkles, 'anthropic-dark': Sparkles };
+const themeIcons = { light: Sun, dark: Moon, system: Monitor, anthropic: Palette, 'anthropic-dark': Palette };
 const modes: Theme[] = ['light', 'dark', 'system', 'anthropic', 'anthropic-dark'];
 
 export function AppearanceMenu() {

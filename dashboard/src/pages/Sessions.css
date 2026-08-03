@@ -1,16 +1,16 @@
 .sess-select {
   width: 100%;
   max-width: 30rem;
-  padding: 0.5rem 0.65rem;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--bg-input, var(--bg-card));
   color: var(--text-primary);
   font-size: 0.9rem;
 }
 
 .sess-hint {
-  margin: 0 0 0.75rem;
+  margin: 0 0 var(--space-3);
   color: var(--text-secondary);
   font-size: 0.85rem;
   line-height: 1.5;
@@ -19,12 +19,12 @@
 .sess-names {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 .sess-name {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--space-2);
   align-items: center;
 }
 
@@ -35,9 +35,9 @@
 
 .sess-name input {
   width: 9rem;
-  padding: 0.4rem 0.55rem;
+  padding: var(--space-2) var(--space-2);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--bg-input, var(--bg-card));
   color: var(--text-primary);
 }
@@ -50,8 +50,8 @@
 .sess-line {
   display: grid;
   grid-template-columns: 3.5rem 7rem 1fr;
-  gap: 0.75rem;
-  padding: 0.6rem 0;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
   border-bottom: 1px solid var(--border);
 }
 
@@ -61,6 +61,7 @@
 
 .sess-time {
   color: var(--text-secondary);
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: 0.82rem;
 }
@@ -72,7 +73,7 @@
 }
 
 .sess-body p {
-  margin: 0 0 0.2rem;
+  margin: 0 0 var(--space-1);
 }
 
 .sess-source {
@@ -91,9 +92,9 @@
 .sess-empty {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: var(--space-2);
   align-items: center;
-  padding: 3rem 1rem;
+  padding: var(--space-12) var(--space-4);
   color: var(--text-secondary);
 }
 
@@ -121,8 +122,8 @@
   width: 100%;
   padding: 6px 8px;
   border: 1px solid var(--accent, #2563eb);
-  border-radius: 6px;
-  background: var(--panel);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
   color: inherit;
   font: inherit;
   resize: vertical;

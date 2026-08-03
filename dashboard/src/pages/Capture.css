@@ -1,18 +1,18 @@
 .capture-alert {
   display: flex;
-  gap: 0.6rem;
+  gap: var(--space-2);
   align-items: center;
-  margin-bottom: 1rem;
-  padding: 0.7rem 0.9rem;
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
   border: 1px solid #d6a54566;
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: #d6a5451f;
   color: var(--text-primary);
   font-size: 0.9rem;
 }
 
 .capture-hint {
-  margin: 0 0 0.7rem;
+  margin: 0 0 var(--space-3);
   color: var(--text-secondary);
   font-size: 0.85rem;
   line-height: 1.5;
@@ -21,9 +21,9 @@
 .capture-select {
   width: 100%;
   max-width: 40rem;
-  padding: 0.5rem 0.65rem;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--bg-input, var(--bg-card));
   color: var(--text-primary);
   font-size: 0.9rem;
@@ -31,8 +31,8 @@
 
 .capture-meter {
   height: 0.75rem;
-  margin-bottom: 1rem;
-  border-radius: 999px;
+  margin-bottom: var(--space-4);
+  border-radius: var(--radius-pill);
   background: var(--border);
   overflow: hidden;
 }
@@ -46,7 +46,7 @@
 .capture-stats {
   display: flex;
   flex-wrap: wrap;
-  gap: 1.5rem;
+  gap: var(--space-6);
   margin: 0;
 }
 
@@ -58,8 +58,9 @@
 }
 
 .capture-stats dd {
-  margin: 0.2rem 0 0;
+  margin: var(--space-1) 0 0;
   font-size: 1.1rem;
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
 
@@ -68,7 +69,7 @@
 }
 
 .capture-path {
-  margin: 1rem 0 0;
+  margin: var(--space-4) 0 0;
   color: var(--text-secondary);
   font-family: ui-monospace, monospace;
   font-size: 0.78rem;

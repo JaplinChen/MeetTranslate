@@ -9,10 +9,10 @@
     left: 0;
     right: 0;
     height: 56px;
-    padding: 0 1rem;
+    padding: 0 var(--space-4);
     background: var(--bg-white);
     border-bottom: 1px solid var(--border);
-    z-index: 90;
+    z-index: var(--z-sticky);
   }
 
   .mobile-menu-btn {
@@ -42,7 +42,7 @@
   .mobile-brand {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
 
   .mobile-brand .brand-name {
@@ -64,7 +64,7 @@
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.5);
-    z-index: 95;
+    z-index: var(--z-sidebar);
     animation: fadeIn 0.2s ease;
   }
 
@@ -81,7 +81,7 @@
     margin-left: 0;
     width: 100%;
     padding-top: 56px;
-    height: 100vh;
+    height: 100dvh;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
   }

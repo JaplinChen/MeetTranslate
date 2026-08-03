@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FileText, Loader2 } from 'lucide-react';
+import { FileText } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
+import { PageSkeleton } from '../components/PageSkeleton';
 import { useToast } from '../components/Toast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { appApi, type SessionSummary, type TranscriptLine } from '../services/app.api';
@@ -80,11 +81,7 @@ export function Sessions() {
   const langs = [...new Set(lines.flatMap(l => Object.keys(l.translations)))];
 
   if (loading) {
-    return (
-      <div className="etable-page etable-loading">
-        <Loader2 className="animate-spin" size={32} />
-      </div>
-    );
+    return <PageSkeleton rows={4} />;
   }
 
   return (

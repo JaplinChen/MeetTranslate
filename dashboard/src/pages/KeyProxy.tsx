@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Loader2, KeyRound, Trash2, Plus, ExternalLink } from 'lucide-react';
+import { KeyRound, Trash2, Plus, ExternalLink } from 'lucide-react';
 import { keyProxyApi, type KeyStatus } from '../services/api';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { useResizableCol } from '../hooks/useResizableCol';
 import { useRole } from '../hooks/useRole';
 import { useToast } from '../components/Toast';
 import { PageHeader } from '../components/PageHeader';
+import { PageSkeleton } from '../components/PageSkeleton';
 import './KeyProxy.css';
 
 /**
@@ -98,11 +99,7 @@ export function KeyProxy() {
   };
 
   if (loading) {
-    return (
-      <div className="etable-page etable-loading">
-        <Loader2 className="animate-spin" size={32} />
-      </div>
-    );
+    return <PageSkeleton rows={5} />;
   }
 
   return (
