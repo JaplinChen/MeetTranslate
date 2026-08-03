@@ -181,6 +181,23 @@ def test_short_final_chunk_can_still_be_corrected() -> None:
     assert refine.parse_response("1: 料號的問題", lines) == ["料號的問題"]
 
 
+def test_subtitling_credits_are_not_speech() -> None:
+    """More of the same training data surfacing in the silence between speakers.
+
+    These arrived once batching changed which hallucination Whisper reached for, which is a good
+    reminder that the list is a list and not a rule.
+    """
+    for text in ("MING PAO CANADA MANGA", "MING PAO CANADA 字幕組",
+                 "中文字幕由 Amara.org 社群提供", "本期影片就分享到這裡,謝謝收看",
+                 "多謝您的收看,我們下期見!", "希望大家多多支援"):
+        assert asr.is_hallucination(text), text
+
+    # A sign-off is the end of a line; arranging a meeting is not.
+    assert not asr.is_hallucination("我們下次見面再談這個")
+    assert not asr.is_hallucination("本期的採購單要重新確認")
+    assert not asr.is_hallucination("這個字幕要放在電視上")
+
+
 def test_a_collapse_is_dropped_whoever_chose_the_language() -> None:
     """The check used to run only when a language was forced.
 

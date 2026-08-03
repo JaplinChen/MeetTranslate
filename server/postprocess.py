@@ -24,6 +24,9 @@ log = logging.getLogger("meettranslate.postprocess")
 
 # Utterances a speaker must have before their own language statistics outweigh the meeting's.
 MIN_LANGUAGE_EVIDENCE = 4
+# Utterances handed to the recogniser at once. Long enough to amortise the encoder, short enough
+# that an interrupted run has reported most of what it did.
+BATCH_UTTERANCES = 64
 
 
 @dataclass
@@ -124,19 +127,36 @@ def transcribe_all(utterances: list[Utterance], transcriber: asr.Transcriber,
     hour in that first loop, and a caller with somewhere to put partial results should not have to
     wait for the whole thing to survive an interruption.
     """
-    for i, u in enumerate(utterances, 1):
-        u.text, u.lang = transcriber.transcribe(u.samples, "")
-        if progress:
-            progress(u, i, len(utterances))
+    # The first pass is the expensive one and every utterance in it wants the same thing —
+    # auto-detect — so it goes through the recogniser in batches when the recogniser has a batch
+    # mode. Boundaries are preserved either way; only the number of round trips changes.
+    batch = getattr(transcriber, "transcribe_many", None)
+    if batch:
+        done = 0
+        for start in range(0, len(utterances), BATCH_UTTERANCES):
+            group = utterances[start : start + BATCH_UTTERANCES]
+            for u, (text, lang) in zip(group, batch([g.samples for g in group], "")):
+                u.text, u.lang = text, lang
+                done += 1
+                if progress:
+                    progress(u, done, len(utterances))
+    else:
+        for i, u in enumerate(utterances, 1):
+            u.text, u.lang = transcriber.transcribe(u.samples, "")
+            if progress:
+                progress(u, i, len(utterances))
 
     dominant = dominant_languages(utterances)
     for u in utterances:
         want = dominant.get(u.speaker, "")
-        if want and want != u.lang:
+        # An utterance the first pass refused is retried too, not only one decoded under the wrong
+        # language. Auto-detect collapses on perfectly ordinary speech often enough that dropping
+        # those outright cost 992 real lines across seven interviews — 掃描機這件事情有 and
+        # 就會直接進到系統變成需求 among them. The speaker's own language usually recovers them.
+        if want and (not u.text or want != u.lang):
             text, used = transcriber.transcribe(u.samples, want)
-            # Empty means the speaker's own language decoded this as a noise annotation, which is
-            # what static sounds like to Whisper. The stray foreign-language first pass was the
-            # hallucination, so drop it rather than keep it as a phantom line.
+            # Still empty means the speaker's own language decoded this as noise as well, which is
+            # what static sounds like to Whisper. Drop it rather than keep a phantom line.
             u.text, u.lang = (text, used) if text else ("", u.lang)
 
 

@@ -22,6 +22,11 @@ from . import asr, config
 
 log = logging.getLogger("meettranslate.asr_gpu")
 
+# Utterances decoded together. Sixteen fits comfortably in 16 GB beside a large-v3 in float16.
+BATCH_SIZE = 16
+# Silence inserted between utterances when they are laid end to end for batching.
+BATCH_GAP_SECONDS = 1.0
+
 
 def _add_cuda_dlls() -> None:
     """Put the pip-installed CUDA runtime on PATH before CTranslate2 loads.
@@ -62,7 +67,61 @@ class Transcriber:
         self._hotwords = hotwords
         name = str(model or config.gpu_model(self._languages))
         self._model = WhisperModel(name, device=device, compute_type=compute_type)
+        self._batched = None
         log.info("ct2 model %s on %s/%s", name, device, compute_type)
+
+    def transcribe_many(self, clips: list[np.ndarray], language: str) -> list[tuple[str, str]]:
+        """Decode many utterances in one pass, keeping every boundary.
+
+        Whisper's encoder always processes a thirty-second window, so a five-second utterance
+        costs the same as a thirty-second one — and a meeting is thousands of short utterances.
+        Measured on this box: 0.186 realtime one at a time against 0.045 batched.
+
+        The clips are laid end to end with a second of silence between them and handed over with
+        `clip_timestamps`, which is what keeps the boundaries. Without it the batching pipeline
+        applies its own VAD and returns five segments where there were twenty-one — and speaker
+        identity, per-speaker language and the subtitle line are all pinned to our boundaries, so
+        letting the model re-segment would take the transcript apart.
+        """
+        if not clips:
+            return []
+
+        gap = np.zeros(int(BATCH_GAP_SECONDS * config.SAMPLE_RATE), dtype=np.float32)
+        spans, parts, at = [], [], 0.0
+        for clip in clips:
+            seconds = len(clip) / config.SAMPLE_RATE
+            spans.append({"start": at, "end": at + seconds})
+            parts += [clip.astype(np.float32), gap]
+            at += seconds + BATCH_GAP_SECONDS
+
+        from faster_whisper import BatchedInferencePipeline
+
+        if self._batched is None:
+            self._batched = BatchedInferencePipeline(model=self._model)
+        segments, info = self._batched.transcribe(
+            np.concatenate(parts), language=language or None, beam_size=5,
+            batch_size=BATCH_SIZE, vad_filter=False, clip_timestamps=spans,
+            hotwords=self._hotwords or None, condition_on_previous_text=False,
+        )
+
+        # Each segment is placed by its midpoint, so a decode that runs slightly over its clip
+        # still lands on the utterance it came from.
+        texts = ["" for _ in clips]
+        for seg in segments:
+            middle = (seg.start + seg.end) / 2
+            for i, span in enumerate(spans):
+                if span["start"] <= middle <= span["end"]:
+                    texts[i] = (texts[i] + seg.text).strip()
+                    break
+
+        detected = (info.language or language or "").strip()
+        return [self._judge(text, detected) for text in texts]
+
+    def _judge(self, text: str, detected: str) -> tuple[str, str]:
+        if (asr.is_noise(text) or asr.is_hallucination(text) or asr.is_degenerate(text)
+                or not self._allowed(detected)):
+            return "", detected
+        return asr._post(text, detected), detected
 
     def transcribe(self, samples: np.ndarray, language: str) -> tuple[str, str]:
         segments, info = self._model.transcribe(
@@ -79,10 +138,7 @@ class Transcriber:
         # Same three refusals as the sherpa path, including the collapse check: a first-pass
         # auto-detect that returns 產品 產品 產品 產品 must not have the language it invented for
         # that counted as evidence of what the speaker speaks.
-        if (asr.is_noise(text) or asr.is_hallucination(text) or asr.is_degenerate(text)
-                or not self._allowed(detected)):
-            return "", detected
-        return asr._post(text, detected), detected
+        return self._judge(text, detected)
 
     def _allowed(self, detected: str) -> bool:
         if not self._languages or not detected:

@@ -73,7 +73,13 @@ def is_degenerate(text: str) -> bool:
 _HALLUCINATIONS = re.compile(
     r"đăng ký kênh|theo dõi và (hẹn|đăng)|hẹn gặp lại|subscribe cho kênh|la la school"
     r"|thanks for watching|subscribe to (our|the) channel|please subscribe"
-    r"|訂閱(我們的)?頻道|點選訂閱|歡迎訂閱|請不吝|點贊|打賞|明鏡|點點欄目",
+    r"|訂閱(我們的)?頻道|點選訂閱|歡迎訂閱|請不吝|點贊|打賞|明鏡|點點欄目"
+    # Subtitling credits and sign-offs, all of them from the same training data. Seen on seven
+    # real interviews, where they arrive in the silence between speakers.
+    r"|ming pao|amara\.org|字幕組|字幕由|本期(影片|節目)|謝謝觀看|感謝觀看"
+    # Anchored at the end: a sign-off is the last thing in the line, while 我們下次見面再談 is
+    # someone arranging a meeting.
+    r"|(下次|下期|下集)見[。！!]?$|多多支援|請按贊|支持明鏡",
     re.IGNORECASE,
 )
 
