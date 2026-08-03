@@ -22,6 +22,9 @@ from .store import Store
 
 log = logging.getLogger("meettranslate.postprocess")
 
+# Utterances a speaker must have before their own language statistics outweigh the meeting's.
+MIN_LANGUAGE_EVIDENCE = 4
+
 
 @dataclass
 class Utterance:
@@ -84,14 +87,32 @@ def assign_speakers(utterances: list[Utterance], diarizer: diarize.Diarizer) -> 
 
 
 def dominant_languages(utterances: list[Utterance]) -> dict[str, str]:
-    """Majority language per speaker, computed after clustering rather than as the meeting ran."""
+    """Majority language per speaker, computed after clustering rather than as the meeting ran.
+
+    A speaker needs to have said enough for a majority to mean anything. Raising the clustering
+    threshold to separate real participants also produces a long tail of speakers holding two or
+    three utterances, and letting those establish their own language put 433 Chinese lines under
+    an English label across seven interviews — 產品 產品 產品 decoded as English because one
+    stray detection was all the evidence there was.
+
+    Below the minimum a speaker inherits the meeting's language, which is a far better guess than
+    a coin flip on two samples.
+    """
     counts: dict[str, dict[str, int]] = {}
+    overall: dict[str, int] = {}
     for u in utterances:
         # Text-less utterances are dropped noise; their detected language is Whisper guessing at
         # static and must not vote.
         if u.lang and u.text:
             counts.setdefault(u.speaker, {})[u.lang] = counts.setdefault(u.speaker, {}).get(u.lang, 0) + 1
-    return {code: max(langs, key=langs.get) for code, langs in counts.items() if langs}
+            overall[u.lang] = overall.get(u.lang, 0) + 1
+
+    if not overall:
+        return {}
+    meeting = max(overall, key=overall.get)
+    return {code: (max(langs, key=langs.get) if sum(langs.values()) >= MIN_LANGUAGE_EVIDENCE
+                   else meeting)
+            for code, langs in counts.items() if langs}
 
 
 def transcribe_all(utterances: list[Utterance], transcriber: asr.Transcriber,
@@ -125,8 +146,9 @@ def rewrite_session(store: Store, session_id: int, wav: Path, cfg: config.Config
     # GPU first. The CPU fallback keeps float32 weights and every core: this runs after the
     # meeting, so accuracy is the only concern — but it also makes the machine unusable while it
     # runs, which is the other reason the GPU path exists.
-    transcriber = asr_gpu.maybe(cfg.languages, asr_gpu.hotwords_from(store.glossary()))         or asr.Transcriber(model_dir=best_model(), quantized=False, num_threads=os.cpu_count() or 4,
-                           languages=cfg.languages)
+    transcriber = (asr_gpu.maybe(cfg.languages, asr_gpu.hotwords_from(store.glossary()))
+                   or asr.Transcriber(model_dir=best_model(), quantized=False,
+                                      num_threads=os.cpu_count() or 4, languages=cfg.languages))
     diarizer = diarize.Diarizer(cfg=cfg)
 
     utterances = segment(wav)

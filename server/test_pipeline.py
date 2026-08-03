@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from . import asr, config, correct, diarize, refine, store
+from . import asr, config, correct, diarize, postprocess, refine, store
 
 
 def test_refine_keeps_the_original_when_the_model_rewrites() -> None:
@@ -179,6 +179,26 @@ def test_short_final_chunk_can_still_be_corrected() -> None:
     always land in one. The restructuring guard needs a chunk to be about."""
     lines = [refine.Line("S1", "zh", "料耗的問題")]
     assert refine.parse_response("1: 料號的問題", lines) == ["料號的問題"]
+
+
+def test_a_speaker_needs_evidence_before_setting_their_own_language() -> None:
+    """Separating real participants also produces a tail of speakers holding two or three
+    utterances, and a majority over two samples is a coin flip. Letting those establish their own
+    language put 433 Chinese lines under an English label across seven interviews.
+    """
+    import numpy as np
+
+    def said(speaker: str, lang: str) -> postprocess.Utterance:
+        return postprocess.Utterance(0.0, np.zeros(1, dtype="float32"), speaker, lang, "x")
+
+    meeting = [said("S1", "zh")] * 20 + [said("S2", "en")] * 6 + [said("S3", "en")] * 2
+    dominant = postprocess.dominant_languages(meeting)
+    assert dominant["S1"] == "zh"
+    # Enough of its own to disagree with the room.
+    assert dominant["S2"] == "en"
+    # Not enough; inherits the meeting rather than guessing.
+    assert dominant["S3"] == "zh"
+    assert postprocess.dominant_languages([]) == {}
 
 
 def test_clustering_is_judged_by_speech_not_cluster_count() -> None:
