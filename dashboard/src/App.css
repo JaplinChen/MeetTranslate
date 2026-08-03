@@ -279,14 +279,6 @@ a:hover {
   text-decoration: underline;
 }
 
-/* Full-page loading spinner — shared across pages. */
-.page-loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 400px;
-}
-
 /* Error banner — shared across pages (moved out of Plugins.css so any page can use it). */
 .error-banner {
   background: rgba(239, 68, 68, 0.1);

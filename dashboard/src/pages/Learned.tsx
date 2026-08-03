@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Brain, Loader2, Trash2 } from 'lucide-react';
+import { Brain, Trash2 } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
+import { PageSkeleton } from '../components/PageSkeleton';
 import { useToast } from '../components/Toast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { appApi, type KnownSpeaker, type LearnedCorrection } from '../services/app.api';
@@ -65,11 +66,7 @@ export function Learned() {
   };
 
   if (loading) {
-    return (
-      <div className="etable-page etable-loading">
-        <Loader2 className="animate-spin" size={32} />
-      </div>
-    );
+    return <PageSkeleton />;
   }
 
   return (
