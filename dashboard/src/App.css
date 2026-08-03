@@ -1,6 +1,7 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap');
-
 :root {
+  /* JetBrains Mono is loaded in index.html; this is the single place that names it, so anything
+     numeric or code-like picks it up from here. Falls back to the platform mono stack. */
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --primary: #25d366;
   --primary-hover: #1da851;
   --primary-soft: rgba(37, 211, 102, 0.12);
@@ -39,10 +40,9 @@
   --shadow-overlay: 0 20px 45px -12px rgb(0 0 0 / 0.25);
 
   /* Radius scale. --radius is the default for cards, buttons, inputs; -sm for elements nested
-     inside them (a chip inside a card), -lg for the containers that hold cards. */
+     inside them (a chip inside a card). */
   --radius-sm: 6px;
   --radius: 10px;
-  --radius-lg: 16px;
   --radius-pill: 999px;
 
   /* Spacing scale, 4px-based. Every padding/margin/gap in the app snaps to one of these —
@@ -306,10 +306,6 @@ a:hover {
 .error-banner-text {
   color: var(--error-text);
 }
-
-/* yarl theme — match dashboard dark palette. */
-.yarl__container { --yarl__color_backdrop: rgba(0, 0, 0, 0.92); }
-.yarl__button   { --yarl__color_button: rgba(255, 255, 255, 0.9); }
 
 .app-loading {
   display: flex;

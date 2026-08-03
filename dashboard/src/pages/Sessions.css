@@ -61,6 +61,7 @@
 
 .sess-time {
   color: var(--text-secondary);
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: 0.82rem;
 }

@@ -44,15 +44,6 @@ h1 {
   letter-spacing: -0.025em;
 }
 
-h2 {
-  font-size: 0.8125rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin: 0;
-}
-
 h3 {
   font-size: 1rem;
   font-weight: 600;
@@ -68,8 +59,22 @@ button {
   font-weight: 500;
   font-family: inherit;
   cursor: pointer;
-  transition: border-color 0.25s;
+  transition:
+    border-color 0.25s,
+    translate 0.08s ease;
 }
+
+/* Pressed feedback. Every control had a hover state and none had a press state, so a click
+   showed nothing until the resulting data arrived. Uses the standalone `translate` property
+   rather than `transform` deliberately: several buttons already centre themselves with
+   `transform: translateY(-50%)` (the password-reveal eye, for one), and a transform here
+   would replace that and throw them off their anchor. :disabled opts out so a dead control
+   doesn't pretend to respond. */
+button:active:not(:disabled),
+a:active {
+  translate: 0 1px;
+}
+
 /* Visible keyboard focus — cross-browser and keyboard-only, so the ring guides Tab navigation
    without flashing on every mouse click. */
 button:focus-visible,
@@ -133,114 +138,3 @@ select:disabled {
   color: var(--text-muted, #94a3b8);
   cursor: not-allowed;
 }
-
-/* GLOBAL MODAL STYLES */
-
-/* Modal Overlay */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: var(--z-overlay);
-  animation: fadeIn 0.2s ease;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-/* Modal Card */
-.modal {
-  background: var(--bg-white, #fff);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-overlay);
-  width: 90%;
-  max-width: 480px;
-  animation: slideUp 0.3s ease;
-  /* Cap height and lay out as a flex column so the body scrolls while the header and footer stay
-     pinned — config-heavy modals no longer push the title/Save button off-screen. */
-  display: flex;
-  flex-direction: column;
-  max-height: 90vh;
-  overflow: hidden;
-}
-
-/* The install-plugin modal holds the catalog list — a bit wider on desktop for comfortable reading.
-   The responsive rules below (<=768px: 95% width; <=480px: full-width bottom sheet) still apply, so
-   it stays responsive on small screens. Lives here (global modal styles) rather than in a page CSS
-   so it isn't subject to the page-root scoping rule. */
-.modal.install-modal {
-  max-width: 680px;
-}
-
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: var(--space-6) var(--space-6) var(--space-4);
-  border-bottom: 1px solid var(--border, #e2e8f0);
-  flex-shrink: 0;
-}
-
-.modal-header h2 {
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: var(--text-primary, #1e293b);
-  margin: 0;
-  text-transform: none;
-  letter-spacing: normal;
-}
-
-.modal-body {
-  padding: var(--space-6);
-  /* Scroll the body (not the whole card) so the pinned header/footer stay visible. */
-  overflow-y: auto;
-  flex: 1 1 auto;
-}
-
-.modal-body > label {
-  display: block;
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--text-secondary, #64748b);
-  margin-bottom: var(--space-2);
-}
-
-.modal-body input {
-  width: 100%;
-  padding: var(--space-4) var(--space-4);
-  border: 1px solid var(--border, #e2e8f0);
-  border-radius: var(--radius);
-  font-size: 0.9375rem;
-  background: var(--bg-light, #f8fafc);
-  transition: all 0.2s;
-  box-sizing: border-box;
-}
-
-.modal-body input:focus {
-  outline: none;
-  border-color: var(--primary, #25d366);
-  background: var(--bg-white, #fff);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 10%, transparent);
-}
-
