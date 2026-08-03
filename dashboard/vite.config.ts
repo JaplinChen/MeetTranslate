@@ -24,14 +24,14 @@ export default defineConfig({
     proxy: {
       // The Python service; same port as the packaged app serves from.
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'http://localhost:8010',
         changeOrigin: true,
         secure: false,
       },
       // Subtitle stream. Without ws:true this silently falls back to a failed
       // HTTP upgrade and the live page shows nothing.
       '/ws': {
-        target: 'http://localhost:8000',
+        target: 'http://localhost:8010',
         ws: true,
         changeOrigin: true,
       },

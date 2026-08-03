@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 cd "$(dirname "$0")"
-PORT=8000
+PORT=8010
 
 # Free the port first so the script is re-runnable without manual cleanup.
 if pid=$(lsof -ti tcp:$PORT 2>/dev/null); then

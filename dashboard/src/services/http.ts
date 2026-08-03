@@ -3,7 +3,7 @@
 
 import { warnIfInsecureHttpUrl } from '../utils/urlSecurity';
 
-// Same-origin '/api' by default. Set VITE_API_URL to an API ORIGIN (e.g. http://localhost:8000)
+// Same-origin '/api' by default. Set VITE_API_URL to an API ORIGIN (e.g. http://localhost:8010)
 // when the dashboard dev server and the Python service run on different ports.
 const API_ORIGIN = (import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '');
 export const API_BASE_URL = `${API_ORIGIN}/api`;

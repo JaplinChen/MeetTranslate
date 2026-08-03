@@ -1,7 +1,7 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-set PORT=8000
+set PORT=8010
 
 rem Free the port first so the script is re-runnable without manual cleanup.
 for /f "tokens=5" %%p in ('netstat -ano ^| findstr /r /c:"LISTENING .*:%PORT% " 2^>nul') do (

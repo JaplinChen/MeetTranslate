@@ -3,7 +3,7 @@
 React + Vite frontend. The built output is served by the Python service, so in normal use there is
 nothing to run here — `start.bat` / `start.command` builds it.
 
-For frontend work, start the Python service on port 8000 first, then:
+For frontend work, start the Python service on port 8010 first, then:
 
 ```bash
 npm install
