@@ -82,6 +82,12 @@ code {
   flex-direction: row-reverse;
 }
 
+/* The learned-corrections row reads "wrong → right", so its arrow has to turn with the text.
+   Lives here rather than in Learned.css because that file's rules must stay under the page root. */
+[dir='rtl'] .learned-arrow {
+  transform: scaleX(-1);
+}
+
 /* Toast container — slide in from the opposite side */
 [dir='rtl'] .toast-container {
   right: auto;

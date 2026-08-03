@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Brain, Trash2 } from 'lucide-react';
+import { ArrowRight, Trash2 } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { PageSkeleton } from '../components/PageSkeleton';
 import { useToast } from '../components/Toast';
@@ -113,7 +113,7 @@ export function Learned() {
             {corrections.map(c => (
               <li key={c.wrong} className="learned-row">
                 <span className="learned-wrong">{c.wrong}</span>
-                <Brain className="learned-arrow" size={14} />
+                <ArrowRight className="learned-arrow" size={14} />
                 <span className="learned-right">{c.right}</span>
                 <button
                   className="learned-forget"
