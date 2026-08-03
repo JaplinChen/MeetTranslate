@@ -183,6 +183,23 @@ def test_editing_a_line_teaches_the_correction(client: TestClient) -> None:
     assert client.delete("/api/corrections/申管").json() == []
 
 
+def test_every_script_flag_is_wired_to_something(tmp: Path) -> None:
+    """A flag that nothing reads is a feature that silently stopped existing.
+
+    scripts/learn_terms.py kept its --max-sound option for a while after a scripted edit removed
+    the ranking that used it, so the tool went on accepting the flag and ignoring it. Nothing in
+    the output said so.
+    """
+    import re
+
+    scripts = sorted(Path("scripts").glob("*.py"))
+    assert scripts, "no scripts found; is the working directory wrong?"
+    for path in scripts:
+        source = path.read_text(encoding="utf-8")
+        for flag in re.findall(r'add_argument\("--([a-z-]+)"', source):
+            assert f"args.{flag.replace('-', '_')}" in source, f"{path.name}: --{flag} is unused"
+
+
 def test_recording_lifecycle(client: TestClient) -> None:
     assert client.post("/api/recording/stop").status_code == 409
     status = client.get("/api/recording/status").json()

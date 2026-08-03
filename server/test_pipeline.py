@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from . import asr, config, correct, diarize, refine, store
+from . import asr, config, correct, diarize, postprocess, refine, store
 
 
 def test_refine_keeps_the_original_when_the_model_rewrites() -> None:
@@ -179,6 +179,57 @@ def test_short_final_chunk_can_still_be_corrected() -> None:
     always land in one. The restructuring guard needs a chunk to be about."""
     lines = [refine.Line("S1", "zh", "料耗的問題")]
     assert refine.parse_response("1: 料號的問題", lines) == ["料號的問題"]
+
+
+def test_subtitling_credits_are_not_speech() -> None:
+    """More of the same training data surfacing in the silence between speakers.
+
+    These arrived once batching changed which hallucination Whisper reached for, which is a good
+    reminder that the list is a list and not a rule.
+    """
+    for text in ("MING PAO CANADA MANGA", "MING PAO CANADA 字幕組",
+                 "中文字幕由 Amara.org 社群提供", "本期影片就分享到這裡,謝謝收看",
+                 "多謝您的收看,我們下期見!", "希望大家多多支援"):
+        assert asr.is_hallucination(text), text
+
+    # A sign-off is the end of a line; arranging a meeting is not.
+    assert not asr.is_hallucination("我們下次見面再談這個")
+    assert not asr.is_hallucination("本期的採購單要重新確認")
+    assert not asr.is_hallucination("這個字幕要放在電視上")
+
+
+def test_a_collapse_is_dropped_whoever_chose_the_language() -> None:
+    """The check used to run only when a language was forced.
+
+    So a first-pass auto-detect could return 產品 產品 產品 產品 產品, keep it, and have the
+    language it invented for that counted as evidence of what the speaker speaks — which is how
+    433 Chinese lines ended up labelled English across seven interviews.
+    """
+    assert asr.is_degenerate("產品 產品 產品 產品 產品")
+    assert asr.is_degenerate("前來,前來,前來,前來,前來,前來,前來,前來")
+    # Short repetition is how people talk.
+    assert not asr.is_degenerate("大家好大家好")
+    assert not asr.is_degenerate("介紹 介紹 介紹")
+
+
+def test_a_speaker_needs_evidence_before_setting_their_own_language() -> None:
+    """Separating real participants also produces a tail of speakers holding two or three
+    utterances, and a majority over two samples is a coin flip. Letting those establish their own
+    language put 433 Chinese lines under an English label across seven interviews.
+    """
+    import numpy as np
+
+    def said(speaker: str, lang: str) -> postprocess.Utterance:
+        return postprocess.Utterance(0.0, np.zeros(1, dtype="float32"), speaker, lang, "x")
+
+    meeting = [said("S1", "zh")] * 20 + [said("S2", "en")] * 6 + [said("S3", "en")] * 2
+    dominant = postprocess.dominant_languages(meeting)
+    assert dominant["S1"] == "zh"
+    # Enough of its own to disagree with the room.
+    assert dominant["S2"] == "en"
+    # Not enough; inherits the meeting rather than guessing.
+    assert dominant["S3"] == "zh"
+    assert postprocess.dominant_languages([]) == {}
 
 
 def test_clustering_is_judged_by_speech_not_cluster_count() -> None:

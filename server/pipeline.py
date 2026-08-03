@@ -74,8 +74,10 @@ class Pipeline:
         # GPU first: measured on this box it is both faster and markedly more accurate. Hotwords
         # are read once here — a term added mid-meeting biases nothing until the next session, but
         # the post-decode corrector picks it up immediately, which is the half that matters.
-        self._transcriber = asr_gpu.maybe(cfg.languages,
-                                          asr_gpu.hotwords_from(store.glossary()))             or asr.Transcriber(model_dir=cfg.whisper_dir(), languages=cfg.languages)
+        self._transcriber = (asr_gpu.maybe(cfg.languages,
+                                           asr_gpu.hotwords_from(store.glossary()))
+                             or asr.Transcriber(model_dir=cfg.whisper_dir(),
+                                                languages=cfg.languages))
         self._diarizer = diarize.Diarizer(cfg=cfg, known=diarize.load_known(store))
         self._thread: threading.Thread | None = None
 

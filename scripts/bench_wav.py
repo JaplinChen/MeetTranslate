@@ -122,7 +122,7 @@ def main() -> int:
     for u in corrected:
         print(line(u))
 
-    print(f"\nmodel={label} hr={'on' if args.hr else 'off'} threads={args.threads} "
+    print(f"\nmodel={label} threads={args.threads} "
           f"utterances={len(utterances)} speech={audio_seconds:.1f}s wall={elapsed:.1f}s "
           f"rtf={elapsed / audio_seconds:.2f}")
     print("languages: " + ", ".join(f"{s}={l}" for s, l in postprocess.dominant_languages(utterances).items()))

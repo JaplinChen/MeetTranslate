@@ -29,6 +29,8 @@ from server.store import Store  # noqa: E402
 
 LINE = re.compile(r"^\[(\d+:\d+)\] (S\d+) \((\w+)\) (.*)$")
 HAN = re.compile(r"[一-鿿]")
+
+
 def read(path: Path) -> list[refine.Line]:
     lines = []
     for row in path.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -83,13 +85,29 @@ def main() -> int:
                     proposed[(before, after)] += 1
         print(f"{path.name}: {len(rejected)} refused corrections")
 
-    survivors = [(before, after, n) for (before, after), n in proposed.most_common()
-                 if n >= args.min_count]
-    print(f"\n{len(survivors)} candidates seen at least {args.min_count} times:")
-    for before, after, n in survivors:
+    # Ranked by how far the candidate is from what was heard, because repetition alone turned out
+    # not to separate signal from noise. Measured over seven interviews: every candidate within
+    # 0.33 was a real term the recogniser mangled, and everything past 0.6 was the model guessing
+    # from context — 心理 for 流程, 頭髮 for 流程, 午 for 長期. Distance is the axis that splits them.
+    scored = []
+    for (before, after), n in proposed.items():
+        if n < args.min_count:
+            continue
+        pa = correct.pinyin_of(before, tones=False)
+        pb = correct.pinyin_of(after, tones=False)
+        scored.append((correct.edit_distance(pa, pb) / max(len(pa), len(pb), 1), before, after, n))
+    scored.sort()
+
+    survivors = [(b, a, n) for d, b, a, n in scored if d <= args.max_sound]
+    dropped = len(scored) - len(survivors)
+    print(f"{chr(10)}{len(survivors)} candidates seen at least {args.min_count} times, "
+          f"nearest first ({dropped} dropped as too far from what was heard):")
+    for d, before, after, n in scored:
+        if d > args.max_sound:
+            continue
         # A candidate the corrector could already reach needs no glossary entry.
         reachable = correct.pinyin_of(before, tones=False) == correct.pinyin_of(after, tones=False)
-        print(f"  {n:3d}  {before} -> {after}{'   (already reachable)' if reachable else ''}")
+        print(f"  {d:.2f}  x{n}  {before} -> {after}{'   (already reachable)' if reachable else ''}")
 
     if args.apply:
         added = [after for _, after, _ in survivors if after not in known]
