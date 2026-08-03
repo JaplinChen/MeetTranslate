@@ -223,12 +223,17 @@ class Transcriber:
         if is_noise(text) or is_hallucination(text) or not self._allowed(detected):
             return "", detected
 
-        if language and is_degenerate(text):
+        if is_degenerate(text):
+            # A collapse is a collapse whoever chose the language. This check used to run only
+            # when one was forced, so a first-pass auto-detect could return 產品 產品 產品 產品
+            # and have the language it invented for that counted as evidence of what the speaker
+            # speaks. Retrying is only worth it when there is another language to try.
+            if not language:
+                return "", detected
             fallback, fallback_lang = self._decode(samples, "")
-            if is_noise(fallback) or is_hallucination(fallback):
+            if is_noise(fallback) or is_hallucination(fallback) or is_degenerate(fallback):
                 return "", fallback_lang
-            if not is_degenerate(fallback):
-                return _post(fallback, fallback_lang), fallback_lang
+            return _post(fallback, fallback_lang), fallback_lang
 
         return _post(text, detected), detected
 

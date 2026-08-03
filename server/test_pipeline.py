@@ -181,6 +181,20 @@ def test_short_final_chunk_can_still_be_corrected() -> None:
     assert refine.parse_response("1: 料號的問題", lines) == ["料號的問題"]
 
 
+def test_a_collapse_is_dropped_whoever_chose_the_language() -> None:
+    """The check used to run only when a language was forced.
+
+    So a first-pass auto-detect could return 產品 產品 產品 產品 產品, keep it, and have the
+    language it invented for that counted as evidence of what the speaker speaks — which is how
+    433 Chinese lines ended up labelled English across seven interviews.
+    """
+    assert asr.is_degenerate("產品 產品 產品 產品 產品")
+    assert asr.is_degenerate("前來,前來,前來,前來,前來,前來,前來,前來")
+    # Short repetition is how people talk.
+    assert not asr.is_degenerate("大家好大家好")
+    assert not asr.is_degenerate("介紹 介紹 介紹")
+
+
 def test_a_speaker_needs_evidence_before_setting_their_own_language() -> None:
     """Separating real participants also produces a tail of speakers holding two or three
     utterances, and a majority over two samples is a coin flip. Letting those establish their own

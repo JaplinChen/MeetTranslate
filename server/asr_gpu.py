@@ -76,7 +76,11 @@ class Transcriber:
         text = "".join(s.text for s in segments).strip()
         detected = (info.language or language or "").strip()
 
-        if asr.is_noise(text) or asr.is_hallucination(text) or not self._allowed(detected):
+        # Same three refusals as the sherpa path, including the collapse check: a first-pass
+        # auto-detect that returns 產品 產品 產品 產品 must not have the language it invented for
+        # that counted as evidence of what the speaker speaks.
+        if (asr.is_noise(text) or asr.is_hallucination(text) or asr.is_degenerate(text)
+                or not self._allowed(detected)):
             return "", detected
         return asr._post(text, detected), detected
 
