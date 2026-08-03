@@ -22,10 +22,13 @@ from . import asr, config
 
 log = logging.getLogger("meettranslate.asr_gpu")
 
-# Utterances decoded together. Sixteen fits comfortably in 16 GB beside a large-v3 in float16.
-BATCH_SIZE = 16
-# Silence inserted between utterances when they are laid end to end for batching.
-BATCH_GAP_SECONDS = 1.0
+# Utterances decoded together. Thirty-two fits in 16 GB beside a large-v3 in float16.
+BATCH_SIZE = 32
+# Silence inserted between utterances when they are laid end to end for batching. Every gap is
+# real audio through the encoder, so it stays as short as the boundaries tolerate.
+BATCH_GAP_SECONDS = 0.2
+# ponytail: greedy decode. Raise to 5 if accuracy on short utterances measurably drops.
+BEAM_SIZE = 1
 
 
 def _add_cuda_dlls() -> None:
@@ -99,7 +102,7 @@ class Transcriber:
         if self._batched is None:
             self._batched = BatchedInferencePipeline(model=self._model)
         segments, info = self._batched.transcribe(
-            np.concatenate(parts), language=language or None, beam_size=5,
+            np.concatenate(parts), language=language or None, beam_size=BEAM_SIZE,
             batch_size=BATCH_SIZE, vad_filter=False, clip_timestamps=spans,
             hotwords=self._hotwords or None, condition_on_previous_text=False,
         )
@@ -127,7 +130,7 @@ class Transcriber:
         segments, info = self._model.transcribe(
             samples.astype(np.float32),
             language=language or None,  # None means detect
-            beam_size=5,
+            beam_size=BEAM_SIZE,
             # Hotwords are the biasing sherpa-onnx cannot do for Whisper at all.
             hotwords=self._hotwords or None,
             condition_on_previous_text=False,  # one VAD utterance at a time carries no history
