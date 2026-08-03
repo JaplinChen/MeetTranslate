@@ -33,7 +33,7 @@ a {
 body {
   margin: 0;
   min-width: 320px;
-  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 h1 {
@@ -61,7 +61,7 @@ h3 {
 }
 
 button {
-  border-radius: 8px;
+  border-radius: var(--radius);
   border: 1px solid transparent;
   padding: 0.6em 1.2em;
   font-size: 1em;
@@ -103,7 +103,7 @@ select {
   -webkit-appearance: none;
   -moz-appearance: none;
   width: 100%;
-  padding: 0.75rem 2.5rem 0.75rem 1rem;
+  padding: var(--space-3) var(--space-10) var(--space-3) var(--space-4);
   font-size: 0.9375rem;
   font-family: inherit;
   color: var(--text-primary);
@@ -113,7 +113,7 @@ select {
   background-position: right 0.75rem center;
   background-size: 16px;
   border: 1px solid var(--border, #e2e8f0);
-  border-radius: 8px;
+  border-radius: var(--radius);
   cursor: pointer;
   transition: all 0.2s;
 }
@@ -145,7 +145,7 @@ select:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: var(--z-overlay);
   animation: fadeIn 0.2s ease;
 }
 
@@ -161,8 +161,8 @@ select:disabled {
 /* Modal Card */
 .modal {
   background: var(--bg-white, #fff);
-  border-radius: 16px;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-overlay);
   width: 90%;
   max-width: 480px;
   animation: slideUp 0.3s ease;
@@ -197,7 +197,7 @@ select:disabled {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1.5rem 1.5rem 1rem;
+  padding: var(--space-6) var(--space-6) var(--space-4);
   border-bottom: 1px solid var(--border, #e2e8f0);
   flex-shrink: 0;
 }
@@ -212,7 +212,7 @@ select:disabled {
 }
 
 .modal-body {
-  padding: 1.5rem;
+  padding: var(--space-6);
   /* Scroll the body (not the whole card) so the pinned header/footer stay visible. */
   overflow-y: auto;
   flex: 1 1 auto;
@@ -223,14 +223,14 @@ select:disabled {
   font-size: 0.875rem;
   font-weight: 600;
   color: var(--text-secondary, #64748b);
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--space-2);
 }
 
 .modal-body input {
   width: 100%;
-  padding: 0.875rem 1rem;
+  padding: var(--space-4) var(--space-4);
   border: 1px solid var(--border, #e2e8f0);
-  border-radius: 8px;
+  border-radius: var(--radius);
   font-size: 0.9375rem;
   background: var(--bg-light, #f8fafc);
   transition: all 0.2s;

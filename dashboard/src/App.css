@@ -33,7 +33,39 @@
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
   --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  /* Overlay shadow for elements that float free of the page: modals, popovers, drawers.
+     Separate from --shadow-lg because it also has to darken for the dark themes, where a
+     pure-black drop shadow is invisible against a charcoal surface. */
+  --shadow-overlay: 0 20px 45px -12px rgb(0 0 0 / 0.25);
+
+  /* Radius scale. --radius is the default for cards, buttons, inputs; -sm for elements nested
+     inside them (a chip inside a card), -lg for the containers that hold cards. */
+  --radius-sm: 6px;
   --radius: 10px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+
+  /* Spacing scale, 4px-based. Every padding/margin/gap in the app snaps to one of these —
+     the previous free-hand values drifted across 28 distinct sizes for the same job. */
+  --space-05: 0.125rem;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+
+  /* Stacking order. Anything that overlaps something else picks a name here rather than
+     inventing a number — the old values ran 90/95/100/101/120/200/1000/9999. */
+  --z-sticky: 10;
+  --z-sidebar: 100;
+  --z-sidebar-control: 110;
+  --z-dropdown: 200;
+  --z-overlay: 1000;
+  --z-toast: 1100;
 }
 
 [data-palette='blue'] {
@@ -124,6 +156,7 @@
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
   --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.3), 0 2px 4px -2px rgb(0 0 0 / 0.3);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.4), 0 4px 6px -4px rgb(0 0 0 / 0.4);
+  --shadow-overlay: 0 20px 45px -12px rgb(0 0 0 / 0.65);
 }
 
 /* Dark Mode */
@@ -152,6 +185,7 @@
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
   --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.3), 0 2px 4px -2px rgb(0 0 0 / 0.3);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.4), 0 4px 6px -4px rgb(0 0 0 / 0.4);
+  --shadow-overlay: 0 20px 45px -12px rgb(0 0 0 / 0.65);
 }
 
 /* Explicit light toggle: keep native controls light even if the OS prefers dark. */
@@ -180,13 +214,10 @@
     --success-text: color-mix(in srgb, var(--success) 55%, white);
     --warning-text: color-mix(in srgb, var(--warning) 55%, white);
     --info-text: color-mix(in srgb, var(--info) 55%, white);
-  --error-text: color-mix(in srgb, var(--error) 55%, white);
-  --success-text: color-mix(in srgb, var(--success) 55%, white);
-  --warning-text: color-mix(in srgb, var(--warning) 55%, white);
-  --info-text: color-mix(in srgb, var(--info) 55%, white);
     --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
     --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.3), 0 2px 4px -2px rgb(0 0 0 / 0.3);
     --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.4), 0 4px 6px -4px rgb(0 0 0 / 0.4);
+    --shadow-overlay: 0 20px 45px -12px rgb(0 0 0 / 0.65);
   }
 }
 
@@ -260,12 +291,12 @@ a:hover {
 .error-banner {
   background: rgba(239, 68, 68, 0.1);
   border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 8px;
-  padding: 1rem;
-  margin-bottom: 1.5rem;
+  border-radius: var(--radius);
+  padding: var(--space-4);
+  margin-bottom: var(--space-6);
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 .error-banner svg {
@@ -284,6 +315,6 @@ a:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 100vh;
+  min-height: 100dvh;
 }
 

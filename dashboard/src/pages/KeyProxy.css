@@ -7,8 +7,8 @@
 }
 
 .keyproxy-page .keyproxy-note {
-  margin: 0 0 1.25rem;
-  padding: 0.75rem 1rem;
+  margin: 0 0 var(--space-5);
+  padding: var(--space-3) var(--space-4);
   background: var(--bg-subtle, var(--bg-light));
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -18,15 +18,15 @@
 
 .keyproxy-page .keyproxy-addbar {
   display: flex;
-  gap: 0.5rem;
-  margin-bottom: 1.25rem;
+  gap: var(--space-2);
+  margin-bottom: var(--space-5);
   flex-wrap: wrap;
 }
 
 .keyproxy-page .keyproxy-apply {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: var(--space-1);
   font-size: 0.8rem;
   color: var(--primary, #e07a5f);
   text-decoration: none;
@@ -39,7 +39,7 @@
 
 .keyproxy-page .keyproxy-select,
 .keyproxy-page .keyproxy-input {
-  padding: 0.6rem 0.75rem;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-card, var(--bg-light));
@@ -54,7 +54,7 @@
 
 .keyproxy-page .keyproxy-account-input {
   width: 180px;
-  padding: 0.6rem 0.75rem;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-card, var(--bg-light));
@@ -86,7 +86,7 @@
 .keyproxy-page .keyproxy-table th,
 .keyproxy-page .keyproxy-table td {
   text-align: left;
-  padding: 0.45rem 0.75rem;
+  padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--border);
   /* Column divider + clip overflow so a long value doesn't blow out its fixed column. */
   border-right: 1px solid var(--border);
@@ -131,8 +131,8 @@
 
 .keyproxy-page .keyproxy-badge {
   display: inline-block;
-  padding: 0.15rem 0.55rem;
-  border-radius: 999px;
+  padding: var(--space-05) var(--space-2);
+  border-radius: var(--radius-pill);
   font-size: 0.8125rem;
   font-weight: 600;
   background: var(--bg-subtle, var(--bg-light));
@@ -153,7 +153,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0.35rem;
+  padding: var(--space-1);
   border: none;
   border-radius: var(--radius);
   background: transparent;
@@ -176,7 +176,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.75rem;
-  padding: 3rem 1rem;
+  gap: var(--space-3);
+  padding: var(--space-12) var(--space-4);
   color: var(--text-secondary);
 }

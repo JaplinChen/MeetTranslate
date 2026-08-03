@@ -8,7 +8,7 @@
   bottom: 0;
   background-color: var(--border);
   transition: 0.3s;
-  border-radius: 26px;
+  border-radius: var(--radius-pill);
 }
 
 .translate-page .toggle-slider::before{
@@ -39,13 +39,13 @@
   right: 1.5rem;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 1rem 1.25rem;
-  border-radius: 10px;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius);
   font-size: 0.875rem;
   font-weight: 500;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-  z-index: 1000;
+  box-shadow: var(--shadow-overlay);
+  z-index: var(--z-overlay);
 }
 
 .translate-page .toast.success{
@@ -63,7 +63,7 @@
 .translate-page .toast-close{
   background: transparent;
   border: none;
-  padding: 0.25rem;
+  padding: var(--space-1);
   cursor: pointer;
   opacity: 0.6;
   color: inherit;
