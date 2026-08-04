@@ -5,6 +5,7 @@ import { Loader2 } from 'lucide-react';
 import { Layout } from './components/Layout';
 import { ToastProvider } from './components/ToastProvider';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import './theme.css';
 import './App.css';
 /* The shared shell for the list pages — .etable-page, .etable-panel, .etable-item and the rest.
    Six pages and PageSkeleton render those classes, so it loads once here rather than being
