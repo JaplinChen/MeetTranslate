@@ -7,6 +7,7 @@ import { useToast } from '../components/Toast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { appApi, type RefineState, type SessionSummary, type TranscriptLine } from '../services/app.api';
 import './Sessions.css';
+import './Sessions.refine.css';
 
 const clock = (seconds: number) => {
   const m = Math.floor(seconds / 60);
