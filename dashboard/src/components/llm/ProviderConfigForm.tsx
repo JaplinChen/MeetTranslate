@@ -55,7 +55,10 @@ export function ProviderConfigForm({ value, keySet, canWrite, allowNone, exclude
     );
   }
 
-  const meta = metaOf(value.provider);
+  // An unknown provider — the backend's list ahead of this one, or a hand-edited llm.json — still
+  // needs a usable form, so fall back to a generic shape: show the endpoint it has stored and offer
+  // a key field, rather than hiding both and leaving the user unable to see their own config.
+  const meta = metaOf(value.provider) ?? { label: value.provider, endpoint: '', showEndpoint: true, needsKey: true };
   const effectiveEndpoint = meta.showEndpoint ? value.endpoint || meta.endpoint : meta.endpoint;
   const probe = () => ({ provider: value.provider as LlmProvider, endpoint: effectiveEndpoint, model: value.model, apiKey: value.apiKey });
 

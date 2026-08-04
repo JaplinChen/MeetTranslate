@@ -145,7 +145,19 @@ export interface Settings {
   notifications: { emailEnabled: boolean; notificationEmail: string; webhookAlerts: boolean };
 }
 
-export type LlmProvider = 'ollama' | 'openai' | 'groq' | 'azure' | 'gemini';
+// Mirrors server/llm.py DEFAULT_ENDPOINTS, plus 'azure', which the backend accepts as a
+// user-supplied endpoint without a default of its own. Keep the two lists in step: a provider the
+// backend can store but this one omits reaches the settings page as an unknown value.
+export type LlmProvider =
+  | 'anthropic'
+  | 'ollama'
+  | 'openai'
+  | 'groq'
+  | 'azure'
+  | 'gemini'
+  | 'mistral'
+  | 'openrouter'
+  | 'nvidia_nim';
 
 export interface TranslateConfig {
   enabled: boolean;

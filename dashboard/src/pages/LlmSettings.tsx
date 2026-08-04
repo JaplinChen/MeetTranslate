@@ -56,7 +56,7 @@ export function LlmSettings() {
       const saved = merged[prov];
       return {
         provider: prov,
-        endpoint: saved?.endpoint ?? metaOf(prov).endpoint,
+        endpoint: saved?.endpoint ?? metaOf(prov)?.endpoint ?? '',
         model: ms[0],
         apiKey: '',
         temperature: saved?.temperature ?? 0,
@@ -91,7 +91,7 @@ export function LlmSettings() {
     const saved = pcfgs[p];
     patchTab(idx, {
       provider: p,
-      endpoint: saved?.endpoint ?? metaOf(p).endpoint,
+      endpoint: saved?.endpoint ?? metaOf(p)?.endpoint ?? '',
       model: saved?.model ?? '',
       apiKey: '',
       temperature: saved?.temperature ?? 0,
@@ -104,7 +104,8 @@ export function LlmSettings() {
     tabs.filter((_, i) => i !== idx).map(tab => tab.provider).filter((p): p is LlmProvider => p !== '');
 
   const effectiveEndpoint = (tab: ProviderConfig): string => {
-    const meta = metaOf(tab.provider as LlmProvider);
+    const meta = metaOf(tab.provider);
+    if (!meta) return tab.endpoint;
     return meta.showEndpoint ? tab.endpoint || meta.endpoint : meta.endpoint;
   };
 
@@ -186,7 +187,7 @@ export function LlmSettings() {
                 onClick={() => setActive(i)}
               >
                 <span className="llm-tab-name">{t(`llm.${TAB_KEYS[i]}`, { defaultValue: TAB_KEYS[i] })}</span>
-                <span className="llm-tab-sub">{tab.provider ? metaOf(tab.provider).label : t('llm.fallbackNone', { defaultValue: '—' })}</span>
+                <span className="llm-tab-sub">{tab.provider ? (metaOf(tab.provider)?.label ?? tab.provider) : t('llm.fallbackNone', { defaultValue: '—' })}</span>
               </button>
             ))}
           </div>

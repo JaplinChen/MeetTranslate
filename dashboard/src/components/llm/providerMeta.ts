@@ -9,14 +9,28 @@ export interface ProviderMeta {
 }
 
 export const PROVIDERS: { value: LlmProvider; meta: ProviderMeta }[] = [
+  // Endpoints for the cloud providers below come from server/llm.py DEFAULT_ENDPOINTS, so what the
+  // page offers matches what the backend would have used anyway.
+  { value: 'anthropic', meta: { label: 'Anthropic', endpoint: 'https://api.anthropic.com', showEndpoint: false, needsKey: true, apiKeyUrl: 'https://console.anthropic.com/settings/keys' } },
   { value: 'ollama', meta: { label: 'Ollama', endpoint: 'http://127.0.0.1:11434/api/chat', showEndpoint: true, needsKey: false } },
   { value: 'groq', meta: { label: 'Groq', endpoint: 'https://api.groq.com/openai/v1/chat/completions', showEndpoint: false, needsKey: true, apiKeyUrl: 'https://console.groq.com/keys' } },
   { value: 'openai', meta: { label: 'OpenAI', endpoint: 'https://api.openai.com/v1/chat/completions', showEndpoint: true, needsKey: true, apiKeyUrl: 'https://platform.openai.com/api-keys' } },
   { value: 'azure', meta: { label: 'Azure OpenAI', endpoint: 'https://<resource>.openai.azure.com/openai/deployments/<deployment>/chat/completions?api-version=2024-02-15-preview', showEndpoint: true, needsKey: true, apiKeyUrl: 'https://portal.azure.com' } },
   { value: 'gemini', meta: { label: 'Gemini', endpoint: 'https://generativelanguage.googleapis.com/v1beta', showEndpoint: false, needsKey: true, apiKeyUrl: 'https://aistudio.google.com/apikey' } },
+  { value: 'mistral', meta: { label: 'Mistral', endpoint: 'https://api.mistral.ai/v1', showEndpoint: false, needsKey: true } },
+  { value: 'openrouter', meta: { label: 'OpenRouter', endpoint: 'https://openrouter.ai/api/v1', showEndpoint: false, needsKey: true, apiKeyUrl: 'https://openrouter.ai/keys' } },
+  { value: 'nvidia_nim', meta: { label: 'NVIDIA NIM', endpoint: 'https://integrate.api.nvidia.com/v1', showEndpoint: false, needsKey: true } },
 ];
 
-export const metaOf = (p: LlmProvider): ProviderMeta => PROVIDERS.find(x => x.value === p)!.meta;
+/**
+ * Metadata for a provider, or undefined when there is none.
+ *
+ * Undefined is a real case, not a defensive nicety: llm.json is a plain file a user can edit, and
+ * the backend's provider list can gain an entry before this one does — which is exactly how the
+ * settings page came to crash on a stock install, the default provider being one this list lacked.
+ * Callers render the raw provider name rather than assuming a label exists.
+ */
+export const metaOf = (p: LlmProvider | ''): ProviderMeta | undefined => PROVIDERS.find(x => x.value === p)?.meta;
 
 // The proxy routes "<provider>/<model>" (e.g. "gemini/flash"); the apply-key link should follow the
 // model's real provider, not the OpenAI-compatible transport provider.
