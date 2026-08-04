@@ -7,6 +7,7 @@ import io
 import logging
 import os
 import re
+import threading
 import time
 from contextlib import asynccontextmanager
 from dataclasses import asdict
@@ -18,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import audio, config, correct, ingest, llm, postprocess, translate
+from . import audio, config, correct, ingest, jobs, llm, postprocess, translate
 from .hub import Hub
 from .pipeline import Pipeline
 from .store import TERM_MODES, Store
@@ -29,7 +30,7 @@ log = logging.getLogger("meettranslate")
 DIST = config.ROOT / "dashboard" / "dist"
 CLIP_SECONDS = 4
 
-state: dict = {"recorder": None, "pipeline": None, "session": None,
+state: dict = {"recorder": None, "pipeline": None, "session": None, "gpu": False,
                "cfg": config.load(), "llm": llm.load_llm()}
 store = Store()
 keys = llm.KeyStore()
@@ -40,7 +41,10 @@ hub = Hub()
 async def lifespan(app: FastAPI):
     hub.bind(asyncio.get_running_loop())
     yield
-    _stop_capture()
+    # No refine on the way out: the worker is a daemon thread, so scheduling one here would either
+    # be killed halfway or hold the process open past the point the user asked it to stop.
+    _stop_capture(refine=False)
+    jobs.cancel_all(wait=2.0)
     store.close()
 
 
@@ -237,7 +241,14 @@ def delete_key(provider: str, index: int) -> list[dict]:
 
 @app.get("/api/sessions")
 def get_sessions() -> list[dict]:
-    return store.sessions()
+    """Sessions, each carrying where its post-meeting pass got to.
+
+    Carried on the list rather than fetched per session so the page can show which meetings are
+    still being refined before the user picks one, instead of after.
+    """
+    running = jobs.states()
+    return [{**s, "refine": running.get(s["id"], {"state": "idle", "error": ""})}
+            for s in store.sessions()]
 
 
 @app.get("/api/sessions/{session_id}/lines")
@@ -332,7 +343,12 @@ def delete_correction(wrong: str) -> list[dict]:
 
 @app.post("/api/sessions/{session_id}/reprocess")
 def reprocess(session_id: int) -> dict:
-    """Re-derive the transcript from the recording with the largest model and offline clustering."""
+    """Queue a re-derivation from the recording, with the largest model and offline clustering.
+
+    Queued rather than run inline, and through the same gate as the automatic pass: two of these at
+    once would put two Whisper models on one card, and the second would be rewriting a transcript
+    the first is already rewriting.
+    """
     session = store.session(session_id)
     if not session:
         raise HTTPException(404, "no such session")
@@ -343,11 +359,16 @@ def reprocess(session_id: int) -> dict:
     if not wav.is_file():
         raise HTTPException(404, f"recording not found: {wav}")
 
-    try:
-        utterances = postprocess.rewrite_session(store, session_id, wav, state["cfg"], _make_translator())
-    except (FileNotFoundError, ValueError) as exc:
-        raise HTTPException(400, str(exc)) from exc
-    return {"utterances": len(utterances), "lines": len(store.lines(session_id))}
+    if not jobs.schedule(session_id, lambda cancel: postprocess.rewrite_session(
+            store, session_id, wav, state["cfg"], _make_translator(), should_stop=cancel.is_set)):
+        raise HTTPException(409, "already refining this session")
+    return {"session": session_id, **(jobs.state(session_id) or {})}
+
+
+@app.get("/api/sessions/{session_id}/refine")
+def refine_state(session_id: int) -> dict:
+    """Where the post-meeting pass got to. `idle` means there has not been one this run."""
+    return {"session": session_id, **(jobs.state(session_id) or {"state": "idle", "error": ""})}
 
 
 @app.post("/api/sessions/import")
@@ -395,9 +416,11 @@ async def import_recording(request: Request, filename: str = "upload") -> dict:
     session_id = store.start_session(now, str(wav))
     store.end_session(session_id, now)
     try:
-        # ponytail: synchronous, like /reprocess — a long recording holds the request open.
-        # Worth a job queue only once someone imports something long enough to time out.
-        postprocess.rewrite_session(store, session_id, wav, state["cfg"], _make_translator())
+        # ponytail: synchronous — a long recording holds the request open. Worth a job queue only
+        # once someone imports something long enough to time out. It still queues for the card, so
+        # an import during a meeting waits rather than loading a second model beside the live one.
+        with jobs.borrow_gpu():
+            postprocess.rewrite_session(store, session_id, wav, state["cfg"], _make_translator())
     except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(400, str(exc)) from exc
     return {"id": session_id, "lines": len(store.lines(session_id))}
@@ -436,14 +459,43 @@ def _make_translator() -> translate.Translator | None:
     return translate.Translator(key, model=state["llm"].model or "claude-opus-5")
 
 
-def _stop_capture() -> dict:
+def _refine(session_id: int, wav: Path) -> None:
+    """Queue the post-meeting pass for a session that just ended.
+
+    This used to be something a person had to remember. An imported recording was refined on the
+    way in (see `import_recording`) while a meeting the room actually captured was not, so the same
+    audio produced a better transcript when uploaded through the dashboard than when recorded in
+    the room it was built for. Whether a transcript got the large model, offline clustering and the
+    per-speaker language pass came down to whether anyone clicked a button.
+    """
+    def run(cancel: threading.Event) -> None:
+        postprocess.rewrite_session(store, session_id, wav, state["cfg"], _make_translator(),
+                                    should_stop=cancel.is_set)
+
+    if not jobs.schedule(session_id, run):
+        log.info("session %d is already being refined", session_id)
+
+
+def _stop_capture(refine: bool = True) -> dict:
     rec, pipe = state["recorder"], state["pipeline"]
+    session_id, holds_gpu = state["session"], state["gpu"]
     path = rec.stop() if rec else None
     if pipe:
         pipe.join()
-    if state["session"] is not None:
-        store.end_session(state["session"], time.strftime("%Y-%m-%dT%H:%M:%S"))
-    state.update(recorder=None, pipeline=None, session=None)
+    if session_id is not None:
+        store.end_session(session_id, time.strftime("%Y-%m-%dT%H:%M:%S"))
+    state.update(recorder=None, pipeline=None, session=None, gpu=False)
+    # Released before scheduling, or the pass would wait on a gate this thread still holds.
+    if holds_gpu:
+        jobs.release_gpu()
+    # The session row, not the recorder's return value: a stop that fails to hand back a path would
+    # otherwise skip the refine silently, which is the exact failure this whole change removes.
+    if refine and session_id is not None:
+        session = store.session(session_id)
+        if session and Path(session["wav_path"]).exists():
+            _refine(session_id, Path(session["wav_path"]))
+        else:
+            log.warning("session %d has no recording on disk, not refining", session_id)
     return {"recording": False, "path": str(path) if path else None}
 
 
@@ -458,19 +510,33 @@ def start_recording() -> dict:
     except audio.DeviceNotFound as exc:
         raise HTTPException(400, str(exc)) from exc
 
+    # The meeting wins the card. Any post-meeting pass is asked to stand down and gets one batch to
+    # notice; a meeting starting now is not something anyone can repeat later.
+    if not jobs.claim_gpu():
+        raise HTTPException(503, "a post-meeting pass is still finishing — try again in a moment")
+    state["gpu"] = True
+
     path = audio.new_session_path()
-    session_id = store.start_session(time.strftime("%Y-%m-%dT%H:%M:%S"), str(path))
-
-    pipe = Pipeline(cfg, store, session_id, _make_translator(), hub.publish)
-    rec = audio.Recorder(candidates, tap=pipe.tap)
+    session_id = None
+    # One guard over everything after the claim. Any escape without releasing strands the permit,
+    # and a stranded permit is silent: every later pass simply waits, forever, on nothing.
     try:
-        rec.start(path)
-    except RuntimeError as exc:
-        store.end_session(session_id, time.strftime("%Y-%m-%dT%H:%M:%S"))
-        raise HTTPException(400, str(exc)) from exc
-    pipe.start()
-    log.info("capturing from device %s at %s", rec.device, rec.native_format)
+        session_id = store.start_session(time.strftime("%Y-%m-%dT%H:%M:%S"), str(path))
+        pipe = Pipeline(cfg, store, session_id, _make_translator(), hub.publish)
+        rec = audio.Recorder(candidates, tap=pipe.tap)
+        try:
+            rec.start(path)
+        except RuntimeError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        pipe.start()
+    except BaseException:
+        if session_id is not None:
+            store.end_session(session_id, time.strftime("%Y-%m-%dT%H:%M:%S"))
+        jobs.release_gpu()
+        state["gpu"] = False
+        raise
 
+    log.info("capturing from device %s at %s", rec.device, rec.native_format)
     state.update(recorder=rec, pipeline=pipe, session=session_id)
     return recording_status()
 

@@ -49,6 +49,10 @@ WHISPER_DIRS = {
 SPEAKER_THRESHOLD = 0.65
 # Segments shorter than this give unstable embeddings; they inherit the previous speaker.
 MIN_EMBED_SECONDS = 1.0
+# Utterances of context sent with each translation request. Lives here because the live pipeline
+# and the postprocess pass both send it, and they drifted once already — one read a named constant
+# while the other sliced a literal 3.
+CONTEXT_LINES = 3
 # Similarity required before a stored voiceprint puts a name on a speaker.
 #
 # Unvalidated, and honestly so. The material that should have tested it — seven interviews across

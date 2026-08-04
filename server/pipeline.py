@@ -21,8 +21,6 @@ from .store import Store
 
 log = logging.getLogger("meettranslate.pipeline")
 
-# Utterances of context sent with each translation request.
-CONTEXT_LINES = 3
 # Blocks the pipeline may fall behind before it starts dropping audio. 600 blocks = 60 s.
 TAP_CAPACITY = 600
 # Warn once the backlog passes this; a sustained backlog means the realtime factor is above 1
@@ -141,7 +139,7 @@ class Pipeline:
             self._apply_refinement(result)
 
             self._previous = (line_id, segment.start, line)
-            self._context = (self._context + [line])[-CONTEXT_LINES:]
+            self._context = (self._context + [line])[-config.CONTEXT_LINES:]
         except Exception:
             self.errors += 1
             log.exception("segment at %.2fs failed", segment.start)
