@@ -66,6 +66,10 @@ jobs:
 
       - run: npm run lint
 
+      # Unit tests were not wired in here, so styles.scope.test.ts sat red for six stylesheets
+      # without ever blocking a PR.
+      - run: npm run test:unit
+
   i18n:
     name: i18n parity
     runs-on: ubuntu-latest
