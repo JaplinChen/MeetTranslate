@@ -15,3 +15,6 @@ recordings/
 transcripts/
 models/
 .env
+
+# Server logs from a manually launched uvicorn; never part of a change.
+*.log
