@@ -17,7 +17,7 @@ from typing import Callable
 import numpy as np
 import soundfile as sf
 
-from . import asr, asr_gpu, config, correct, diarize, translate
+from . import asr, asr_gpu, config, correct, diarize, jobs, translate
 from .store import Store
 
 log = logging.getLogger("meettranslate.postprocess")
@@ -161,8 +161,16 @@ def transcribe_all(utterances: list[Utterance], transcriber: asr.Transcriber,
 
 
 def rewrite_session(store: Store, session_id: int, wav: Path, cfg: config.Config,
-                    translator: translate.Translator | None = None) -> list[Utterance]:
-    """Re-derive the transcript and replace the stored lines for this session."""
+                    translator: translate.Translator | None = None,
+                    should_stop: Callable[[], bool] | None = None) -> list[Utterance]:
+    """Re-derive the transcript and replace the stored lines for this session.
+
+    `should_stop` lets a meeting starting in the room take the GPU back. It is polled between
+    decode batches and between translations, and acting on it costs nothing: the stored transcript
+    is untouched until `replace_lines` at the very end, so an abandoned pass leaves the session
+    exactly as it found it.
+    """
+    stop = should_stop or (lambda: False)
     # GPU first. The CPU fallback keeps float32 weights and every core: this runs after the
     # meeting, so accuracy is the only concern — but it also makes the machine unusable while it
     # runs, which is the other reason the GPU path exists.
@@ -177,28 +185,54 @@ def rewrite_session(store: Store, session_id: int, wav: Path, cfg: config.Config
         return []
 
     assign_speakers(utterances, diarizer)
-    transcribe_all(utterances, transcriber)
 
-    store.clear_lines(session_id)
+    def watch(_u: Utterance, _done: int, _total: int) -> None:
+        if stop():
+            raise jobs.Cancelled()
+
+    transcribe_all(utterances, transcriber, progress=watch)
+
+    # The stored transcript is not touched until every line is translated. Replacing it line by
+    # line as they came in meant a failure halfway through left the session holding half a
+    # transcript, and a failure right after the delete left it holding none.
     terms = store.glossary()
     corrector = correct.Corrector(terms, store.corrections())
     context: list[translate.Line] = []
+    rows: list[dict] = []
 
     for u in utterances:
+        if stop():
+            raise jobs.Cancelled()
         if not u.text:
             continue
         u.text = corrector.fix(u.text)
         line = translate.Line(text=u.text, lang=u.lang, speaker=u.speaker)
         targets = [c for c in cfg.languages if c != u.lang]
         translations: dict[str, str] = {}
+        status = "ok"
         if translator and targets:
             try:
-                translations = translator.translate(line, targets, context=context[-3:], terms=terms).translations
+                translations = translator.translate(
+                    line, targets, context=context[-config.CONTEXT_LINES:], terms=terms
+                ).translations
             except Exception:
+                # Recorded rather than swallowed: a line with no translation and a line whose
+                # translation failed look identical in the transcript, and only one of them is
+                # worth re-running.
                 log.exception("translation failed at %.2fs", u.start)
-        store.add_line(session_id, u.start, u.speaker, u.lang, u.text, translations)
+                status = "translate_failed"
+        rows.append({
+            "start": u.start,
+            "end_time": u.start + len(u.samples) / config.SAMPLE_RATE,
+            "speaker": u.speaker,
+            "lang": u.lang,
+            "source": u.text,
+            "translations": translations,
+            "status": status,
+        })
         context.append(line)
 
+    store.replace_lines(session_id, rows)
     return utterances
 
 

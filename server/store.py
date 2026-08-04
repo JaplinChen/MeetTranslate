@@ -54,7 +54,9 @@ CREATE TABLE IF NOT EXISTS line (
     speaker    TEXT NOT NULL,
     lang       TEXT NOT NULL,
     source     TEXT NOT NULL,
-    refined    INTEGER NOT NULL DEFAULT 0
+    refined    INTEGER NOT NULL DEFAULT 0,
+    status     TEXT NOT NULL DEFAULT 'ok',
+    end_time   REAL
 );
 CREATE TABLE IF NOT EXISTS line_translation (
     line_id   INTEGER NOT NULL REFERENCES line(id) ON DELETE CASCADE,
@@ -88,6 +90,18 @@ CREATE TABLE IF NOT EXISTS speaker_name (
 CREATE INDEX IF NOT EXISTS line_session ON line(session_id, start);
 """
 
+# `CREATE TABLE IF NOT EXISTS` is a no-op against a table that already exists, so a database
+# created before a column was added never gets it. New machines and CI pass either way; the meeting
+# room's database is the one that breaks, and it breaks inside the capture thread where
+# Pipeline._handle swallows it as one more error count. Each entry is (column, DDL), applied only
+# when the column is absent.
+_LINE_COLUMNS = (
+    ("status", "ALTER TABLE line ADD COLUMN status TEXT NOT NULL DEFAULT 'ok'"),
+    # No NOT NULL: rows written before this column existed have no end to backfill, and guessing
+    # one would be worse than admitting it is unknown.
+    ("end_time", "ALTER TABLE line ADD COLUMN end_time REAL"),
+)
+
 
 @dataclass
 class Term:
@@ -108,6 +122,20 @@ class Store:
         self._db.execute("PRAGMA foreign_keys=ON")
         with self._lock:
             self._db.executescript(SCHEMA)
+            self._db.commit()
+            self._migrate()
+
+    def _migrate(self) -> None:
+        """Add columns the schema gained after this database was created.
+
+        Deliberately not caught: starting with a stale schema is worse than not starting. The
+        alternative is a room that records a whole meeting into a table that rejects every insert.
+        """
+        have = {r["name"] for r in self._db.execute("PRAGMA table_info(line)")}
+        added = [ddl for column, ddl in _LINE_COLUMNS if column not in have]
+        for ddl in added:
+            self._db.execute(ddl)
+        if added:
             self._db.commit()
 
     def close(self) -> None:
@@ -194,11 +222,40 @@ class Store:
             self._db.execute("UPDATE line SET refined=1 WHERE id=?", (line_id,))
             self._db.commit()
 
-    def clear_lines(self, session_id: int) -> None:
-        """Drop the live transcript before postprocess writes the re-derived one."""
+    def replace_lines(self, session_id: int, rows: list[dict]) -> None:
+        """Swap a session's whole transcript in one transaction.
+
+        The obvious shape — delete the old lines, then insert each new one — commits after every
+        line, so a run that dies in the middle leaves the transcript half-replaced, and a run that
+        dies right after the delete leaves it empty. That is data loss, not a slow path: the
+        recording is still on disk but the meeting's transcript is gone until someone notices.
+
+        Every insert here shares one implicit transaction and one commit, so the transcript is
+        either entirely the old one or entirely the new one. The caller must have finished
+        translating before calling: holding a write lock across an LLM round trip would block the
+        next meeting's first line on `database is locked`.
+        """
         with self._lock:
-            self._db.execute("DELETE FROM line WHERE session_id=?", (session_id,))
-            self._db.commit()
+            try:
+                self._db.execute("DELETE FROM line WHERE session_id=?", (session_id,))
+                for row in rows:
+                    cur = self._db.execute(
+                        "INSERT INTO line (session_id, start, speaker, lang, source, status, end_time) "
+                        "VALUES (?,?,?,?,?,?,?)",
+                        (session_id, row["start"], row["speaker"], row["lang"], row["source"],
+                         row.get("status", "ok"), row.get("end_time")),
+                    )
+                    self._db.executemany(
+                        "INSERT INTO line_translation (line_id, lang, text) VALUES (?,?,?)",
+                        [(int(cur.lastrowid), k, v) for k, v in row.get("translations", {}).items()],
+                    )
+                self._db.commit()
+            except Exception:
+                # Without this the half-finished transaction stays open on a connection every other
+                # method shares, so the next commit anywhere in the Store would commit this delete.
+                # The failure would surface later, somewhere else, as a transcript that vanished.
+                self._db.rollback()
+                raise
 
     def session(self, session_id: int) -> dict | None:
         with self._lock:
