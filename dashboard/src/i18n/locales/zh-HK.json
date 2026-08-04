@@ -184,6 +184,8 @@
     "corrections": "已學會的修正",
     "correctionsNote": "在逐字稿上修正一句話，系統會記下「辨識成什麼」與「實際說什麼」，並套用到之後所有逐字稿。",
     "noCorrections": "還沒學到任何修正。到逐字稿上點擊句子修改即可。",
-    "forget": "忘掉這一項"
+    "forget": "忘掉這一項",
+    "rename": "點一下改名",
+    "sessions_other": "{{count}} 場會議"
   }
 }

@@ -184,6 +184,8 @@
     "corrections": "Sửa lỗi đã học",
     "correctionsNote": "Sửa một dòng trong bản ghi sẽ lưu lại cặp sai/đúng và áp dụng cho mọi bản ghi sau.",
     "noCorrections": "Chưa học được sửa lỗi nào. Hãy sửa một dòng trong bản ghi.",
-    "forget": "Xoá mục này"
+    "forget": "Xoá mục này",
+    "rename": "Bấm để đổi tên",
+    "sessions_other": "{{count}} cuộc họp"
   }
 }

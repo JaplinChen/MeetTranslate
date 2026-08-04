@@ -10,6 +10,7 @@ subtitle in place rather than appending a duplicate.
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import tempfile
@@ -345,6 +346,36 @@ def test_websocket_receives_config_and_events(client: TestClient) -> None:
         # Publishing crosses the thread boundary the pipeline uses.
         threading.Thread(target=lambda: main.hub.publish({"type": "line", "line": {"id": 1}})).start()
         assert ws.receive_json()["line"]["id"] == 1
+
+
+def test_known_voice_can_be_heard_and_renamed(client: TestClient) -> None:
+    """A learned voice is only inspectable if you can play it back and fix the name on it."""
+    import soundfile as sf
+
+    wav = config.RECORDINGS_DIR / "voice.wav"
+    wav.parent.mkdir(parents=True, exist_ok=True)
+    sf.write(str(wav), np.zeros(config.SAMPLE_RATE * 10, dtype="float32"), config.SAMPLE_RATE)
+
+    session = main.store.start_session("now", str(wav))
+    main.store.add_line(session, 5.0, "S1", "en", "hello", {})
+    main.store.save_voiceprint(session, "S1", b"\x00" * 8)
+    assert client.put(f"/api/sessions/{session}/speakers", json={"S1": "Ana"}).status_code == 200
+
+    known = client.get("/api/speakers/known").json()
+    assert [s["name"] for s in known] == ["Ana"] and known[0]["sessions"] >= 1
+
+    clip = client.get("/api/speakers/known/Ana/clip")
+    assert clip.status_code == 200 and clip.headers["content-type"] == "audio/wav"
+    heard, rate = sf.read(io.BytesIO(clip.content))
+    assert len(heard) == main.CLIP_SECONDS * rate, len(heard)
+
+    renamed = client.put("/api/speakers/known/Ana", json={"name": "Ana Lee"}).json()
+    assert [s["name"] for s in renamed] == ["Ana Lee"]
+    # The transcript must follow the rename, or it keeps showing a name that no longer exists.
+    assert client.get(f"/api/sessions/{session}/lines").json()["speakers"]["S1"] == "Ana Lee"
+    assert client.get("/api/speakers/known/Ana/clip").status_code == 404
+
+    assert client.delete("/api/speakers/known/Ana%20Lee").json() == []
 
 
 def test_unknown_api_path_is_json_404(client: TestClient) -> None:
