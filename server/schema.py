@@ -1,0 +1,101 @@
+"""The SQLite schema, and the migrations that bring an older database up to it.
+
+Kept apart from `store` because it is declarative: DDL and a list of columns added after the fact,
+with no query logic and nothing to decide at runtime.
+"""
+
+from __future__ import annotations
+
+import sqlite3
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS glossary (
+    id        INTEGER PRIMARY KEY,
+    source    TEXT NOT NULL,
+    lang      TEXT NOT NULL DEFAULT '',
+    mode      TEXT NOT NULL DEFAULT 'translate',
+    category  TEXT NOT NULL DEFAULT '',
+    UNIQUE(source, lang)
+);
+CREATE TABLE IF NOT EXISTS glossary_target (
+    term_id   INTEGER NOT NULL REFERENCES glossary(id) ON DELETE CASCADE,
+    lang      TEXT NOT NULL,
+    text      TEXT NOT NULL,
+    PRIMARY KEY (term_id, lang)
+);
+CREATE TABLE IF NOT EXISTS session (
+    id        INTEGER PRIMARY KEY,
+    started   TEXT NOT NULL,
+    ended     TEXT,
+    wav_path  TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS line (
+    id         INTEGER PRIMARY KEY,
+    session_id INTEGER NOT NULL REFERENCES session(id) ON DELETE CASCADE,
+    start      REAL NOT NULL,
+    speaker    TEXT NOT NULL,
+    lang       TEXT NOT NULL,
+    source     TEXT NOT NULL,
+    refined    INTEGER NOT NULL DEFAULT 0,
+    status     TEXT NOT NULL DEFAULT 'ok',
+    end_time   REAL
+);
+CREATE TABLE IF NOT EXISTS line_translation (
+    line_id   INTEGER NOT NULL REFERENCES line(id) ON DELETE CASCADE,
+    lang      TEXT NOT NULL,
+    text      TEXT NOT NULL,
+    PRIMARY KEY (line_id, lang)
+);
+CREATE TABLE IF NOT EXISTS correction (
+    wrong  TEXT PRIMARY KEY,
+    right  TEXT NOT NULL,
+    lang   TEXT NOT NULL DEFAULT '',
+    count  INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS voiceprint (
+    session_id INTEGER REFERENCES session(id) ON DELETE CASCADE,
+    code       TEXT NOT NULL,
+    centroid   BLOB NOT NULL,
+    PRIMARY KEY (session_id, code)
+);
+CREATE TABLE IF NOT EXISTS known_speaker (
+    name     TEXT PRIMARY KEY,
+    centroid BLOB NOT NULL,
+    sessions INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS speaker_name (
+    session_id INTEGER NOT NULL REFERENCES session(id) ON DELETE CASCADE,
+    code       TEXT NOT NULL,
+    name       TEXT NOT NULL,
+    PRIMARY KEY (session_id, code)
+);
+CREATE INDEX IF NOT EXISTS line_session ON line(session_id, start);
+"""
+
+# `CREATE TABLE IF NOT EXISTS` is a no-op against a table that already exists, so a database
+# created before a column was added never gets it. New machines and CI pass either way; the meeting
+# room's database is the one that breaks, and it breaks inside the capture thread where
+# Pipeline._handle swallows it as one more error count. Each entry is (column, DDL), applied only
+# when the column is absent.
+LINE_COLUMNS = (
+    ("status", "ALTER TABLE line ADD COLUMN status TEXT NOT NULL DEFAULT 'ok'"),
+    # No NOT NULL: rows written before this column existed have no end to backfill, and guessing
+    # one would be worse than admitting it is unknown.
+    ("end_time", "ALTER TABLE line ADD COLUMN end_time REAL"),
+)
+
+
+def apply(db: sqlite3.Connection) -> None:
+    """Create what is missing, then add the columns the schema gained since.
+
+    Deliberately not caught: starting with a stale schema is worse than not starting. The
+    alternative is a room that records a whole meeting into a table that rejects every insert.
+    """
+    db.executescript(SCHEMA)
+    db.commit()
+    have = {r["name"] for r in db.execute("PRAGMA table_info(line)")}
+    added = [ddl for column, ddl in LINE_COLUMNS if column not in have]
+    for ddl in added:
+        db.execute(ddl)
+    if added:
+        db.commit()
