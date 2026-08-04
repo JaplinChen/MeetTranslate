@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from . import asr, asr_gpu, config, correct, diarize, pipeline, postprocess, refine, store
+from . import asr, asr_gpu, config, correct, diarize, guards, pipeline, postprocess, refine, store
 
 
 def test_refine_keeps_the_original_when_the_model_rewrites() -> None:
@@ -52,40 +52,40 @@ def test_refine_rejects_corrections_that_do_not_sound_alike() -> None:
     terms = [term("工程變更"), term("生管")]
 
     # Heard: 稍 as 早, 料號 as 料耗, 生管 as 生技.
-    assert refine.accept("有聽到聲音嗎早等我一下", "有聽到聲音嗎稍等我一下", terms)
-    assert refine.accept("我們的料耗其實變動很大", "我們的料號其實變動很大", terms)
-    assert refine.accept("生技這邊先開始", "生管這邊先開始", terms)
+    assert guards.accept("有聽到聲音嗎早等我一下", "有聽到聲音嗎稍等我一下", terms)
+    assert guards.accept("我們的料耗其實變動很大", "我們的料號其實變動很大", terms)
+    assert guards.accept("生技這邊先開始", "生管這邊先開始", terms)
 
     # Guessed: nothing that sounds like 選項 was spoken.
-    assert not refine.accept("用延伸的吧他還沒投出來", "用選項的吧他還沒跳出來", terms)
+    assert not guards.accept("用延伸的吧他還沒投出來", "用選項的吧他還沒跳出來", terms)
 
     # Two nonsense characters inside a long sentence are a rounding error to a ratio and still
     # nonsense, so the sound test has an absolute ceiling as well. Both of these were proposed by
     # a local model on a real transcript.
     long_before = "因為你所有的夢表那些什麼包含你的一些標準工時那些全部都要工單的管理"
-    assert not refine.accept(long_before, long_before.replace("夢表", "模具"), terms)
+    assert not guards.accept(long_before, long_before.replace("夢表", "模具"), terms)
     # The same span may still be corrected when the glossary names the destination.
-    assert refine.accept(long_before, long_before.replace("夢表", "報表"),
+    assert guards.accept(long_before, long_before.replace("夢表", "報表"),
                          terms + [term("報表")])
 
     # Re-spacing is not a correction.
-    assert not refine.accept("呃right nowswitch", "呃 right now switch", terms)
+    assert not guards.accept("呃right nowswitch", "呃 right now switch", terms)
 
     # A glossary term may travel further, because the recogniser never knew it existed.
-    assert refine.accept("一夕變更的流程", "工程變更的流程", terms)
-    assert not refine.accept("一夕變更的流程", "工程變更的流程", [])
+    assert guards.accept("一夕變更的流程", "工程變更的流程", terms)
+    assert not guards.accept("一夕變更的流程", "工程變更的流程", [])
 
     # Latitude, not immunity. The term is compared against the text it replaced: measured across
     # the whole line instead, 土壤 became 交貨 and 祂 became 生管 on a real transcript, because
     # two unrelated syllables inside a long sentence look like a rounding error.
     delivery = [term("交貨"), term("生管"), term("收料")]
     long_line = "然後我們這邊的狀況是說土壤的時間會影響到後面所有的排程跟人力安排這件事"
-    assert not refine.accept(long_line, long_line.replace("土壤", "交貨"), delivery)
-    assert not refine.accept("祂那邊的排程", "生管那邊的排程", delivery)
-    assert not refine.accept("浴室量的部分", "收料的部分", delivery)
+    assert not guards.accept(long_line, long_line.replace("土壤", "交貨"), delivery)
+    assert not guards.accept("祂那邊的排程", "生管那邊的排程", delivery)
+    assert not guards.accept("浴室量的部分", "收料的部分", delivery)
     # What the latitude is for: the recogniser mangled the term, but it still sounds like it.
-    assert refine.accept("那個申管會上系統", "那個生管會上系統", delivery)
-    assert refine.accept("收糧的部分", "收料的部分", delivery)
+    assert guards.accept("那個申管會上系統", "那個生管會上系統", delivery)
+    assert guards.accept("收糧的部分", "收料的部分", delivery)
 
 
 def test_refine_converts_what_the_model_writes_in_simplified() -> None:

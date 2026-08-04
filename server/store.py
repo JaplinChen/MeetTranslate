@@ -1,8 +1,11 @@
-"""SQLite persistence: glossary, sessions and transcript lines.
+"""SQLite persistence: glossary, sessions, transcript lines and corrections.
 
 One connection with `check_same_thread=False` because the capture pipeline writes from a worker
 thread while FastAPI reads from the event loop; a lock serialises them. WAL keeps a long-running
 write from blocking the subtitle page's reads.
+
+The tables themselves live in `schema`, and the speaker half of the API in `speakers` — both share
+this connection and this lock, so `Store` stays the only thing that talks to the database.
 """
 
 from __future__ import annotations
@@ -12,7 +15,8 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import config
+from . import config, schema
+from .speakers import SpeakerStore
 
 DB_PATH = config.ROOT / "meettranslate.db"
 
@@ -26,82 +30,6 @@ DB_PATH = config.ROOT / "meettranslate.db"
 # rewritten to 才夠 211 times across seven interviews.
 TERM_MODES = ("translate", "keep", "hint", "protect")
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS glossary (
-    id        INTEGER PRIMARY KEY,
-    source    TEXT NOT NULL,
-    lang      TEXT NOT NULL DEFAULT '',
-    mode      TEXT NOT NULL DEFAULT 'translate',
-    category  TEXT NOT NULL DEFAULT '',
-    UNIQUE(source, lang)
-);
-CREATE TABLE IF NOT EXISTS glossary_target (
-    term_id   INTEGER NOT NULL REFERENCES glossary(id) ON DELETE CASCADE,
-    lang      TEXT NOT NULL,
-    text      TEXT NOT NULL,
-    PRIMARY KEY (term_id, lang)
-);
-CREATE TABLE IF NOT EXISTS session (
-    id        INTEGER PRIMARY KEY,
-    started   TEXT NOT NULL,
-    ended     TEXT,
-    wav_path  TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS line (
-    id         INTEGER PRIMARY KEY,
-    session_id INTEGER NOT NULL REFERENCES session(id) ON DELETE CASCADE,
-    start      REAL NOT NULL,
-    speaker    TEXT NOT NULL,
-    lang       TEXT NOT NULL,
-    source     TEXT NOT NULL,
-    refined    INTEGER NOT NULL DEFAULT 0,
-    status     TEXT NOT NULL DEFAULT 'ok',
-    end_time   REAL
-);
-CREATE TABLE IF NOT EXISTS line_translation (
-    line_id   INTEGER NOT NULL REFERENCES line(id) ON DELETE CASCADE,
-    lang      TEXT NOT NULL,
-    text      TEXT NOT NULL,
-    PRIMARY KEY (line_id, lang)
-);
-CREATE TABLE IF NOT EXISTS correction (
-    wrong  TEXT PRIMARY KEY,
-    right  TEXT NOT NULL,
-    lang   TEXT NOT NULL DEFAULT '',
-    count  INTEGER NOT NULL DEFAULT 1
-);
-CREATE TABLE IF NOT EXISTS voiceprint (
-    session_id INTEGER REFERENCES session(id) ON DELETE CASCADE,
-    code       TEXT NOT NULL,
-    centroid   BLOB NOT NULL,
-    PRIMARY KEY (session_id, code)
-);
-CREATE TABLE IF NOT EXISTS known_speaker (
-    name     TEXT PRIMARY KEY,
-    centroid BLOB NOT NULL,
-    sessions INTEGER NOT NULL DEFAULT 1
-);
-CREATE TABLE IF NOT EXISTS speaker_name (
-    session_id INTEGER NOT NULL REFERENCES session(id) ON DELETE CASCADE,
-    code       TEXT NOT NULL,
-    name       TEXT NOT NULL,
-    PRIMARY KEY (session_id, code)
-);
-CREATE INDEX IF NOT EXISTS line_session ON line(session_id, start);
-"""
-
-# `CREATE TABLE IF NOT EXISTS` is a no-op against a table that already exists, so a database
-# created before a column was added never gets it. New machines and CI pass either way; the meeting
-# room's database is the one that breaks, and it breaks inside the capture thread where
-# Pipeline._handle swallows it as one more error count. Each entry is (column, DDL), applied only
-# when the column is absent.
-_LINE_COLUMNS = (
-    ("status", "ALTER TABLE line ADD COLUMN status TEXT NOT NULL DEFAULT 'ok'"),
-    # No NOT NULL: rows written before this column existed have no end to backfill, and guessing
-    # one would be worse than admitting it is unknown.
-    ("end_time", "ALTER TABLE line ADD COLUMN end_time REAL"),
-)
-
 
 @dataclass
 class Term:
@@ -113,7 +41,7 @@ class Term:
     targets: dict[str, str]
 
 
-class Store:
+class Store(SpeakerStore):
     def __init__(self, path: Path | None = None):
         self._lock = threading.Lock()
         self._db = sqlite3.connect(str(path or DB_PATH), check_same_thread=False)
@@ -121,22 +49,7 @@ class Store:
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.execute("PRAGMA foreign_keys=ON")
         with self._lock:
-            self._db.executescript(SCHEMA)
-            self._db.commit()
-            self._migrate()
-
-    def _migrate(self) -> None:
-        """Add columns the schema gained after this database was created.
-
-        Deliberately not caught: starting with a stale schema is worse than not starting. The
-        alternative is a room that records a whole meeting into a table that rejects every insert.
-        """
-        have = {r["name"] for r in self._db.execute("PRAGMA table_info(line)")}
-        added = [ddl for column, ddl in _LINE_COLUMNS if column not in have]
-        for ddl in added:
-            self._db.execute(ddl)
-        if added:
-            self._db.commit()
+            schema.apply(self._db)
 
     def close(self) -> None:
         with self._lock:
@@ -311,14 +224,17 @@ class Store:
                 "FROM session s ORDER BY s.id DESC"
             )]
 
-    def set_speaker_name(self, session_id: int, code: str, name: str) -> None:
+    def transcript_text(self, limit: int = 20000) -> str:
+        """Every line this room has recorded, as one string.
+
+        The corpus for deciding whether a glossary term is safe is the meeting history itself —
+        what these people actually say, rather than a dictionary of what Mandarin permits.
+        """
         with self._lock:
-            self._db.execute(
-                "INSERT INTO speaker_name (session_id, code, name) VALUES (?,?,?) "
-                "ON CONFLICT(session_id, code) DO UPDATE SET name=excluded.name",
-                (session_id, code, name),
-            )
-            self._db.commit()
+            rows = self._db.execute(
+                "SELECT source FROM line ORDER BY id DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return chr(10).join(r["source"] for r in rows)
 
     # ── corrections ─────────────────────────────────────────────────────
     #
@@ -347,101 +263,3 @@ class Store:
         with self._lock:
             self._db.execute("DELETE FROM correction WHERE wrong=?", (wrong,))
             self._db.commit()
-
-    # ── voiceprints ─────────────────────────────────────────────────────
-    #
-    # Naming S1 as "Vincent" is knowledge the meeting room throws away every time. Kept here, the
-    # next meeting recognises the voice instead of asking again. Two tables because the two facts
-    # arrive at different times: the centroid exists while the meeting runs, the name usually
-    # arrives afterwards from the transcript page.
-
-    def save_voiceprint(self, session_id: int, code: str, centroid: bytes) -> None:
-        with self._lock:
-            self._db.execute(
-                "INSERT INTO voiceprint (session_id, code, centroid) VALUES (?,?,?) "
-                "ON CONFLICT(session_id, code) DO UPDATE SET centroid=excluded.centroid",
-                (session_id, code, centroid),
-            )
-            self._db.commit()
-
-    def voiceprint(self, session_id: int, code: str) -> bytes | None:
-        with self._lock:
-            row = self._db.execute(
-                "SELECT centroid FROM voiceprint WHERE session_id=? AND code=?", (session_id, code)
-            ).fetchone()
-        return row["centroid"] if row else None
-
-    def remember_speaker(self, name: str, centroid: bytes) -> None:
-        """Promote one session's voiceprint to a name this room knows.
-
-        The newest recording wins rather than being averaged in: a voice drifts with the room, the
-        mic and the codec, and the most recent sample is the closest to the next meeting.
-        """
-        with self._lock:
-            self._db.execute(
-                "INSERT INTO known_speaker (name, centroid) VALUES (?,?) "
-                "ON CONFLICT(name) DO UPDATE SET centroid=excluded.centroid, "
-                "sessions=known_speaker.sessions + 1",
-                (name, centroid),
-            )
-            self._db.commit()
-
-    def known_speakers(self) -> list[tuple[str, bytes]]:
-        with self._lock:
-            return [(r["name"], r["centroid"]) for r in
-                    self._db.execute("SELECT name, centroid FROM known_speaker ORDER BY sessions DESC")]
-
-    def speaker_sessions(self) -> dict[str, int]:
-        with self._lock:
-            return {r["name"]: r["sessions"] for r in
-                    self._db.execute("SELECT name, sessions FROM known_speaker")}
-
-    def speaker_sample(self, name: str) -> tuple[str, float] | None:
-        """Where to hear this voice: the newest line anyone attributed to that name.
-
-        Derived rather than stored — a name is only ever attached on the transcript page, so the
-        transcript already knows which recording and which second to play.
-        """
-        with self._lock:
-            row = self._db.execute(
-                "SELECT s.wav_path AS wav, l.start AS start FROM speaker_name sn "
-                "JOIN line l ON l.session_id=sn.session_id AND l.speaker=sn.code "
-                "JOIN session s ON s.id=sn.session_id "
-                "WHERE sn.name=? ORDER BY sn.session_id DESC, l.start LIMIT 1",
-                (name,),
-            ).fetchone()
-        return (row["wav"], row["start"]) if row else None
-
-    def rename_speaker(self, old: str, new: str) -> None:
-        """Rename a learned voice everywhere it is used, transcripts included.
-
-        Leaving old transcripts on the wrong name would make the rename look like it half-worked.
-        """
-        with self._lock:
-            self._db.execute("DELETE FROM known_speaker WHERE name=?", (new,))
-            self._db.execute("UPDATE known_speaker SET name=? WHERE name=?", (new, old))
-            self._db.execute("UPDATE speaker_name SET name=? WHERE name=?", (new, old))
-            self._db.commit()
-
-    def forget_speaker(self, name: str) -> None:
-        with self._lock:
-            self._db.execute("DELETE FROM known_speaker WHERE name=?", (name,))
-            self._db.commit()
-
-    def transcript_text(self, limit: int = 20000) -> str:
-        """Every line this room has recorded, as one string.
-
-        The corpus for deciding whether a glossary term is safe is the meeting history itself —
-        what these people actually say, rather than a dictionary of what Mandarin permits.
-        """
-        with self._lock:
-            rows = self._db.execute(
-                "SELECT source FROM line ORDER BY id DESC LIMIT ?", (limit,)
-            ).fetchall()
-        return chr(10).join(r["source"] for r in rows)
-
-    def speaker_names(self, session_id: int) -> dict[str, str]:
-        with self._lock:
-            return {r["code"]: r["name"] for r in self._db.execute(
-                "SELECT code, name FROM speaker_name WHERE session_id=?", (session_id,)
-            )}
