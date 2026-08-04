@@ -1,0 +1,215 @@
+/* The page frame every list page renders into: header, segmented tabs, the panel they sit in,
+   and the add/search toolbar above the table.
+
+   Loaded once from App.tsx, before table.css and controls.css. Nothing here collides with those
+   at equal specificity, so the order is for reading, not for the cascade. There is no
+   EditableTable component and never was in this codebase; the classes are named for the shape,
+   and six pages plus PageSkeleton render them. */
+.etable-page{
+  padding: var(--space-8);
+  width: 100%;
+  /* The rows are term pairs mirrored around an arrow, so their columns are 1fr each. Unbounded,
+     that put 715px of dead space on either side of a two-character term on a wide screen and left
+     nothing to scan down. This is a short-phrase list, not a data table: cap it and let it sit
+     left, where the eye already is. */
+  max-width: 1100px;
+  height: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.etable-page.etable-loading{
+  align-items: center;
+  justify-content: center;
+}
+
+.etable-page .page-header{
+  margin-bottom: var(--space-6);
+}
+
+.etable-page .btn-primary{
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  background: var(--primary);
+  color: var(--primary-ink);
+  border: none;
+  border-radius: var(--radius);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.etable-page .btn-primary:hover:not(:disabled){
+  background: var(--primary-hover);
+}
+
+.etable-page .btn-primary:disabled{
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.etable-page .etable-tabs {
+  display: inline-flex;
+  gap: var(--space-1);
+  margin-bottom: var(--space-5);
+  padding: var(--space-1);
+  background: var(--bg-light);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 0.25rem);
+}
+
+.etable-page .etable-tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-radius: var(--radius);
+  transition: background 0.15s, color 0.15s;
+}
+
+.etable-page .etable-tab:hover:not(.active) {
+  color: var(--text-primary);
+  background: var(--bg-card, var(--bg-white));
+}
+
+.etable-page .etable-tab.active {
+  color: var(--primary-text, var(--text-primary));
+  background: var(--bg-card, var(--bg-white));
+  box-shadow: var(--shadow-sm);
+}
+
+/* Inactive tabs get a muted count chip so the segmented control reads calm; the active tab and
+   the panel-title reuse the solid primary chip below. */
+.etable-page .etable-tab .etable-count {
+  background: var(--primary-soft);
+  color: var(--primary-text);
+}
+
+.etable-page .etable-tab.active .etable-count {
+  background: var(--primary);
+  color: var(--primary-ink);
+}
+
+.etable-page .etable-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card, var(--bg-light));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-5);
+}
+
+/* The dup-check panel is a small collapsible control sharing the terms tab with the table below it,
+   so it must not grab the panel's default flex:1 and push the table off-screen. */
+.etable-page .etable-panel--dup {
+  flex: 0 0 auto;
+}
+
+.etable-page .etable-panel-title {
+  margin: 0 0 var(--space-4);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.etable-page .etable-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--primary-ink);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.etable-page .etable-add {
+  display: flex;
+  /* One row on desktop: key → val → category → button all inline. Narrow viewports wrap
+     (below) so inputs don't get crushed to 72px and clip their placeholders. */
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+@media (max-width: 640px) {
+  .etable-page .etable-add {
+    flex-wrap: wrap;
+  }
+}
+
+.etable-page .etable-add input {
+  flex: 1 1 6rem;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-light);
+  color: var(--text-primary);
+  font-size: 0.9375rem;
+}
+
+.etable-page .etable-arrow {
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+}
+
+.etable-page .etable-search {
+  position: relative;
+  margin-top: var(--space-2);
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+/* The search box grows; the category filter keeps a fixed width beside it. */
+.etable-page .etable-search input {
+  flex: 1;
+  min-width: 0;
+}
+
+.etable-page .etable-cat-filter {
+  flex: 0 0 auto;
+  height: 100%;
+}
+
+.etable-page .etable-search-icon {
+  position: absolute;
+  left: 0.65rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.etable-page .etable-search input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-8);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-light);
+  color: var(--text-primary);
+  font-size: 0.9375rem;
+}
+
