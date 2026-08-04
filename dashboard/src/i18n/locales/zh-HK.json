@@ -119,7 +119,20 @@
     "apiKeySet": "已設定金鑰，留白表示沿用",
     "temperature": "Temperature",
     "fallbackModels": "備援模型",
-    "addFallback": "新增備援模型"
+    "addFallback": "新增備援模型",
+    "test": "測試",
+    "testOk": "連線成功",
+    "verify": "驗證",
+    "fetchModels": "取得模型清單",
+    "noModels": "該端點沒有回傳任何模型",
+    "modelsFailed": "無法取得模型清單：{{message}}",
+    "apiKeyStored": "留白表示沿用已儲存的金鑰",
+    "fallbackPlaceholder": "模型名稱",
+    "add": "新增",
+    "perProviderFallbackHint": "此供應商的其他模型，會在上方模型之後依序嘗試。",
+    "style": "風格",
+    "stylePrecise": "精準",
+    "styleFluent": "流暢"
   },
   "keyproxy": {
     "title": "LLM 金鑰",

@@ -119,7 +119,20 @@
     "apiKeySet": "Key stored — leave blank to keep it",
     "temperature": "Temperature",
     "fallbackModels": "Fallback models",
-    "addFallback": "Add fallback model"
+    "addFallback": "Add fallback model",
+    "test": "Test",
+    "testOk": "Connected",
+    "verify": "Verify",
+    "fetchModels": "Fetch models",
+    "noModels": "That endpoint returned no models",
+    "modelsFailed": "Could not list models: {{message}}",
+    "apiKeyStored": "Leave blank to keep the stored key",
+    "fallbackPlaceholder": "Model name",
+    "add": "Add",
+    "perProviderFallbackHint": "Extra models of this provider, tried in order after the model above.",
+    "style": "Style",
+    "stylePrecise": "Precise",
+    "styleFluent": "Fluent"
   },
   "keyproxy": {
     "title": "LLM keys",
