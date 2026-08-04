@@ -1,3 +1,15 @@
+/* The shared panel is flex:1 because the glossary page has exactly one of them. This page has
+   four, so they split the viewport four ways and every one overflows its share: with 31 speakers
+   the name inputs spilled 273px over the transcript, and the transcript itself wanted 39,637px in
+   a 138px box. Panels here size to their content and the page scrolls — one scrollbar, no nesting.
+
+   Scoped to this page: the rule is global once the stylesheet loads, and the glossary still wants
+   its single panel to fill the height. Both class names on the selector so it outranks the shared
+   rule outright — matching its specificity would leave the winner decided by bundle order. */
+.etable-page.sess-page .etable-panel {
+  flex: 0 0 auto;
+}
+
 .sess-select {
   width: 100%;
   max-width: 30rem;
@@ -16,10 +28,13 @@
   line-height: 1.5;
 }
 
+/* A grid rather than a wrapping flex row: clustering a two-hour recording produced 31 speakers,
+   and fixed-width boxes wrapped into ragged rows with a different number per line. Auto-fill packs
+   them into aligned columns at any count and any width. */
 .sess-names {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  gap: var(--space-2) var(--space-3);
 }
 
 .sess-name {
@@ -29,17 +44,37 @@
 }
 
 .sess-name span {
+  min-width: 2.5rem;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8rem;
   font-weight: 600;
-  font-size: 0.85rem;
 }
 
 .sess-name input {
-  width: 9rem;
-  padding: var(--space-2) var(--space-2);
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg-input, var(--bg-card));
   color: var(--text-primary);
+  transition: border-color 200ms ease;
+}
+
+.sess-name input:hover {
+  border-color: var(--text-muted);
+}
+
+/* Keyboard focus was invisible: these are 31 identical boxes, and tabbing through them with no
+   ring means losing your place entirely. */
+.sess-name input:focus-visible,
+.sess-select:focus-visible,
+.sess-editing:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+  border-color: transparent;
 }
 
 .sess-lines {
@@ -47,9 +82,11 @@
   flex-direction: column;
 }
 
+/* The speaker column was 7rem for labels that read "S1": that is dead space on every one of 936
+   rows, pushing the text it belongs to away from the timestamp. Sized to a name, not to nothing. */
 .sess-line {
   display: grid;
-  grid-template-columns: 3.5rem 7rem 1fr;
+  grid-template-columns: 3.5rem minmax(4rem, max-content) 1fr;
   gap: var(--space-3);
   padding: var(--space-2) 0;
   border-bottom: 1px solid var(--border);
@@ -116,12 +153,21 @@
    IME on a transcript that is mostly Chinese. */
 .sess-source {
   cursor: text;
+  border-radius: var(--radius-sm);
+  transition: background 200ms ease;
+}
+
+/* Nothing said these lines were editable until you happened to click one. */
+.sess-source:hover {
+  background: var(--primary-soft);
 }
 
 .sess-editing {
   width: 100%;
   padding: 6px 8px;
-  border: 1px solid var(--accent, #2563eb);
+  /* --accent is defined nowhere in the app, so this was always the hard-coded blue fallback,
+     against a terracotta --primary everywhere else. */
+  border: 1px solid var(--primary);
   border-radius: var(--radius-sm);
   background: var(--bg-card);
   color: inherit;
@@ -142,10 +188,22 @@
   color: inherit;
   font-weight: 600;
   cursor: pointer;
+  transition: border-color 200ms ease, background 200ms ease, transform 120ms ease;
 }
 
 .sess-import:hover:has(input:enabled) {
-  border-color: var(--accent, #2563eb);
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+/* Presses like a physical button rather than doing nothing until the file dialog appears. */
+.sess-import:active:has(input:enabled) {
+  transform: translateY(1px);
+}
+
+.sess-import:has(input:focus-visible) {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 .sess-import:has(input:disabled) {

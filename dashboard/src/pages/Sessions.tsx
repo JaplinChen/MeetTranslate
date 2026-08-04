@@ -101,7 +101,7 @@ export function Sessions() {
   }
 
   return (
-    <div className="etable-page">
+    <div className="etable-page sess-page">
       <PageHeader title={t('sessions.title')} subtitle={t('sessions.subtitle')} />
 
       <section className="etable-panel">
