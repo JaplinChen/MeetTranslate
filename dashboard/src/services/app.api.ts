@@ -61,13 +61,20 @@ export interface RecordingStatus {
   errors: number;
 }
 
+/** Where a session's post-meeting pass got to. `idle` means there has not been one this run. */
+export type RefineState = 'idle' | 'refining' | 'refined' | 'failed' | 'cancelled';
+
 export interface SessionSummary {
   id: number;
   started: string;
   ended: string | null;
   wav_path: string;
   lines: number;
+  refine: { state: RefineState; error: string };
 }
+
+/** How a line ended up in the transcript. Distinct from `refined`, which is an LLM revision. */
+export type LineStatus = 'ok' | 'asr_failed' | 'translate_failed';
 
 export interface TranscriptLine {
   id: number;
@@ -76,6 +83,8 @@ export interface TranscriptLine {
   lang: string;
   source: string;
   refined: number;
+  status: LineStatus;
+  end_time: number | null;
   translations: Record<string, string>;
 }
 
@@ -131,4 +140,10 @@ export const appApi = {
   setLineSource: (id: number, lineId: number, source: string) =>
     request<{ lines: TranscriptLine[]; speakers: Record<string, string> }>(
       `/sessions/${id}/lines/${lineId}`, { method: 'PUT', body: JSON.stringify({ source }) }),
+  // The line is named, never a path or an offset: the server reads the span from its own record.
+  rerunLine: (id: number, lineId: number) =>
+    request<{ lines: TranscriptLine[]; speakers: Record<string, string>; status: LineStatus }>(
+      `/sessions/${id}/lines/${lineId}/rerun`, { method: 'POST' }),
+  refineState: (id: number) =>
+    request<{ session: number; state: RefineState; error: string }>(`/sessions/${id}/refine`),
 };

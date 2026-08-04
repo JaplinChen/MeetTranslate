@@ -24,7 +24,7 @@ import numpy as np
 from fastapi.testclient import TestClient
 
 from . import asr, asr_gpu, config, jobs, llm, main, postprocess as postprocess_mod
-from . import store as store_mod, translate
+from . import pipeline as pipeline_mod, store as store_mod, translate
 from .pipeline import Pipeline
 
 
@@ -457,6 +457,257 @@ def test_unknown_api_path_is_json_404(client: TestClient) -> None:
         r = send("/api/definitely-not-a-route")
         assert r.status_code == 404, (send.__name__, r.status_code)
         assert r.headers["content-type"].startswith("application/json")
+
+
+def test_rerunning_a_line_refuses_what_it_should(client: TestClient) -> None:
+    """The rerun endpoint has no authentication in front of it, so its guards are the only ones."""
+    jobs.reset()
+    session_id = _seed_session("rerun.wav")
+    line_id = main.store.lines(session_id)[0]["id"]
+
+    assert client.post(f"/api/sessions/{session_id}/lines/999999/rerun").status_code == 404
+    assert client.post(f"/api/sessions/999999/lines/{line_id}/rerun").status_code == 404
+
+    # A line id belonging to another session must not be reachable through this session's path.
+    other = _seed_session("rerun-other.wav")
+    other_line = main.store.lines(other)[0]["id"]
+    assert client.post(f"/api/sessions/{session_id}/lines/{other_line}/rerun").status_code == 404
+
+    # Not while that session is recording: the wav is still being written.
+    main.state["session"] = session_id
+    try:
+        assert client.post(f"/api/sessions/{session_id}/lines/{line_id}/rerun").status_code == 409
+    finally:
+        main.state["session"] = None
+
+    # A line with no duration is refused rather than decoded as a 60-second span.
+    main.store.replace_line(line_id, "一行", "zh", {}, "ok")
+    assert client.post(f"/api/sessions/{session_id}/lines/{line_id}/rerun").status_code == 400
+
+
+def test_a_rerun_always_answers_in_the_same_shape(tmp: Path) -> None:
+    """The page reads the reply straight into state, so both outcomes must carry the same keys.
+
+    They drifted apart once — one exit returned `line`, the other `lines` — which would have
+    blanked the transcript the rerun was supposed to be repairing.
+    """
+    st = store_mod.Store(tmp / "shape.db")
+    try:
+        session_id = st.start_session("2026-01-01T09:00:00", str(tmp / "s.wav"))
+        st.add_line(session_id, 0.0, "S1", "zh", "一行", {"en": "a line"})
+        st.set_speaker_name(session_id, "S1", "陳經理")
+
+        original, main.store = main.store, st
+        try:
+            for status in ("ok", "asr_failed", "translate_failed"):
+                body = main._transcript(session_id, status)
+                assert set(body) == {"lines", "speakers", "status"}, body
+                assert body["status"] == status
+                assert body["lines"] and body["speakers"] == {"S1": "陳經理"}, body
+        finally:
+            main.store = original
+    finally:
+        st.close()
+
+
+def test_a_failed_translation_costs_the_translation_not_the_line(tmp: Path) -> None:
+    """It used to raise into the handler's catch-all and drop the whole utterance.
+
+    The room would then see nothing where it should have seen the original text untranslated —
+    a translation outage reading as a speaker who never spoke.
+    """
+    class Exploding:
+        def translate(self, *a, **k):
+            raise RuntimeError("no key")
+
+    st = store_mod.Store(tmp / "translate-fail.db")
+    try:
+        session_id = st.start_session("2026-01-01T09:00:00", str(tmp / "t.wav"))
+        emitted: list[dict] = []
+        pipe = _headless_pipeline(config.Config(), st, session_id, Exploding(), emitted.append)
+        pipe._transcriber = _FixedTranscriber("這句話有說出來")
+        pipe._diarizer = _OneSpeaker()
+
+        pipe._handle(asr.Segment(np.zeros(config.SAMPLE_RATE, dtype="float32"), 0.0))
+
+        rows = st.lines(session_id)
+        assert len(rows) == 1, rows
+        assert rows[0]["source"] == "這句話有說出來", rows
+        assert rows[0]["status"] == "translate_failed", rows
+        assert rows[0]["translations"] == {}, rows
+        assert pipe.errors == 0, "a translation outage is not a pipeline error"
+        assert emitted and emitted[0]["line"]["status"] == "translate_failed", emitted
+    finally:
+        st.close()
+
+
+def test_a_failed_decode_is_retried_once_the_speaker_language_is_known(tmp: Path) -> None:
+    """Live used to bin these in silence. The post-meeting pass recovers 992 such lines.
+
+    The first utterance decodes to nothing under auto-detect. The second establishes that this
+    speaker is speaking Chinese. The first must then be re-decoded under Chinese and appear.
+    """
+    st = store_mod.Store(tmp / "retry.db")
+    try:
+        session_id = st.start_session("2026-01-01T09:00:00", str(tmp / "r.wav"))
+        emitted: list[dict] = []
+        pipe = _headless_pipeline(config.Config(languages=["zh", "en"]), st, session_id, None, emitted.append)
+        pipe._transcriber = _ByLanguage({"": ("", ""), "zh": ("補回來的那一句", "zh")})
+        pipe._diarizer = _OneSpeaker()
+
+        # Fails under auto-detect and is held, not dropped.
+        pipe._handle(asr.Segment(np.zeros(config.SAMPLE_RATE, dtype="float32"), 10.0))
+        assert st.lines(session_id) == [], "a held utterance must not be stored yet"
+        assert len(pipe._held) == 1, pipe._held
+
+        # A later utterance settles the speaker's language, which triggers the retry.
+        pipe._transcriber.table[""] = ("這句話正常", "zh")
+        pipe._handle(asr.Segment(np.zeros(config.SAMPLE_RATE, dtype="float32"), 20.0))
+
+        rows = st.lines(session_id)
+        assert [r["source"] for r in rows] == ["補回來的那一句", "這句話正常"], rows
+        assert pipe.recovered == 1 and pipe.dropped == 0
+        assert pipe._held == []
+
+        # It voted once, not twice: the retry must not count the same audio toward the speaker.
+        assert pipe._diarizer.votes == ["zh"], pipe._diarizer.votes
+
+        # And it is not offered to the next line as context, nor as the line to refine.
+        assert pipe._previous[2].text == "這句話正常"
+        assert [l.text for l in pipe._context] == ["這句話正常"]
+
+        # The recovered line is emitted with its own start, so the page can place it correctly.
+        late = [e for e in emitted if e["line"]["source"] == "補回來的那一句"]
+        assert late and late[0]["line"]["start"] == 10.0, emitted
+    finally:
+        st.close()
+
+
+def test_the_retry_buffer_cannot_grow_without_bound(tmp: Path) -> None:
+    """Every held utterance keeps its raw audio, so a room that decodes nothing must not fill RAM."""
+    st = store_mod.Store(tmp / "retry-cap.db")
+    try:
+        session_id = st.start_session("2026-01-01T09:00:00", str(tmp / "c.wav"))
+        pipe = _headless_pipeline(config.Config(languages=["zh"]), st, session_id, None, lambda e: None)
+        pipe._transcriber = _ByLanguage({"": ("", ""), "zh": ("", "")})
+        pipe._diarizer = _OneSpeaker()
+
+        for i in range(pipeline_mod.RETRY_BUFFER + 8):
+            pipe._handle(asr.Segment(np.zeros(1600, dtype="float32"), float(i)))
+
+        assert len(pipe._held) == pipeline_mod.RETRY_BUFFER, len(pipe._held)
+        assert pipe.dropped == 8, pipe.dropped
+        # The oldest went first, so what is still held is the most recent audio.
+        assert pipe._held[0][0].start == 8.0, pipe._held[0][0].start
+    finally:
+        st.close()
+
+
+def test_a_retry_that_explodes_is_counted_not_lost(tmp: Path) -> None:
+    """The held entry is already off the list by then, so an escape would lose it silently.
+
+    It must also not fail the live utterance that triggered the retry: recovering something older
+    is a bonus on top of that line, never a risk to it.
+    """
+    class Exploding(_ByLanguage):
+        def transcribe(self, samples, language):
+            if language == "zh" and len(samples) == 4242:
+                raise RuntimeError("decoder blew up")
+            return super().transcribe(samples, language)
+
+    st = store_mod.Store(tmp / "retry-boom.db")
+    try:
+        session_id = st.start_session("2026-01-01T09:00:00", str(tmp / "b.wav"))
+        pipe = _headless_pipeline(config.Config(languages=["zh"]), st, session_id, None, lambda e: None)
+        pipe._transcriber = Exploding({"": ("", ""), "zh": ("正常的一句", "zh")})
+        pipe._diarizer = _OneSpeaker()
+
+        pipe._handle(asr.Segment(np.zeros(4242, dtype="float32"), 5.0))  # decodes to nothing, held
+        assert len(pipe._held) == 1, pipe._held
+
+        # The next utterance decodes, which settles the speaker's language and fires the retry.
+        pipe._transcriber.table[""] = ("正常的一句", "zh")
+        pipe._handle(asr.Segment(np.zeros(1600, dtype="float32"), 12.0))
+
+        assert pipe.dropped == 1, pipe.dropped
+        assert pipe.recovered == 0
+        assert pipe._held == []
+        # The live line survived the failed retry.
+        assert [r["source"] for r in st.lines(session_id)] == ["正常的一句"]
+        assert pipe.errors == 0, "a failed retry is not a failure of the live segment"
+    finally:
+        st.close()
+
+
+def _headless_pipeline(cfg, store, session_id, translator, emit) -> Pipeline:
+    """A Pipeline with everything `_handle` needs and nothing it does not.
+
+    `Pipeline.__init__` builds a VAD, which loads silero_vad.onnx — 1.5 GB of models are not in
+    version control, so on a bare runner that raises. These checks drive `_handle` directly and
+    never feed the VAD, and skipping them where the models are absent would mean the retry logic
+    is only ever verified on the one machine that has them, which is not verification.
+
+    Fields are set explicitly rather than copied from `__init__`: if one is added there and missed
+    here, these fail with AttributeError rather than quietly testing the wrong thing.
+    """
+    pipe = Pipeline.__new__(Pipeline)
+    pipe._cfg, pipe._store, pipe._session = cfg, store, session_id
+    pipe._translator, pipe._emit = translator, emit
+    pipe._diarizer = _OneSpeaker()
+    pipe._transcriber = _ByLanguage({})
+    pipe._hotwords = ""
+    pipe._context, pipe._previous, pipe._held = [], None, []
+    pipe.errors = pipe.recovered = pipe.dropped = pipe.backlog_peak = 0
+    return pipe
+
+
+class _ByLanguage:
+    """Transcriber returning a canned result per forced language."""
+
+    def __init__(self, table: dict[str, tuple[str, str]]) -> None:
+        self.table = table
+
+    def set_hotwords(self, hotwords: str) -> None:
+        pass
+
+    def transcribe(self, samples, language):
+        return self.table.get(language, ("", language))
+
+
+class _FixedTranscriber:
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+    def set_hotwords(self, hotwords: str) -> None:
+        pass
+
+    def transcribe(self, samples, language):
+        return self.text, "zh"
+
+
+class _OneSpeaker:
+    """One speaker whose language is unknown until an utterance actually decodes."""
+
+    class _S:
+        code = "S1"
+        centroid = np.zeros(4, dtype="float32")
+
+    def __init__(self) -> None:
+        self.recognised: dict = {}
+        self.language = ""
+        self.votes: list[str] = []
+        self._speaker = self._S()
+
+    def assign(self, samples):
+        return self._speaker
+
+    def language_for(self, speaker):
+        return self.language
+
+    def observe_language(self, speaker, used):
+        self.votes.append(used)
+        if used:
+            self.language = used
 
 
 def _wait_for(predicate, seconds: float = 5.0) -> bool:

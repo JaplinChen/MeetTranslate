@@ -236,6 +236,14 @@ class Transcriber:
         base = detected.split("-")[0]
         return any(base == code.split("-")[0] for code in self._languages)
 
+    def set_hotwords(self, hotwords: str) -> None:
+        """Accepted and ignored: sherpa-onnx cannot bias Whisper decoding at all.
+
+        Present so callers do not have to ask which recogniser they hold. The glossary still
+        reaches this path through the post-decode corrector, which is the half that was measured to
+        matter anyway.
+        """
+
     def transcribe(self, samples: np.ndarray, language: str) -> tuple[str, str]:
         """Return (text, language_actually_used).
 

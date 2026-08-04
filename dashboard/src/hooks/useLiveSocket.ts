@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { API_BASE_URL } from '../services/api';
+import { mergeLine } from '../utils/mergeLine';
 
 export interface LiveLine {
   id: number;
@@ -42,6 +43,10 @@ function socketUrl(): string {
  * The server sends `line` for a new utterance and `update` for one it has revised after seeing
  * what came next, so lines are keyed by id and replaced in place — appending an `update` would
  * show the same sentence twice.
+ *
+ * New lines are inserted by start time rather than appended, because they do not always arrive in
+ * order: an utterance the recogniser gave up on is held and retried once its speaker's language is
+ * known, by which point later lines are already on screen.
  */
 export function useLiveSocket() {
   const [lines, setLines] = useState<LiveLine[]>([]);
@@ -67,13 +72,7 @@ export function useLiveSocket() {
           return;
         }
         if (msg.type === 'line' || msg.type === 'update') {
-          setLines(prev => {
-            const i = prev.findIndex(l => l.id === msg.line.id);
-            if (i === -1) return [...prev, msg.line];
-            const next = [...prev];
-            next[i] = msg.line;
-            return next;
-          });
+          setLines(prev => mergeLine(prev, msg.line));
         }
       };
 

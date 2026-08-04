@@ -39,6 +39,13 @@ void i18n
       vi: { translation: vi },
     },
     fallbackLng: 'en',
+    // A key missing from zh-HK or vi falls back to English and looks merely odd; a key missing
+    // from en renders as the literal `sessions.refining` on screen. Both have shipped here before.
+    // Dev-only so a production build never pays for the check.
+    saveMissing: import.meta.env.DEV,
+    missingKeyHandler: import.meta.env.DEV
+      ? (lngs, ns, key) => console.warn(`[i18n] missing key "${key}" for ${lngs.join(', ')} (${ns})`)
+      : undefined,
     supportedLngs: supportedLanguages as unknown as string[],
     nonExplicitSupportedLngs: false,
     interpolation: { escapeValue: false },
