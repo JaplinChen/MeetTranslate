@@ -1,11 +1,12 @@
-.learned-note {
+/* page-root: .learned-page */
+.learned-page .learned-note {
   margin: 0 0 12px;
   color: var(--text-muted);
   font-size: 13px;
   line-height: 1.6;
 }
 
-.learned-empty {
+.learned-page .learned-empty {
   margin: 0;
   padding: 20px 0;
   color: var(--text-muted);
@@ -13,7 +14,7 @@
   text-align: center;
 }
 
-.learned-list {
+.learned-page .learned-list {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -22,7 +23,7 @@
   list-style: none;
 }
 
-.learned-row {
+.learned-page .learned-row {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -32,12 +33,12 @@
   background: var(--bg-card);
 }
 
-.learned-name,
-.learned-right {
+.learned-page .learned-name,
+.learned-page .learned-right {
   font-weight: 600;
 }
 
-.learned-name {
+.learned-page .learned-name {
   padding: 0;
   border: none;
   background: none;
@@ -47,7 +48,7 @@
   cursor: text;
 }
 
-.learned-rename {
+.learned-page .learned-rename {
   padding: 4px 8px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -57,32 +58,32 @@
   font-weight: 600;
 }
 
-.learned-sessions {
+.learned-page .learned-sessions {
   color: var(--text-muted);
   font-size: 12px;
 }
 
-.learned-clip {
+.learned-page .learned-clip {
   margin-left: auto;
   height: 32px;
   max-width: 240px;
 }
 
-.learned-clip + .learned-forget {
+.learned-page .learned-clip + .learned-forget {
   margin-left: 0;
 }
 
-.learned-wrong {
+.learned-page .learned-wrong {
   color: var(--text-muted);
   text-decoration: line-through;
 }
 
-.learned-arrow {
+.learned-page .learned-arrow {
   color: var(--text-muted);
   flex: none;
 }
 
-.learned-forget {
+.learned-page .learned-forget {
   margin-left: auto;
   display: inline-flex;
   align-items: center;
@@ -94,12 +95,12 @@
   cursor: pointer;
 }
 
-.learned-forget:hover:not(:disabled) {
+.learned-page .learned-forget:hover:not(:disabled) {
   border-color: var(--border);
   color: var(--danger, #dc2626);
 }
 
-.learned-forget:disabled {
+.learned-page .learned-forget:disabled {
   opacity: 0.5;
   cursor: default;
 }

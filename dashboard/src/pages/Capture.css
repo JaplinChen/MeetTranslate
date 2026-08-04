@@ -1,4 +1,5 @@
-.capture-alert {
+/* page-root: .capture-page */
+.capture-page .capture-alert {
   display: flex;
   gap: var(--space-2);
   align-items: center;
@@ -11,14 +12,14 @@
   font-size: 0.9rem;
 }
 
-.capture-hint {
+.capture-page .capture-hint {
   margin: 0 0 var(--space-3);
   color: var(--text-secondary);
   font-size: 0.85rem;
   line-height: 1.5;
 }
 
-.capture-select {
+.capture-page .capture-select {
   width: 100%;
   max-width: 40rem;
   padding: var(--space-2) var(--space-3);
@@ -29,7 +30,7 @@
   font-size: 0.9rem;
 }
 
-.capture-meter {
+.capture-page .capture-meter {
   height: 0.75rem;
   margin-bottom: var(--space-4);
   border-radius: var(--radius-pill);
@@ -37,38 +38,38 @@
   overflow: hidden;
 }
 
-.capture-meter-fill {
+.capture-page .capture-meter-fill {
   height: 100%;
   background: linear-gradient(90deg, #3aa675, #d6a545 70%, #d64545);
   transition: width 120ms linear;
 }
 
-.capture-stats {
+.capture-page .capture-stats {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-6);
   margin: 0;
 }
 
-.capture-stats dt {
+.capture-page .capture-stats dt {
   color: var(--text-secondary);
   font-size: 0.76rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
-.capture-stats dd {
+.capture-page .capture-stats dd {
   margin: var(--space-1) 0 0;
   font-size: 1.1rem;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
 
-.capture-bad {
+.capture-page .capture-bad {
   color: #d64545;
 }
 
-.capture-path {
+.capture-page .capture-path {
   margin: var(--space-4) 0 0;
   color: var(--text-secondary);
   font-family: ui-monospace, monospace;

@@ -1,9 +1,10 @@
+/* page-root: .sess-page */
 /* Per-line state on a transcript: whether the post-meeting pass is still running, which lines it
    could not decode, and the re-run control on those lines.
 
-   Split out of Sessions.css, which is the page and the transcript itself. Loaded after it — though
-   not because of the cascade: every rule here is scoped under .sess-page, so it already outranks
-   the unscoped .sess-* rules it overlaps with (.sess-source and its :hover) on specificity alone. */
+   Split out of Sessions.css, which is the page and the transcript itself. Load order matters now:
+   both files scope everything under .sess-page, so the rules this one overlaps with (.sess-source
+   and its :hover) match at the same specificity and the later stylesheet is what decides. */
 /* Sits with the line count in the panel title, not as a page banner: this is one session's
    property, and a banner would keep asserting it while you switch to another session. */
 .sess-page .sess-refine {
@@ -71,7 +72,7 @@
   transition: opacity 150ms ease;
 }
 
-.sess-line-failed:hover .sess-rerun,
+.sess-page .sess-line-failed:hover .sess-rerun,
 .sess-page .sess-rerun:focus-visible {
   opacity: 1;
 }

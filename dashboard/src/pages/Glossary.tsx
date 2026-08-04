@@ -101,7 +101,7 @@ export function Glossary() {
   }
 
   return (
-    <div className="etable-page">
+    <div className="etable-page gloss-page">
       <PageHeader title={t('glossary.title')} subtitle={t('glossary.subtitle')} />
 
       <section className="etable-panel">

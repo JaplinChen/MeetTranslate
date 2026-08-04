@@ -82,7 +82,7 @@ export function Capture() {
   const silent = recording && status!.seconds > SILENT_AFTER_SECONDS && loudestSeen < SILENT_PEAK;
 
   return (
-    <div className="etable-page">
+    <div className="etable-page capture-page">
       <PageHeader
         title={t('capture.title')}
         subtitle={t('capture.subtitle')}

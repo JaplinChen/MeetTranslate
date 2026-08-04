@@ -1,11 +1,4 @@
-/* Scope anchor. Layout comes from `.etable-page` (the page div carries both classes), so there is
-   nothing to set here — `display: block` is the div default, kept only so this is not an empty rule.
-   It exists so every selector below is a descendant of the page root, the convention
-   styles.scope.test.ts enforces for every page stylesheet. */
-.keyproxy-page {
-  display: block;
-}
-
+/* page-root: .keyproxy-page */
 .keyproxy-page .keyproxy-note {
   margin: 0 0 var(--space-5);
   padding: var(--space-3) var(--space-4);

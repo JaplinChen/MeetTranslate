@@ -30,7 +30,7 @@ export function Display() {
 
   if (!cfg) {
     return (
-      <div className="etable-page etable-loading">
+      <div className="etable-page display-page etable-loading">
         <Loader2 className="animate-spin" size={32} />
       </div>
     );
@@ -61,7 +61,7 @@ export function Display() {
   const used = new Set(cfg.languages);
 
   return (
-    <div className="etable-page">
+    <div className="etable-page display-page">
       <PageHeader
         title={t('display.title')}
         subtitle={t('display.subtitle')}
