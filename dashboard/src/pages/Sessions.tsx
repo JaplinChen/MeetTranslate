@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FileText } from 'lucide-react';
+import { FileText, Upload } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { PageSkeleton } from '../components/PageSkeleton';
 import { useToast } from '../components/Toast';
@@ -25,6 +25,7 @@ export function Sessions() {
   const [names, setNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<{ id: number; text: string } | null>(null);
+  const [importing, setImporting] = useState(false);
 
   const fail = (err: unknown) => toast.error(err instanceof Error ? err.message : String(err));
 
@@ -77,6 +78,21 @@ export function Sessions() {
     }
   };
 
+  // A recording made elsewhere teaches the same things a live capture does, once it is a session:
+  // names attach to voices, corrections attach to lines.
+  const importRecording = async (file: File) => {
+    setImporting(true);
+    try {
+      const added = await appApi.importRecording(file);
+      setSessions(await appApi.sessions());
+      setSelected(added.id);
+    } catch (err) {
+      fail(err);
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const codes = [...new Set(lines.map(l => l.speaker))];
   const langs = [...new Set(lines.flatMap(l => Object.keys(l.translations)))];
 
@@ -87,6 +103,25 @@ export function Sessions() {
   return (
     <div className="etable-page">
       <PageHeader title={t('sessions.title')} subtitle={t('sessions.subtitle')} />
+
+      <section className="etable-panel">
+        <h3 className="etable-panel-title">{t('sessions.import')}</h3>
+        <p className="sess-hint">{t('sessions.importHint')}</p>
+        <label className="sess-import">
+          <Upload size={16} />
+          <span>{importing ? t('sessions.importing') : t('sessions.importPick')}</span>
+          <input
+            type="file"
+            accept="video/*,audio/*"
+            disabled={importing}
+            onChange={e => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (file) importRecording(file);
+            }}
+          />
+        </label>
+      </section>
 
       {sessions.length === 0 ? (
         <div className="sess-empty">

@@ -54,7 +54,11 @@
     "speakersHint": "Ứng dụng phân biệt người nói bằng giọng, nhưng không lấy được danh sách người tham dự. Gán tên một lần ở đây để biên bản hiển thị tên thật.",
     "namePlaceholder": "Tên",
     "transcript": "Bản ghi",
-    "editHint": "Nhấp để sửa. Bản sửa được ghi nhớ và áp dụng cho các cuộc họp sau."
+    "editHint": "Nhấp để sửa. Bản sửa được ghi nhớ và áp dụng cho các cuộc họp sau.",
+    "import": "Nhập bản ghi",
+    "importHint": "Một cuộc họp ghi ở nơi khác sau khi nhập sẽ thành bản ghi bình thường: đặt tên người nói để học giọng, sửa một dòng để học bản sửa. Video hoặc âm thanh đều được; phần âm thanh được tách bằng ffmpeg.",
+    "importPick": "Chọn tệp",
+    "importing": "Đang chuyển thành văn bản — mất khoảng bằng độ dài bản ghi"
   },
   "glossary": {
     "title": "Bảng thuật ngữ",

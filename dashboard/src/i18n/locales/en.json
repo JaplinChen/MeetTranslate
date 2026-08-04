@@ -54,7 +54,11 @@
     "speakersHint": "Speakers are told apart by voice, but the app never sees the participant list. Name them once here and the transcript shows real names.",
     "namePlaceholder": "Name",
     "transcript": "Transcript",
-    "editHint": "Click to correct. The fix is remembered and applied to later meetings."
+    "editHint": "Click to correct. The fix is remembered and applied to later meetings.",
+    "import": "Import a recording",
+    "importHint": "A meeting recorded elsewhere becomes a session like any other: name the speakers to teach their voices, correct a line to teach the fix. Video or audio; the audio track is extracted with ffmpeg.",
+    "importPick": "Choose a file",
+    "importing": "Transcribing — this takes about as long as the recording"
   },
   "glossary": {
     "title": "Glossary",

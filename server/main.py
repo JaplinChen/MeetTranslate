@@ -6,18 +6,19 @@ import asyncio
 import io
 import logging
 import os
+import re
 import time
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
 
 import soundfile as sf
-from fastapi import FastAPI, HTTPException, Response, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import audio, config, correct, llm, postprocess, translate
+from . import audio, config, correct, ingest, llm, postprocess, translate
 from .hub import Hub
 from .pipeline import Pipeline
 from .store import TERM_MODES, Store
@@ -347,6 +348,59 @@ def reprocess(session_id: int) -> dict:
     except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(400, str(exc)) from exc
     return {"utterances": len(utterances), "lines": len(store.lines(session_id))}
+
+
+@app.post("/api/sessions/import")
+async def import_recording(request: Request, filename: str = "upload") -> dict:
+    """Learn from a meeting that was recorded somewhere else.
+
+    The upload becomes an ordinary session, so everything the room learns from a live capture — a
+    voice once someone names it, a correction once someone fixes a line — is learned from a file
+    the same way. Nothing downstream is told it came from an upload.
+    """
+    # ponytail: raw body rather than multipart, so no python-multipart dependency. Streamed to
+    # disk because a meeting recording does not belong in memory.
+    stem = re.sub(r"[^\w.-]", "_", Path(filename).name).strip("._") or "upload"
+    config.RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
+    # Two imports inside the same second would otherwise share a name, and the first session would
+    # end up pointing at the second one's audio.
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    tag, n = stamp, 1
+    while (config.RECORDINGS_DIR / f"import-{tag}.wav").exists():
+        tag, n = f"{stamp}-{n}", n + 1
+    source = config.RECORDINGS_DIR / f"import-{tag}-{stem}"
+    wav = config.RECORDINGS_DIR / f"import-{tag}.wav"
+
+    written = 0
+    with source.open("wb") as out:
+        async for chunk in request.stream():
+            written += out.write(chunk)
+    if not written:
+        source.unlink(missing_ok=True)
+        raise HTTPException(400, "empty upload")
+
+    try:
+        ingest.extract_audio(source, wav)
+    except ValueError as exc:
+        # ffmpeg creates the output before it discovers it cannot read the input.
+        wav.unlink(missing_ok=True)
+        raise HTTPException(400, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    finally:
+        # The original video is not evidence — every stage after this reads the wav.
+        source.unlink(missing_ok=True)
+
+    now = time.strftime("%Y-%m-%dT%H:%M:%S")
+    session_id = store.start_session(now, str(wav))
+    store.end_session(session_id, now)
+    try:
+        # ponytail: synchronous, like /reprocess — a long recording holds the request open.
+        # Worth a job queue only once someone imports something long enough to time out.
+        postprocess.rewrite_session(store, session_id, wav, state["cfg"], _make_translator())
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"id": session_id, "lines": len(store.lines(session_id))}
 
 
 @app.get("/api/sessions/{session_id}/markdown")
