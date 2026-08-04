@@ -1,0 +1,97 @@
+import { useTranslation } from 'react-i18next';
+import { RotateCw } from 'lucide-react';
+import type { TranscriptLine } from '../../services/app.api';
+
+const clock = (seconds: number) => {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${String(s).padStart(2, '0')}`;
+};
+
+interface Props {
+  line: TranscriptLine;
+  speaker: string; // resolved display name, or the S1/S2 code when nobody has named the voice
+  langs: string[]; // every target language in this transcript, so rows render them in one order
+  locked: boolean; // a refine pass is running; see the comment on `draft`
+  draft: { id: number; text: string } | null; // the line being edited anywhere in the transcript
+  rerunning: number | null;
+  onDraft: (draft: { id: number; text: string } | null) => void;
+  onSave: (lineId: number, source: string, previous: string) => void;
+  onRerun: (lineId: number) => void;
+}
+
+export function TranscriptRow({ line, speaker, langs, locked, draft, rerunning, onDraft, onSave, onRerun }: Props) {
+  const { t } = useTranslation();
+  const editing = draft?.id === line.id ? draft : null;
+
+  return (
+    <article className={`sess-line${line.status === 'ok' ? '' : ' sess-line-failed'}`}>
+      <span className="sess-time">{clock(line.start)}</span>
+      <span className="sess-who">{speaker}</span>
+      <div className="sess-body">
+        {line.status !== 'ok' && (
+          <div className="sess-status">
+            <span className="sess-badge">
+              {t(line.status === 'asr_failed' ? 'sessions.lineFailedAsr' : 'sessions.lineFailedTranslate')}
+            </span>
+            <button
+              type="button"
+              className="sess-rerun"
+              disabled={rerunning !== null || locked}
+              title={t('sessions.rerunLine')}
+              onClick={() => onRerun(line.id)}
+            >
+              <RotateCw size={13} />
+              <span>{rerunning === line.id ? t('sessions.rerunning') : t('sessions.rerunLine')}</span>
+            </button>
+          </div>
+        )}
+        {editing ? (
+          <textarea
+            className="sess-source sess-editing"
+            lang={line.lang}
+            autoFocus
+            rows={Math.max(1, Math.ceil(editing.text.length / 40))}
+            value={editing.text}
+            onChange={e => onDraft({ id: line.id, text: e.target.value })}
+            onBlur={() => onSave(line.id, editing.text, line.source)}
+            onKeyDown={e => {
+              if (e.key === 'Escape') onDraft(null);
+              // Enter saves, shift+Enter breaks the line: a transcript line is one
+              // utterance, so the common case is finishing rather than continuing.
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                e.currentTarget.blur();
+              }
+            }}
+          />
+        ) : (
+          <p
+            className={`sess-source${locked ? ' sess-source-locked' : ''}`}
+            lang={line.lang}
+            title={locked ? t('sessions.editLocked') : t('sessions.editHint')}
+            onClick={() => {
+              if (!locked) onDraft({ id: line.id, text: line.source });
+            }}
+          >
+            {line.source}
+          </p>
+        )}
+        {langs
+          .filter(l => line.translations[l])
+          .map(l => (
+            <p key={l} className="sess-translation" lang={l}>
+              {line.translations[l]}
+            </p>
+          ))}
+        {/* One placeholder, not one per language. Without any, the translations simply
+            vanish and read as "this meeting had no Vietnamese" rather than "this line
+            failed to translate" — but repeating it per target language (and for the
+            line's own language) turns one failure into three lines of noise. */}
+        {line.status === 'translate_failed' && (
+          <p className="sess-translation sess-translation-missing">{t('sessions.translationMissing')}</p>
+        )}
+      </div>
+    </article>
+  );
+}

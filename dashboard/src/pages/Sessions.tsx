@@ -1,19 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FileText, RotateCw, Upload } from 'lucide-react';
+import { FileText, Upload } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { PageSkeleton } from '../components/PageSkeleton';
+import { TranscriptRow } from '../components/sessions/TranscriptRow';
 import { useToast } from '../components/Toast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { appApi, type RefineState, type SessionSummary, type TranscriptLine } from '../services/app.api';
 import './Sessions.css';
 import './Sessions.refine.css';
-
-const clock = (seconds: number) => {
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m}:${String(s).padStart(2, '0')}`;
-};
 
 // How often to re-check a session that is still being refined. The pass takes minutes, so this is
 // about noticing it finished rather than tracking progress, and it stops the moment it has.
@@ -35,7 +30,11 @@ export function Sessions() {
 
   const fail = (err: unknown) => toast.error(err instanceof Error ? err.message : String(err));
 
-  const refine: RefineState = sessions.find(s => s.id === selected)?.refine.state ?? 'idle';
+  // `?.refine?.state`, not `?.refine.state`: the type says refine is always there, but a backend
+  // older than the field is not a hypothetical — it happens every time the server is left running
+  // across an update, and the missing property threw, which the ErrorBoundary turned into a blank
+  // page for the whole transcript. Falling back to 'idle' loses the chip and keeps the meeting.
+  const refine: RefineState = sessions.find(s => s.id === selected)?.refine?.state ?? 'idle';
   // The pass calls replace_lines, which drops every line and writes new ones with new ids. An edit
   // saved during that window is silently discarded while the screen shows it saved, so editing is
   // closed rather than left to look like it worked.
@@ -244,76 +243,18 @@ export function Sessions() {
             )}
             <div className="sess-lines">
               {lines.map(line => (
-                <article key={line.id} className={`sess-line${line.status === 'ok' ? '' : ' sess-line-failed'}`}>
-                  <span className="sess-time">{clock(line.start)}</span>
-                  <span className="sess-who">{names[line.speaker] || line.speaker}</span>
-                  <div className="sess-body">
-                    {line.status !== 'ok' && (
-                      <div className="sess-status">
-                        <span className="sess-badge">
-                          {t(line.status === 'asr_failed' ? 'sessions.lineFailedAsr' : 'sessions.lineFailedTranslate')}
-                        </span>
-                        <button
-                          type="button"
-                          className="sess-rerun"
-                          disabled={rerunning !== null || locked}
-                          title={t('sessions.rerunLine')}
-                          onClick={() => rerunLine(line.id)}
-                        >
-                          <RotateCw size={13} />
-                          <span>{rerunning === line.id ? t('sessions.rerunning') : t('sessions.rerunLine')}</span>
-                        </button>
-                      </div>
-                    )}
-                    {editing?.id === line.id ? (
-                      <textarea
-                        className="sess-source sess-editing"
-                        lang={line.lang}
-                        autoFocus
-                        rows={Math.max(1, Math.ceil(editing.text.length / 40))}
-                        value={editing.text}
-                        onChange={e => setEditing({ id: line.id, text: e.target.value })}
-                        onBlur={() => saveLine(line.id, editing.text, line.source)}
-                        onKeyDown={e => {
-                          if (e.key === 'Escape') setEditing(null);
-                          // Enter saves, shift+Enter breaks the line: a transcript line is one
-                          // utterance, so the common case is finishing rather than continuing.
-                          if (e.key === 'Enter' && !e.shiftKey) {
-                            e.preventDefault();
-                            e.currentTarget.blur();
-                          }
-                        }}
-                      />
-                    ) : (
-                      <p
-                        className={`sess-source${locked ? ' sess-source-locked' : ''}`}
-                        lang={line.lang}
-                        title={locked ? t('sessions.editLocked') : t('sessions.editHint')}
-                        onClick={() => {
-                          if (!locked) setEditing({ id: line.id, text: line.source });
-                        }}
-                      >
-                        {line.source}
-                      </p>
-                    )}
-                    {langs
-                      .filter(l => line.translations[l])
-                      .map(l => (
-                        <p key={l} className="sess-translation" lang={l}>
-                          {line.translations[l]}
-                        </p>
-                      ))}
-                    {/* One placeholder, not one per language. Without any, the translations simply
-                        vanish and read as "this meeting had no Vietnamese" rather than "this line
-                        failed to translate" — but repeating it per target language (and for the
-                        line's own language) turns one failure into three lines of noise. */}
-                    {line.status === 'translate_failed' && (
-                      <p className="sess-translation sess-translation-missing">
-                        {t('sessions.translationMissing')}
-                      </p>
-                    )}
-                  </div>
-                </article>
+                <TranscriptRow
+                  key={line.id}
+                  line={line}
+                  speaker={names[line.speaker] || line.speaker}
+                  langs={langs}
+                  locked={locked}
+                  draft={editing}
+                  rerunning={rerunning}
+                  onDraft={setEditing}
+                  onSave={saveLine}
+                  onRerun={rerunLine}
+                />
               ))}
             </div>
           </section>
