@@ -27,8 +27,15 @@ BATCH_SIZE = 32
 # Silence inserted between utterances when they are laid end to end for batching. Every gap is
 # real audio through the encoder, so it stays as short as the boundaries tolerate.
 BATCH_GAP_SECONDS = 0.2
-# ponytail: greedy decode. Raise to 5 if accuracy on short utterances measurably drops.
-BEAM_SIZE = 1
+# Greedy decoding measurably dropped whole utterances, so this is 5 as that note anticipated.
+# Alternating four runs over 6.7 minutes of a real morning meeting, 47 utterances:
+#
+#     beam 1   12.9s   2 utterances decoded to nothing   1528 characters
+#     beam 5   13.2s   0                                 1669
+#
+# One of the two it silently dropped was a hundred characters of customer-visit detail. The cost
+# is 2-4% wall clock: at batch 32 the GPU is not compute-bound, so the wider search rides along.
+BEAM_SIZE = 5
 
 
 def _add_cuda_dlls() -> None:
