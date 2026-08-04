@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { BookMarked, Sprout, FileText, Mic, Settings, Menu, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { resolveSupportedLanguage, rtlLanguages } from '../i18n';
@@ -18,6 +18,8 @@ const navItems = [
 
 export function Layout() {
   const { t, i18n } = useTranslation();
+  const { pathname } = useLocation();
+  const mainRef = useRef<HTMLElement>(null);
 
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
@@ -66,6 +68,12 @@ export function Layout() {
     const saved = parseInt(localStorage.getItem('sidebarWidth') || '', 10);
     if (saved >= 180 && saved <= 480) document.documentElement.style.setProperty('--sidebar-w', `${saved}px`);
   }, []);
+
+  // <main> is the scroll container and it outlives the route, so its offset would otherwise carry
+  // over: leave one page halfway down, arrive at the next one already past its heading.
+  useEffect(() => {
+    mainRef.current?.scrollTo({ top: 0 });
+  }, [pathname]);
 
   const startResize = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -171,7 +179,7 @@ export function Layout() {
         </div>
       </aside>
 
-      <main className={`main-content ${isCollapsed ? 'expanded' : ''} ${isMobile ? 'mobile' : ''}`}>
+      <main ref={mainRef} className={`main-content ${isCollapsed ? 'expanded' : ''} ${isMobile ? 'mobile' : ''}`}>
         <Outlet />
       </main>
     </div>

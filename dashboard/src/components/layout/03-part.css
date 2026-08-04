@@ -77,12 +77,12 @@
     }
   }
 
+  /* height/overflow-y now come from the base .main-content rule; only the drawer-mode geometry
+     and the room for the fixed mobile header are specific to this breakpoint. */
   .main-content.mobile {
     margin-left: 0;
     width: 100%;
     padding-top: 56px;
-    height: 100dvh;
-    overflow-y: auto;
     -webkit-overflow-scrolling: touch;
   }
 

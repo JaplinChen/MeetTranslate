@@ -6,6 +6,11 @@ import { Layout } from './components/Layout';
 import { ToastProvider } from './components/ToastProvider';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import './App.css';
+/* The shared shell for the list pages — .etable-page, .etable-panel, .etable-item and the rest.
+   Six pages and PageSkeleton render those classes, so it loads once here rather than being
+   imported (and duplicated) by each of them. Despite the filename there is no EditableTable
+   component; the styles outlived it. */
+import './components/EditableTable.css';
 
 const Capture = lazy(() => import('./pages/Capture').then(m => ({ default: m.Capture })));
 const Sessions = lazy(() => import('./pages/Sessions').then(m => ({ default: m.Sessions })));
