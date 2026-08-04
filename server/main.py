@@ -132,9 +132,9 @@ for _r in (routes_core, routes_glossary, routes_llm, routes_sessions, routes_spe
            routes_capture):
     app.include_router(_r.router)
 
-# Tests and older callers reach these through main.
+# The e2e suite checks this shape directly rather than through an endpoint, because the two rerun
+# outcomes it guards are reached by way of a GPU decode.
 _transcript = routes_sessions._transcript
-RERUN_MAX_SECONDS = routes_sessions.RERUN_MAX_SECONDS
 
 
 # ── static dashboard ────────────────────────────────────────────────────
