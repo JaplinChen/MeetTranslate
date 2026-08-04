@@ -29,7 +29,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from server import correct, refine  # noqa: E402
+from server import correct, guards  # noqa: E402
 from server.store import Store  # noqa: E402
 
 LINE = re.compile(r"^\[(\d+:\d+)\] (S\d+) \((\w+)\) (.*)$")
@@ -105,9 +105,9 @@ def score_guards(pairs: list[tuple[str, str]], vocab: Counter[str], corpus: str)
     on both layers, so a change to either is measured against the same question.
     """
     terms = Store().glossary()
-    accepted = [(a, b) for a, b in pairs if refine.accept(a, b, terms)]
-    # Reported rather than enforced — see refine.displaces_a_word.
-    displaced = sum(refine.displaces_a_word(a, b, corpus) for a, b in accepted)
+    accepted = [(a, b) for a, b in pairs if guards.accept(a, b, terms)]
+    # Reported rather than enforced — see guards.displaces_a_word.
+    displaced = sum(guards.displaces_a_word(a, b, corpus) for a, b in accepted)
     suspect: Counter[tuple[str, str]] = Counter()
     for before, after in accepted:
         for was, now in correct.diff_terms(before, after):
