@@ -21,6 +21,19 @@ def cosine(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.dot(a, b) / denom) if denom else 0.0
 
 
+def _similarities(rows: np.ndarray, other: np.ndarray | None = None) -> np.ndarray:
+    """Cosine of every row against `other`, or against every other row — same rule as `cosine`,
+    including the zero vector scoring zero rather than dividing by nothing."""
+    norms = np.linalg.norm(rows, axis=1)
+    safe = np.where(norms == 0, 1.0, norms)
+    unit = rows / safe[:, None]
+    unit[norms == 0] = 0.0
+    if other is None:
+        return (unit @ unit.T).astype(np.float32)
+    scale = float(np.linalg.norm(other))
+    return (unit @ (other / scale if scale else other * 0.0)).astype(np.float32)
+
+
 @dataclass
 class Speaker:
     code: str
@@ -163,29 +176,63 @@ def cluster_offline(embeddings: list[np.ndarray], threshold: float | None = None
         return []
 
     thr = config.SPEAKER_THRESHOLD if threshold is None else threshold
-    clusters: list[list[int]] = [[i] for i in range(len(embeddings))]
-    centroids = [e.astype(np.float32) for e in embeddings]
+    n = len(embeddings)
+    members: list[list[int]] = [[i] for i in range(n)]
+    centroids = np.asarray(embeddings, dtype=np.float32).copy()
 
-    while len(clusters) > 1:
-        best = (-1.0, -1, -1)
-        for i in range(len(clusters)):
-            for j in range(i + 1, len(clusters)):
-                score = cosine(centroids[i], centroids[j])
-                if score > best[0]:
-                    best = (score, i, j)
+    # Every pair's similarity, computed once and then repaired in place. Rescanning all pairs in
+    # Python each round is O(n^3), and a two-hour meeting segments into the thousands: that spent
+    # over an hour here with the GPU sitting idle, never reaching transcription at all.
+    #
+    # A merged cluster is masked rather than deleted — deleting means copying the whole matrix
+    # every round, which is the same cubic cost again with a smaller constant.
+    sims = _similarities(centroids)
+    np.fill_diagonal(sims, -np.inf)
+    alive = np.ones(n, dtype=bool)
 
-        score, i, j = best
-        if score < thr:
+    # Each row's best partner, so choosing the pair to merge is a scan of n values, not n^2.
+    best_at = sims.argmax(axis=1) if n > 1 else np.zeros(n, dtype=int)
+    best = sims[np.arange(n), best_at] if n > 1 else np.full(n, -np.inf)
+
+    for _ in range(n - 1):
+        i = int(np.argmax(np.where(alive, best, -np.inf)))
+        j = int(best_at[i])
+        if best[i] < thr:
             break
+        if i > j:
+            i, j = j, i
 
         # Weighted merge so a large cluster is not dragged by a single outlying segment.
-        ni, nj = len(clusters[i]), len(clusters[j])
+        ni, nj = len(members[i]), len(members[j])
         centroids[i] = (centroids[i] * ni + centroids[j] * nj) / (ni + nj)
-        clusters[i] += clusters[j]
-        del clusters[j], centroids[j]
+        members[i] += members[j]
+        members[j] = []
+        alive[j] = False
+        sims[j, :] = -np.inf
+        sims[:, j] = -np.inf
+        best[j] = -np.inf
 
-    labels = [0] * len(embeddings)
-    for label, members in enumerate(clusters):
-        for idx in members:
+        row = np.where(alive, _similarities(centroids, centroids[i]), -np.inf)
+        row[i] = -np.inf
+        sims[i, :] = row
+        sims[:, i] = row
+        best_at[i] = int(np.argmax(row))
+        best[i] = row[best_at[i]]
+
+        # Two ways another row's best can now be wrong: it pointed at one of the merged clusters
+        # and may have fallen, or the merged centroid is closer to it than whatever it held.
+        stale = alive & ((best_at == i) | (best_at == j))
+        stale[i] = False
+        for r in np.flatnonzero(stale):
+            best_at[r] = int(np.argmax(sims[r]))
+            best[r] = sims[r, best_at[r]]
+        closer = alive & (row > best)
+        closer[i] = False
+        best[closer] = row[closer]
+        best_at[closer] = i
+
+    labels = [0] * n
+    for label, group in enumerate([m for m in members if m]):
+        for idx in group:
             labels[idx] = label
     return labels
