@@ -1,12 +1,13 @@
-.gloss-add {
+/* page-root: .gloss-page */
+.gloss-page .gloss-add {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
   align-items: center;
 }
 
-.gloss-input,
-.gloss-add select {
+.gloss-page .gloss-input,
+.gloss-page .gloss-add select {
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -15,47 +16,47 @@
   font-size: 0.9rem;
 }
 
-.gloss-input {
+.gloss-page .gloss-input {
   min-width: 10rem;
   flex: 1 1 10rem;
 }
 
-.gloss-target,
-.gloss-category {
+.gloss-page .gloss-target,
+.gloss-page .gloss-category {
   flex: 1 1 8rem;
   min-width: 8rem;
 }
 
-.gloss-hint,
-.gloss-muted {
+.gloss-page .gloss-hint,
+.gloss-page .gloss-muted {
   color: var(--text-secondary);
 }
 
-.gloss-hint {
+.gloss-page .gloss-hint {
   margin: var(--space-3) 0 0;
   font-size: 0.82rem;
   line-height: 1.5;
 }
 
-.gloss-scroll {
+.gloss-page .gloss-scroll {
   overflow-x: auto; /* the table gains a column per language; the page must not scroll sideways */
 }
 
-.gloss-table {
+.gloss-page .gloss-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.9rem;
 }
 
-.gloss-table th,
-.gloss-table td {
+.gloss-page .gloss-table th,
+.gloss-page .gloss-table td {
   padding: var(--space-2) var(--space-2);
   text-align: left;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
 
-.gloss-table th {
+.gloss-page .gloss-table th {
   font-size: 0.78rem;
   font-weight: 600;
   color: var(--text-secondary);
@@ -63,33 +64,33 @@
   letter-spacing: 0.04em;
 }
 
-.gloss-src {
+.gloss-page .gloss-src {
   font-weight: 600;
 }
 
-.gloss-badge {
+.gloss-page .gloss-badge {
   padding: var(--space-05) var(--space-2);
   border-radius: var(--radius-sm);
   font-size: 0.74rem;
   font-weight: 600;
 }
 
-.gloss-badge-translate {
+.gloss-page .gloss-badge-translate {
   color: #1d6fd4;
   background: #1d6fd41f;
 }
 
-.gloss-badge-keep {
+.gloss-page .gloss-badge-keep {
   color: #b8860b;
   background: #b8860b1f;
 }
 
-.gloss-badge-hint {
+.gloss-page .gloss-badge-hint {
   color: var(--text-secondary);
   background: var(--border);
 }
 
-.gloss-del {
+.gloss-page .gloss-del {
   display: inline-flex;
   padding: var(--space-1);
   border: none;
@@ -99,12 +100,12 @@
   cursor: pointer;
 }
 
-.gloss-del:hover:not(:disabled) {
+.gloss-page .gloss-del:hover:not(:disabled) {
   color: #d64545;
   background: #d645451f;
 }
 
-.gloss-empty {
+.gloss-page .gloss-empty {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -114,7 +115,7 @@
 }
 
 /* Shown before a term is added, because afterwards the damage is already in the transcripts. */
-.gloss-clash {
+.gloss-page .gloss-clash {
   margin: 0 0 12px;
   padding: 10px 12px;
   border: 1px solid var(--warning, #d97706);

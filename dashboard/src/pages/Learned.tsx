@@ -87,7 +87,7 @@ export function Learned() {
   }
 
   return (
-    <div className="etable-page">
+    <div className="etable-page learned-page">
       <PageHeader title={t('learned.title')} subtitle={t('learned.subtitle')} />
 
       <section className="etable-panel">

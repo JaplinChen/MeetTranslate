@@ -61,12 +61,16 @@ const files = readdirSync(PAGES_DIR).filter(f => f.endsWith('.css'));
 
 for (const file of files) {
   test(`${file}: every rule is scoped under its page root`, () => {
-    const css = stripComments(resolveImports(readFileSync(join(PAGES_DIR, file), 'utf8'), PAGES_DIR));
+    const own = readFileSync(join(PAGES_DIR, file), 'utf8');
+    // The root is declared, not guessed: several page stylesheets open with a compound selector
+    // (`.etable-page.sess-page .etable-panel`), and any structural heuristic latches onto whichever
+    // class happens to come first. Each page CSS states its own root on line one. Read from the
+    // barrel itself, before parts are inlined, so a marker in a part file can never be picked up.
+    const root = own.match(/\/\*\s*page-root:\s*(\.[a-zA-Z][\w-]*)\s*\*\//)?.[1];
+    assert.ok(root, `${file}: missing \`/* page-root: .x-page */\` marker on the first line`);
+    const css = stripComments(resolveImports(own, PAGES_DIR));
     const sels = selectors(css);
     assert.ok(sels.length > 0, `${file} produced no selectors (parse error?)`);
-    // The page root is the first bare single-class selector (each page CSS opens with `.x-page { … }`).
-    const root = sels.find(s => /^\.[a-zA-Z][\w-]*$/.test(s));
-    assert.ok(root, `${file}: could not find a root class rule`);
     const unscoped = sels.filter(s => !s.includes(root!));
     assert.deepEqual(
       unscoped,

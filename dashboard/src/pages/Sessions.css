@@ -1,3 +1,4 @@
+/* page-root: .sess-page */
 /* The shared panel is flex:1 because the glossary page has exactly one of them. This page has
    four, so they split the viewport four ways and every one overflows its share: with 31 speakers
    the name inputs spilled 273px over the transcript, and the transcript itself wanted 39,637px in
@@ -10,7 +11,7 @@
   flex: 0 0 auto;
 }
 
-.sess-select {
+.sess-page .sess-select {
   width: 100%;
   max-width: 30rem;
   padding: var(--space-2) var(--space-3);
@@ -21,7 +22,7 @@
   font-size: 0.9rem;
 }
 
-.sess-hint {
+.sess-page .sess-hint {
   margin: 0 0 var(--space-3);
   color: var(--text-secondary);
   font-size: 0.85rem;
@@ -31,19 +32,19 @@
 /* A grid rather than a wrapping flex row: clustering a two-hour recording produced 31 speakers,
    and fixed-width boxes wrapped into ragged rows with a different number per line. Auto-fill packs
    them into aligned columns at any count and any width. */
-.sess-names {
+.sess-page .sess-names {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
   gap: var(--space-2) var(--space-3);
 }
 
-.sess-name {
+.sess-page .sess-name {
   display: flex;
   gap: var(--space-2);
   align-items: center;
 }
 
-.sess-name span {
+.sess-page .sess-name span {
   min-width: 2.5rem;
   color: var(--text-secondary);
   font-family: var(--font-mono);
@@ -52,7 +53,7 @@
   font-weight: 600;
 }
 
-.sess-name input {
+.sess-page .sess-name input {
   flex: 1;
   min-width: 0;
   padding: var(--space-2);
@@ -63,28 +64,28 @@
   transition: border-color 200ms ease;
 }
 
-.sess-name input:hover {
+.sess-page .sess-name input:hover {
   border-color: var(--text-muted);
 }
 
 /* Keyboard focus was invisible: these are 31 identical boxes, and tabbing through them with no
    ring means losing your place entirely. */
-.sess-name input:focus-visible,
-.sess-select:focus-visible,
-.sess-editing:focus-visible {
+.sess-page .sess-name input:focus-visible,
+.sess-page .sess-select:focus-visible,
+.sess-page .sess-editing:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 1px;
   border-color: transparent;
 }
 
-.sess-lines {
+.sess-page .sess-lines {
   display: flex;
   flex-direction: column;
 }
 
 /* The speaker column was 7rem for labels that read "S1": that is dead space on every one of 936
    rows, pushing the text it belongs to away from the timestamp. Sized to a name, not to nothing. */
-.sess-line {
+.sess-page .sess-line {
   display: grid;
   grid-template-columns: 3.5rem minmax(4rem, max-content) 1fr;
   gap: var(--space-3);
@@ -92,41 +93,41 @@
   border-bottom: 1px solid var(--border);
 }
 
-.sess-line:last-child {
+.sess-page .sess-line:last-child {
   border-bottom: none;
 }
 
-.sess-time {
+.sess-page .sess-time {
   color: var(--text-secondary);
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: 0.82rem;
 }
 
-.sess-who {
+.sess-page .sess-who {
   font-weight: 600;
   font-size: 0.85rem;
   overflow-wrap: anywhere;
 }
 
-.sess-body p {
+.sess-page .sess-body p {
   margin: 0 0 var(--space-1);
 }
 
-.sess-source {
+.sess-page .sess-source {
   color: var(--text-secondary);
   font-size: 0.88rem;
 }
 
-.sess-translation {
+.sess-page .sess-translation {
   font-size: 0.95rem;
 }
 
-.sess-body p:last-child {
+.sess-page .sess-body p:last-child {
   margin-bottom: 0;
 }
 
-.sess-empty {
+.sess-page .sess-empty {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -136,33 +137,33 @@
 }
 
 @media (max-width: 640px) {
-  .sess-line {
+  .sess-page .sess-line {
     grid-template-columns: 3rem 1fr;
   }
 
-  .sess-who {
+  .sess-page .sess-who {
     grid-column: 2;
   }
 
-  .sess-body {
+  .sess-page .sess-body {
     grid-column: 1 / -1;
   }
 }
 
 /* A line switches into a real textarea when clicked. contentEditable loses characters to the
    IME on a transcript that is mostly Chinese. */
-.sess-source {
+.sess-page .sess-source {
   cursor: text;
   border-radius: var(--radius-sm);
   transition: background 200ms ease;
 }
 
 /* Nothing said these lines were editable until you happened to click one. */
-.sess-source:hover {
+.sess-page .sess-source:hover {
   background: var(--primary-soft);
 }
 
-.sess-editing {
+.sess-page .sess-editing {
   width: 100%;
   padding: 6px 8px;
   /* --accent is defined nowhere in the app, so this was always the hard-coded blue fallback,
@@ -177,7 +178,7 @@
 
 /* The file input itself is hidden: a native "choose file" control cannot be styled to match the
    rest of the page, and the label is already the whole click target. */
-.sess-import {
+.sess-page .sess-import {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -191,27 +192,27 @@
   transition: border-color 200ms ease, background 200ms ease, transform 120ms ease;
 }
 
-.sess-import:hover:has(input:enabled) {
+.sess-page .sess-import:hover:has(input:enabled) {
   border-color: var(--primary);
   background: var(--primary-soft);
 }
 
 /* Presses like a physical button rather than doing nothing until the file dialog appears. */
-.sess-import:active:has(input:enabled) {
+.sess-page .sess-import:active:has(input:enabled) {
   transform: translateY(1px);
 }
 
-.sess-import:has(input:focus-visible) {
+.sess-page .sess-import:has(input:focus-visible) {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
 
-.sess-import:has(input:disabled) {
+.sess-page .sess-import:has(input:disabled) {
   opacity: 0.6;
   cursor: progress;
 }
 
-.sess-import input {
+.sess-page .sess-import input {
   display: none;
 }
 
@@ -284,7 +285,7 @@
   transition: opacity 150ms ease;
 }
 
-.sess-line-failed:hover .sess-rerun,
+.sess-page .sess-line-failed:hover .sess-rerun,
 .sess-page .sess-rerun:focus-visible {
   opacity: 1;
 }
