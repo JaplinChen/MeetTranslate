@@ -521,11 +521,15 @@ async def live(ws: WebSocket) -> None:
 if DIST.is_dir():
     app.mount("/assets", StaticFiles(directory=DIST / "assets"), name="assets")
 
-    @app.get("/{path:path}")
+    @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
     def spa(path: str) -> FileResponse:
         """Client-side routing: unknown paths return index.html, real files are served as-is."""
         # Without this an unknown /api/* path would return the HTML shell with status 200, which
         # surfaces as a confusing JSON parse error in the dashboard instead of a plain 404.
+        #
+        # Every method, not just GET: a POST to an endpoint this build does not have used to fall
+        # through to a GET-only route and come back as a bare 405, which reads as "wrong method"
+        # when the truth is "no such endpoint" — the shape a stale server takes.
         if path.startswith("api/"):
             raise HTTPException(404, "Not Found")
         candidate = DIST / path
