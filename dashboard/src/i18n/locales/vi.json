@@ -119,7 +119,20 @@
     "apiKeySet": "Đã lưu khoá — để trống để giữ nguyên",
     "temperature": "Temperature",
     "fallbackModels": "Mô hình dự phòng",
-    "addFallback": "Thêm mô hình dự phòng"
+    "addFallback": "Thêm mô hình dự phòng",
+    "test": "Kiểm tra",
+    "testOk": "Đã kết nối",
+    "verify": "Xác minh",
+    "fetchModels": "Lấy danh sách mô hình",
+    "noModels": "Endpoint không trả về mô hình nào",
+    "modelsFailed": "Không lấy được danh sách mô hình: {{message}}",
+    "apiKeyStored": "Để trống để giữ khoá đã lưu",
+    "fallbackPlaceholder": "Tên mô hình",
+    "add": "Thêm",
+    "perProviderFallbackHint": "Các mô hình khác của nhà cung cấp này, thử lần lượt sau mô hình ở trên.",
+    "style": "Phong cách",
+    "stylePrecise": "Chính xác",
+    "styleFluent": "Tự nhiên"
   },
   "keyproxy": {
     "title": "Khoá LLM",
