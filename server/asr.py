@@ -77,6 +77,10 @@ _HALLUCINATIONS = re.compile(
     # Subtitling credits and sign-offs, all of them from the same training data. Seen on seven
     # real interviews, where they arrive in the silence between speakers.
     r"|ming pao|amara\.org|字幕組|字幕由|本期(影片|節目)|謝謝觀看|感謝觀看"
+    # Broadcast sign-offs, from a factory morning meeting where three of them arrived in a row
+    # just before the real agenda started. 本集 and 本節目 only ever introduce a programme; a
+    # meeting that says 本集團 or 年終節目 keeps both, since neither matches these.
+    r"|歡迎收看|感謝收看|本集(完|結束|到此)|本節目|(請您|敬請|歡迎)關注"
     # Anchored at the end: a sign-off is the last thing in the line, while 我們下次見面再談 is
     # someone arranging a meeting.
     r"|(下次|下期|下集)見[。！!]?$|多多支援|請按贊|支持明鏡",
@@ -85,8 +89,21 @@ _HALLUCINATIONS = re.compile(
 
 
 def is_hallucination(text: str) -> bool:
-    """True for Whisper's YouTube boilerplate, which is never something a participant said."""
-    return bool(_HALLUCINATIONS.search(text))
+    """True for Whisper's YouTube boilerplate, which is never something a participant said.
+
+    The line is normalised first, because it is judged before `_post` runs and Whisper always
+    emits Simplified: every phrase below is written in Traditional, so 欢迎收看 and 本期视频 slid
+    straight past a list that names them, and were converted to Traditional on the way to the
+    transcript. Spaces go too — the decoder writes Mandarin word by word, so the same boilerplate
+    also arrives as 請您 關注 and 訂閱 我們的 頻道.
+    """
+    return any(_HALLUCINATIONS.search(form) for form in _forms(text))
+
+
+def _forms(text: str) -> tuple[str, ...]:
+    """The line as written, converted to Traditional, and both again without spaces."""
+    converted = _to_traditional.convert(text)
+    return (text, converted, text.replace(" ", ""), converted.replace(" ", ""))
 
 
 def is_noise(text: str) -> bool:

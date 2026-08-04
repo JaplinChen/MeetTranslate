@@ -299,12 +299,45 @@ def test_youtube_boilerplate_is_dropped() -> None:
         assert asr.is_hallucination(text), text
 
 
+def test_broadcast_signoffs_are_dropped_even_when_spaced() -> None:
+    """Verbatim from a factory morning meeting: three of these landed in a row at 12:21 with the
+    real agenda starting at 12:36. The decoder writes Mandarin word by word, so the boilerplate
+    arrives spaced — and every phrase here was tried only against the unspaced form before."""
+    for text in ("本集完",
+                 "本節目 繼續 更多 內容 歡迎收看",
+                 "請您 關注",
+                 "訂閱 我們的 頻道"):
+        assert asr.is_hallucination(text), text
+
+
+def test_boilerplate_is_caught_before_it_is_converted_to_traditional() -> None:
+    """The line is judged before `_post` runs, and Whisper always emits Simplified.
+
+    Every phrase in the list is written in Traditional, so a Simplified sign-off matched nothing
+    and was then converted on its way into the transcript: 本期影片就分享到這裡 sat in a real
+    meeting transcript while `本期(影片|節目)` had been in the pattern all along.
+    """
+    for text in ("本期视频就分享到这里", "欢迎收看", "请您关注", "订阅我们的频道", "谢谢观看"):
+        assert asr.is_hallucination(text), text
+
+    for text in ("本集团今年的目标是降低不良率", "这个议题请大家多关注", "我们要订阅这个服务吗"):
+        assert not asr.is_hallucination(text), text
+
+
 def test_hallucination_filter_spares_real_speech() -> None:
     """Matched as phrases: a meeting may say 訂閱 or subscribe without meaning a channel."""
     for text in ("Bây giờ mình hiện tại đang làm thủ công bằng Excel.",
                  "我們要訂閱這個服務嗎",
                  "我們的料號其實變動很大",
-                 "這個 schedule 要 delay 一週"):
+                 "這個 schedule 要 delay 一週",
+                 # Measured on that same recording: 謝謝 appears in 39 lines, plenty of them real
+                 # speech, so politeness is never on its own grounds for dropping a line.
+                 "好 謝謝 再請社管去檢討一下空壓機的能力夠不夠",
+                 "數量比較多 速度又快 之後我再做個整理 再告訴大家 謝謝",
+                 # 本集團 and 節目 belong to a real meeting; only the broadcast phrasing goes.
+                 "本集團今年的目標是降低不良率",
+                 "尾牙的節目安排請各部門回報",
+                 "這個議題請大家多關注"):
         assert not asr.is_hallucination(text), text
 
 
