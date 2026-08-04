@@ -70,9 +70,8 @@
     "lineFailedTranslate": "Not translated",
     "rerunLine": "Run this line again",
     "rerunning": "Running…",
-    "failedCount_one": "{{count}} line needs attention",
-    "failedCount_other": "{{count}} lines need attention",
-    "translationMissing": "Translation failed"
+    "translationMissing": "Translation failed",
+    "failedCount": "{{count}} lines need attention"
   },
   "glossary": {
     "title": "Glossary",

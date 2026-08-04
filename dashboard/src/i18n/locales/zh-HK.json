@@ -70,8 +70,8 @@
     "lineFailedTranslate": "未能翻譯",
     "rerunLine": "重跑這一行",
     "rerunning": "重跑中…",
-    "failedCount_other": "{{count}} 行需要處理",
-    "translationMissing": "翻譯失敗"
+    "translationMissing": "翻譯失敗",
+    "failedCount": "{{count}} 行需要處理"
   },
   "glossary": {
     "title": "詞彙表",

@@ -67,9 +67,13 @@ export function Sessions() {
 
   // Held in a ref because ToastProvider builds its context value inline and includes the live
   // toast list in it, so `toast` is a new object whenever any toast appears anywhere in the app.
-  // Depending on it here would tear down and restart the interval every time one did.
+  // Depending on it below would tear down and restart the poll interval every time one did.
+  // Written in an effect, not during render: a ref assigned while rendering is a React rule
+  // violation, and under concurrent rendering a discarded render would still have moved it.
   const notify = useRef({ toast, t });
-  notify.current = { toast, t };
+  useEffect(() => {
+    notify.current = { toast, t };
+  });
 
   // Poll only while something is actually being refined, and stop as soon as it is not. Without
   // this the chip would say "refining" until someone reloaded the page by hand.

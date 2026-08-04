@@ -70,8 +70,8 @@
     "lineFailedTranslate": "Không dịch được",
     "rerunLine": "Chạy lại dòng này",
     "rerunning": "Đang chạy…",
-    "failedCount_other": "{{count}} dòng cần xử lý",
-    "translationMissing": "Dịch thất bại"
+    "translationMissing": "Dịch thất bại",
+    "failedCount": "{{count}} dòng cần xử lý"
   },
   "glossary": {
     "title": "Bảng thuật ngữ",

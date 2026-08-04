@@ -524,7 +524,7 @@ def test_a_failed_translation_costs_the_translation_not_the_line(tmp: Path) -> N
     try:
         session_id = st.start_session("2026-01-01T09:00:00", str(tmp / "t.wav"))
         emitted: list[dict] = []
-        pipe = Pipeline(config.Config(), st, session_id, Exploding(), emitted.append)
+        pipe = _headless_pipeline(config.Config(), st, session_id, Exploding(), emitted.append)
         pipe._transcriber = _FixedTranscriber("這句話有說出來")
         pipe._diarizer = _OneSpeaker()
 
@@ -551,7 +551,7 @@ def test_a_failed_decode_is_retried_once_the_speaker_language_is_known(tmp: Path
     try:
         session_id = st.start_session("2026-01-01T09:00:00", str(tmp / "r.wav"))
         emitted: list[dict] = []
-        pipe = Pipeline(config.Config(languages=["zh", "en"]), st, session_id, None, emitted.append)
+        pipe = _headless_pipeline(config.Config(languages=["zh", "en"]), st, session_id, None, emitted.append)
         pipe._transcriber = _ByLanguage({"": ("", ""), "zh": ("補回來的那一句", "zh")})
         pipe._diarizer = _OneSpeaker()
 
@@ -588,7 +588,7 @@ def test_the_retry_buffer_cannot_grow_without_bound(tmp: Path) -> None:
     st = store_mod.Store(tmp / "retry-cap.db")
     try:
         session_id = st.start_session("2026-01-01T09:00:00", str(tmp / "c.wav"))
-        pipe = Pipeline(config.Config(languages=["zh"]), st, session_id, None, lambda e: None)
+        pipe = _headless_pipeline(config.Config(languages=["zh"]), st, session_id, None, lambda e: None)
         pipe._transcriber = _ByLanguage({"": ("", ""), "zh": ("", "")})
         pipe._diarizer = _OneSpeaker()
 
@@ -618,7 +618,7 @@ def test_a_retry_that_explodes_is_counted_not_lost(tmp: Path) -> None:
     st = store_mod.Store(tmp / "retry-boom.db")
     try:
         session_id = st.start_session("2026-01-01T09:00:00", str(tmp / "b.wav"))
-        pipe = Pipeline(config.Config(languages=["zh"]), st, session_id, None, lambda e: None)
+        pipe = _headless_pipeline(config.Config(languages=["zh"]), st, session_id, None, lambda e: None)
         pipe._transcriber = Exploding({"": ("", ""), "zh": ("正常的一句", "zh")})
         pipe._diarizer = _OneSpeaker()
 
@@ -637,6 +637,28 @@ def test_a_retry_that_explodes_is_counted_not_lost(tmp: Path) -> None:
         assert pipe.errors == 0, "a failed retry is not a failure of the live segment"
     finally:
         st.close()
+
+
+def _headless_pipeline(cfg, store, session_id, translator, emit) -> Pipeline:
+    """A Pipeline with everything `_handle` needs and nothing it does not.
+
+    `Pipeline.__init__` builds a VAD, which loads silero_vad.onnx — 1.5 GB of models are not in
+    version control, so on a bare runner that raises. These checks drive `_handle` directly and
+    never feed the VAD, and skipping them where the models are absent would mean the retry logic
+    is only ever verified on the one machine that has them, which is not verification.
+
+    Fields are set explicitly rather than copied from `__init__`: if one is added there and missed
+    here, these fail with AttributeError rather than quietly testing the wrong thing.
+    """
+    pipe = Pipeline.__new__(Pipeline)
+    pipe._cfg, pipe._store, pipe._session = cfg, store, session_id
+    pipe._translator, pipe._emit = translator, emit
+    pipe._diarizer = _OneSpeaker()
+    pipe._transcriber = _ByLanguage({})
+    pipe._hotwords = ""
+    pipe._context, pipe._previous, pipe._held = [], None, []
+    pipe.errors = pipe.recovered = pipe.dropped = pipe.backlog_peak = 0
+    return pipe
 
 
 class _ByLanguage:
