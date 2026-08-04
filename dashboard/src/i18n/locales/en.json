@@ -186,7 +186,6 @@
     "noCorrections": "No corrections learned yet. Edit a transcript line to teach one.",
     "forget": "Forget this",
     "rename": "Click to rename",
-    "sessions_one": "{{count}} meeting",
-    "sessions_other": "{{count}} meetings"
+    "sessions": "meetings: {{count}}"
   }
 }

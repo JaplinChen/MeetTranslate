@@ -186,6 +186,6 @@
     "noCorrections": "還沒學到任何修正。到逐字稿上點擊句子修改即可。",
     "forget": "忘掉這一項",
     "rename": "點一下改名",
-    "sessions_other": "{{count}} 場會議"
+    "sessions": "會議 {{count}} 場"
   }
 }
