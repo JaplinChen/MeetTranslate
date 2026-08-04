@@ -12,6 +12,8 @@ export interface DisplaySettings {
 /** A voice the room can name on sight, learned from someone naming a speaker once. */
 export interface KnownSpeaker {
   name: string;
+  /** How many meetings this voice has been confirmed in. */
+  sessions: number;
 }
 
 /** What the recogniser wrote against what was actually said, learned from an edit. */
@@ -109,6 +111,11 @@ export const appApi = {
     request<{ source: string; collisions: { text: string; count: number }[] }>(
       `/glossary/collisions?source=${encodeURIComponent(source)}`),
   knownSpeakers: () => request<KnownSpeaker[]>('/speakers/known'),
+  renameSpeaker: (name: string, next: string) =>
+    request<KnownSpeaker[]>(`/speakers/known/${encodeURIComponent(name)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name: next }),
+    }),
   forgetSpeaker: (name: string) =>
     request<KnownSpeaker[]>(`/speakers/known/${encodeURIComponent(name)}`, { method: 'DELETE' }),
   corrections: () => request<LearnedCorrection[]>('/corrections'),

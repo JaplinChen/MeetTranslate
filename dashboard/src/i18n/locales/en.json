@@ -184,6 +184,8 @@
     "corrections": "Learned corrections",
     "correctionsNote": "Correcting a line on a transcript stores what was written against what was said, and applies it to every transcript afterwards.",
     "noCorrections": "No corrections learned yet. Edit a transcript line to teach one.",
-    "forget": "Forget this"
+    "forget": "Forget this",
+    "rename": "Click to rename",
+    "sessions": "meetings: {{count}}"
   }
 }

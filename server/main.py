@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
 import os
 import time
@@ -10,7 +11,8 @@ from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+import soundfile as sf
+from fastapi import FastAPI, HTTPException, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
@@ -24,6 +26,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(messag
 log = logging.getLogger("meettranslate")
 
 DIST = config.ROOT / "dashboard" / "dist"
+CLIP_SECONDS = 4
 
 state: dict = {"recorder": None, "pipeline": None, "session": None,
                "cfg": config.load(), "llm": llm.load_llm()}
@@ -255,7 +258,36 @@ def put_speaker_names(session_id: int, body: dict) -> dict:
 
 @app.get("/api/speakers/known")
 def get_known_speakers() -> list[dict]:
-    return [{"name": name} for name, _ in store.known_speakers()]
+    counts = store.speaker_sessions()
+    return [{"name": name, "sessions": counts.get(name, 0)} for name, _ in store.known_speakers()]
+
+
+@app.get("/api/speakers/known/{name}/clip")
+def get_speaker_clip(name: str) -> Response:
+    """A few seconds of the voice behind the name, so a wrong match is audible rather than guessed."""
+    sample = store.speaker_sample(name)
+    if sample is None:
+        raise HTTPException(404, "no recording for this voice")
+    wav_path, start = sample
+    if not Path(wav_path).is_file():
+        raise HTTPException(404, f"recording not found: {wav_path}")
+
+    with sf.SoundFile(wav_path) as f:
+        f.seek(min(int(start * f.samplerate), max(len(f) - 1, 0)))
+        block = f.read(CLIP_SECONDS * f.samplerate, dtype="int16")
+        rate = f.samplerate
+    buf = io.BytesIO()
+    sf.write(buf, block, rate, format="WAV", subtype="PCM_16")
+    return Response(buf.getvalue(), media_type="audio/wav")
+
+
+@app.put("/api/speakers/known/{name}")
+def rename_known_speaker(name: str, body: dict) -> list[dict]:
+    new = str(body.get("name", "")).strip()
+    if not new:
+        raise HTTPException(400, "name required")
+    store.rename_speaker(name, new)
+    return get_known_speakers()
 
 
 @app.delete("/api/speakers/known/{name}")

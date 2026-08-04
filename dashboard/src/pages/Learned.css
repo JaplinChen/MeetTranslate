@@ -37,6 +37,41 @@
   font-weight: 600;
 }
 
+.learned-name {
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: text;
+}
+
+.learned-rename {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input, var(--bg-card));
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+}
+
+.learned-sessions {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.learned-clip {
+  margin-left: auto;
+  height: 32px;
+  max-width: 240px;
+}
+
+.learned-clip + .learned-forget {
+  margin-left: 0;
+}
+
 .learned-wrong {
   color: var(--text-muted);
   text-decoration: line-through;

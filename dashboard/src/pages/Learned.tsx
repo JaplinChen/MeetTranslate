@@ -6,6 +6,7 @@ import { PageSkeleton } from '../components/PageSkeleton';
 import { useToast } from '../components/Toast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { appApi, type KnownSpeaker, type LearnedCorrection } from '../services/app.api';
+import { API_BASE_URL } from '../services/http';
 import './Learned.css';
 
 /**
@@ -25,6 +26,8 @@ export function Learned() {
   const [corrections, setCorrections] = useState<LearnedCorrection[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState('');
 
   const fail = (err: unknown) => toast.error(err instanceof Error ? err.message : String(err));
 
@@ -47,6 +50,20 @@ export function Learned() {
     setBusy(true);
     try {
       setSpeakers(await appApi.forgetSpeaker(name));
+    } catch (err) {
+      fail(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const renameSpeaker = async (name: string) => {
+    const next = draft.trim();
+    setEditing(null);
+    if (!next || next === name) return;
+    setBusy(true);
+    try {
+      setSpeakers(await appApi.renameSpeaker(name, next));
     } catch (err) {
       fail(err);
     } finally {
@@ -85,7 +102,37 @@ export function Learned() {
           <ul className="learned-list">
             {speakers.map(s => (
               <li key={s.name} className="learned-row">
-                <span className="learned-name">{s.name}</span>
+                {editing === s.name ? (
+                  <input
+                    className="learned-rename"
+                    autoFocus
+                    value={draft}
+                    onChange={e => setDraft(e.target.value)}
+                    onBlur={() => renameSpeaker(s.name)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') e.currentTarget.blur();
+                      if (e.key === 'Escape') setEditing(null);
+                    }}
+                  />
+                ) : (
+                  <button
+                    className="learned-name"
+                    title={t('learned.rename')}
+                    onClick={() => {
+                      setDraft(s.name);
+                      setEditing(s.name);
+                    }}
+                  >
+                    {s.name}
+                  </button>
+                )}
+                <span className="learned-sessions">{t('learned.sessions', { count: s.sessions })}</span>
+                <audio
+                  className="learned-clip"
+                  controls
+                  preload="none"
+                  src={`${API_BASE_URL}/speakers/known/${encodeURIComponent(s.name)}/clip`}
+                />
                 <button
                   className="learned-forget"
                   disabled={busy}

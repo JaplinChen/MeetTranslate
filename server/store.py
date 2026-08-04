@@ -305,6 +305,38 @@ class Store:
             return [(r["name"], r["centroid"]) for r in
                     self._db.execute("SELECT name, centroid FROM known_speaker ORDER BY sessions DESC")]
 
+    def speaker_sessions(self) -> dict[str, int]:
+        with self._lock:
+            return {r["name"]: r["sessions"] for r in
+                    self._db.execute("SELECT name, sessions FROM known_speaker")}
+
+    def speaker_sample(self, name: str) -> tuple[str, float] | None:
+        """Where to hear this voice: the newest line anyone attributed to that name.
+
+        Derived rather than stored — a name is only ever attached on the transcript page, so the
+        transcript already knows which recording and which second to play.
+        """
+        with self._lock:
+            row = self._db.execute(
+                "SELECT s.wav_path AS wav, l.start AS start FROM speaker_name sn "
+                "JOIN line l ON l.session_id=sn.session_id AND l.speaker=sn.code "
+                "JOIN session s ON s.id=sn.session_id "
+                "WHERE sn.name=? ORDER BY sn.session_id DESC, l.start LIMIT 1",
+                (name,),
+            ).fetchone()
+        return (row["wav"], row["start"]) if row else None
+
+    def rename_speaker(self, old: str, new: str) -> None:
+        """Rename a learned voice everywhere it is used, transcripts included.
+
+        Leaving old transcripts on the wrong name would make the rename look like it half-worked.
+        """
+        with self._lock:
+            self._db.execute("DELETE FROM known_speaker WHERE name=?", (new,))
+            self._db.execute("UPDATE known_speaker SET name=? WHERE name=?", (new, old))
+            self._db.execute("UPDATE speaker_name SET name=? WHERE name=?", (new, old))
+            self._db.commit()
+
     def forget_speaker(self, name: str) -> None:
         with self._lock:
             self._db.execute("DELETE FROM known_speaker WHERE name=?", (name,))
