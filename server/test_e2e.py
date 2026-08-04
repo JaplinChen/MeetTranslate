@@ -13,6 +13,8 @@ from __future__ import annotations
 import io
 import json
 import os
+import shutil
+import subprocess
 import tempfile
 import threading
 import time
@@ -376,6 +378,47 @@ def test_known_voice_can_be_heard_and_renamed(client: TestClient) -> None:
     assert client.get("/api/speakers/known/Ana/clip").status_code == 404
 
     assert client.delete("/api/speakers/known/Ana%20Lee").json() == []
+
+
+def test_importing_a_recording_makes_it_a_session(client: TestClient) -> None:
+    """An uploaded file has to land as an ordinary session, or nothing can be learned from it."""
+    if shutil.which("ffmpeg") is None:
+        print("  (skipped: ffmpeg not installed)")
+        return
+
+    import soundfile as sf
+
+    # Not named import-*: that prefix belongs to what the endpoint writes, and this test counts those.
+    src = config.RECORDINGS_DIR / "fixture.m4a"
+    src.parent.mkdir(parents=True, exist_ok=True)
+    tone = np.sin(np.arange(config.SAMPLE_RATE * 3) * 0.05).astype("float32")
+    raw = config.RECORDINGS_DIR / "fixture.wav"
+    sf.write(str(raw), tone, config.SAMPLE_RATE)
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(raw), str(src)], check=True)
+
+    before = len(client.get("/api/sessions").json())
+    r = client.post("/api/sessions/import?filename=meeting.m4a", content=src.read_bytes())
+    assert r.status_code == 200, r.text
+    session_id = r.json()["id"]
+
+    listed = client.get("/api/sessions").json()
+    assert len(listed) == before + 1
+    imported = next(s for s in listed if s["id"] == session_id)
+    # Ended, or /reprocess and the clip endpoint would treat it as still recording.
+    assert imported["ended"] and Path(imported["wav_path"]).is_file()
+    # The upload itself is not kept: everything downstream reads the extracted wav.
+    assert not list(config.RECORDINGS_DIR.glob("import-*-meeting.m4a"))
+
+    assert client.post("/api/sessions/import?filename=empty.mp4", content=b"").status_code == 400
+    assert client.post("/api/sessions/import?filename=x.mp4", content=b"not a video").status_code == 400
+    # A rejected upload must leave nothing behind, or the next import inherits a stale wav.
+    assert len(list(config.RECORDINGS_DIR.glob("import-*.wav"))) == 1
+
+    # A second import in the same second must not overwrite the first one's audio.
+    again = client.post("/api/sessions/import?filename=meeting.m4a", content=src.read_bytes())
+    assert again.status_code == 200, again.text
+    imports = [s for s in client.get("/api/sessions").json() if s["id"] in (session_id, again.json()["id"])]
+    assert len({s["wav_path"] for s in imports}) == 2, imports
 
 
 def test_unknown_api_path_is_json_404(client: TestClient) -> None:

@@ -128,3 +128,31 @@
   font: inherit;
   resize: vertical;
 }
+
+/* The file input itself is hidden: a native "choose file" control cannot be styled to match the
+   rest of the page, and the label is already the whole click target. */
+.sess-import {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sess-import:hover:has(input:enabled) {
+  border-color: var(--accent, #2563eb);
+}
+
+.sess-import:has(input:disabled) {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.sess-import input {
+  display: none;
+}

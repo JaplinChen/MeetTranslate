@@ -99,6 +99,13 @@ export const appApi = {
   recordingStatus: () => request<RecordingStatus>('/recording/status'),
 
   sessions: () => request<SessionSummary[]>('/sessions'),
+  // Sent as the raw body rather than a form: the server needs the bytes, not a field name.
+  importRecording: (file: File) =>
+    request<{ id: number; lines: number }>(`/sessions/import?filename=${encodeURIComponent(file.name)}`, {
+      method: 'POST',
+      body: file,
+      headers: { 'Content-Type': 'application/octet-stream' },
+    }),
   sessionLines: (id: number) =>
     request<{ lines: TranscriptLine[]; speakers: Record<string, string> }>(`/sessions/${id}/lines`),
   setSpeakerNames: (id: number, names: Record<string, string>) =>
