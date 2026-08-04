@@ -426,6 +426,13 @@ def test_unknown_api_path_is_json_404(client: TestClient) -> None:
     assert r.status_code == 404
     assert r.headers["content-type"].startswith("application/json")
 
+    # Whatever the method: a 405 here would report "wrong method" for a route that does not exist,
+    # which is exactly how a server running older code presents itself.
+    for send in (client.post, client.put, client.delete):
+        r = send("/api/definitely-not-a-route")
+        assert r.status_code == 404, (send.__name__, r.status_code)
+        assert r.headers["content-type"].startswith("application/json")
+
 
 def main_() -> None:
     # ignore_cleanup_errors: SQLite on Windows keeps a handle briefly after close, and a failed
