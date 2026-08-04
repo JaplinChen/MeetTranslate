@@ -17,15 +17,11 @@ from typing import Callable
 import numpy as np
 
 from . import asr, asr_gpu, config, correct, diarize, translate
+from .retry import Retries
 from .store import Store
 
 log = logging.getLogger("meettranslate.pipeline")
 
-# Utterances held back for a second attempt once their speaker's language is known. Each one keeps
-# its raw float32 audio — 20 s of it is about 1.3 MB — so this is a memory budget as much as a
-# policy one. Twenty-four is roughly thirty seconds of held speech spread across the room, past
-# which a meeting is failing to decode so consistently that retrying is not the answer.
-RETRY_BUFFER = 24
 # Blocks the pipeline may fall behind before it starts dropping audio. 600 blocks = 60 s.
 TAP_CAPACITY = 600
 # Warn once the backlog passes this; a sustained backlog means the realtime factor is above 1
@@ -87,11 +83,7 @@ class Pipeline:
         self._context: list[translate.Line] = []
         # (line id, start seconds, line) of the utterance eligible for one refinement pass.
         self._previous: tuple[int, float, translate.Line] | None = None
-        # Utterances that decoded to nothing, held for one retry once their speaker's language is
-        # settled: (segment, speaker, language already tried).
-        self._held: list[tuple[asr.Segment, diarize.Speaker, str]] = []
-        self.recovered = 0
-        self.dropped = 0
+        self._retries = Retries()
         self.backlog_peak = 0
         self.errors = 0
 
@@ -114,26 +106,9 @@ class Pipeline:
                     self._handle(segment)
             for segment in self._vad.flush():
                 self._handle(segment)
-            self._drain_held()
+            self._retries.drain(self._diarizer.language_for, self._recover)
         except Exception:  # a crashed pipeline must not take the recording with it
             log.exception("pipeline stopped")
-
-    def _drain_held(self) -> None:
-        """Last attempt at whatever is still held when the meeting ends.
-
-        By now every speaker has said all they are going to, so a language that never settled never
-        will. Anything still failing is left to the post-meeting pass, which re-derives the whole
-        recording anyway — this is about not throwing away what one more try would recover.
-        """
-        for segment, speaker, tried in list(self._held):
-            language = self._diarizer.language_for(speaker)
-            if language and language != tried:
-                self._recover(segment, speaker, language)
-            else:
-                self.dropped += 1
-        self._held.clear()
-        if self.recovered or self.dropped:
-            log.info("held utterances: %d recovered, %d dropped", self.recovered, self.dropped)
 
     def _handle(self, segment: asr.Segment) -> None:
         try:
@@ -156,7 +131,7 @@ class Pipeline:
                 # Held rather than dropped. The post-meeting pass recovered 992 real lines this way
                 # across seven interviews — a decode that fails under one language routinely
                 # succeeds under the speaker's own, and the live path used to bin them in silence.
-                self._hold(segment, speaker, forced)
+                self._retries.hold(segment, speaker, forced)
                 return
             self._diarizer.observe_language(speaker, used)
             text = correct.Corrector(terms, self._store.corrections()).fix(text)
@@ -187,54 +162,23 @@ class Pipeline:
             self._context = (self._context + [line])[-config.CONTEXT_LINES:]
 
             # Only now, with this speaker's language possibly just settled, is a retry worth
-            # spending GPU on. Doing it here also keeps it off the path of a meeting that is
-            # decoding fine, where `_held` is empty and this costs one list check.
-            self._retry_held(speaker)
+            # spending GPU on. Guarded rather than delegated, so a meeting that is decoding fine
+            # pays one list check here instead of a lookup per segment.
+            if self._retries.held:
+                self._retries.retry(speaker, self._diarizer.language_for(speaker), self._recover)
         except Exception:
             self.errors += 1
             log.exception("segment at %.2fs failed", segment.start)
 
-    def _hold(self, segment: asr.Segment, speaker: diarize.Speaker, tried: str) -> None:
-        """Keep a failed utterance for one more attempt, oldest evicted first."""
-        if len(self._held) >= RETRY_BUFFER:
-            evicted = self._held.pop(0)
-            self.dropped += 1
-            log.info("retry buffer full, giving up on the utterance at %.2fs", evicted[0].start)
-        self._held.append((segment, speaker, tried))
+    def _recover(self, segment: asr.Segment, speaker: diarize.Speaker, language: str) -> bool:
+        """Decode a held utterance again under `language` and emit it. True if anything came back.
 
-    def _retry_held(self, speaker: diarize.Speaker) -> None:
-        """Re-decode this speaker's held utterances now that their language may have settled.
-
-        Only theirs, and only when the language to try differs from the one that already failed —
-        re-running the same audio under the same language would produce the same nothing. Each
-        utterance gets exactly one retry whatever the outcome, so a room full of noise cannot build
-        a backlog of audio the pipeline keeps paying to decode.
+        Allowed to raise: `Retries` takes the entry off the held list before calling, and counts
+        both the failure and the escape.
         """
-        language = self._diarizer.language_for(speaker)
-        if not language:
-            return
-        ready = [held for held in self._held
-                 if held[1].code == speaker.code and held[2] != language]
-        for held in ready:
-            self._held.remove(held)
-            self._recover(held[0], speaker, language)
-
-    def _recover(self, segment: asr.Segment, speaker: diarize.Speaker, language: str) -> None:
-        # Never raises. The caller has already taken this utterance off the held list, so an
-        # exception escaping here would lose it without even counting it — the silent drop this
-        # whole retry path exists to remove. It also must not fail the live segment that triggered
-        # the retry: recovering an old utterance is strictly a bonus on top of that one.
-        try:
-            self._recover_once(segment, speaker, language)
-        except Exception:
-            self.dropped += 1
-            log.exception("retrying the utterance at %.2fs failed", segment.start)
-
-    def _recover_once(self, segment: asr.Segment, speaker: diarize.Speaker, language: str) -> None:
         text, used = self._transcriber.transcribe(segment.samples, language)
         if not text:
-            self.dropped += 1
-            return
+            return False
 
         # Deliberately not observe_language: this segment is being decoded a second time, and
         # letting it vote again would count one utterance twice toward what this speaker speaks.
@@ -262,8 +206,8 @@ class Pipeline:
         # one refinement pass revising an utterance from further back.
         self._emit(Emitted(line_id, segment.start, speaker.code, line.lang, text, translations,
                            status=status).event("line"))
-        self.recovered += 1
         log.info("recovered the utterance at %.2fs under %s", segment.start, line.lang)
+        return True
 
     def _rebias(self, terms: list) -> None:
         """Push the glossary into the recogniser when it has changed since the last utterance.
