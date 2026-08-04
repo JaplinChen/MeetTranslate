@@ -531,6 +531,32 @@ def test_offline_clustering_edge_cases() -> None:
     assert diarize.cluster_offline([]) == []
     single = [np.array([1.0, 0.0], dtype=np.float32)]
     assert diarize.cluster_offline(single) == [0]
+    # Zero vectors score zero against everything rather than dividing by nothing, so they never
+    # merge — the same rule `cosine` applies.
+    zeros = [np.zeros(8, dtype=np.float32), np.zeros(8, dtype=np.float32)]
+    assert len(set(diarize.cluster_offline(zeros))) == 2
+
+
+def test_offline_clustering_scales_to_a_long_meeting() -> None:
+    """A two-hour recording segments into the thousands, and clustering must not be the wall.
+
+    Comparing every pair in Python each round is O(n^3): at this size it ran for over an hour with
+    the GPU idle, so an import never reached transcription at all. The bound is deliberately loose
+    — it is here to catch a return to cubic, not to police milliseconds.
+    """
+    import time
+
+    rng = np.random.default_rng(7)
+    bases = rng.normal(size=(5, 192)).astype(np.float32)
+    embeddings = [(bases[k % 5] + rng.normal(scale=0.3, size=192)).astype(np.float32)
+                  for k in range(1500)]
+
+    start = time.perf_counter()
+    labels = diarize.cluster_offline(embeddings)
+    elapsed = time.perf_counter() - start
+
+    assert len(set(labels)) == 5, len(set(labels))
+    assert elapsed < 20, f"clustering 1500 segments took {elapsed:.1f}s"
 
 
 def main() -> None:
