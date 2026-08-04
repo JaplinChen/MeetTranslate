@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FileText, Upload } from 'lucide-react';
+import { FileText, RotateCw, Upload } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { PageSkeleton } from '../components/PageSkeleton';
 import { useToast } from '../components/Toast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
-import { appApi, type SessionSummary, type TranscriptLine } from '../services/app.api';
+import { appApi, type RefineState, type SessionSummary, type TranscriptLine } from '../services/app.api';
 import './Sessions.css';
 
 const clock = (seconds: number) => {
@@ -13,6 +13,10 @@ const clock = (seconds: number) => {
   const s = Math.floor(seconds % 60);
   return `${m}:${String(s).padStart(2, '0')}`;
 };
+
+// How often to re-check a session that is still being refined. The pass takes minutes, so this is
+// about noticing it finished rather than tracking progress, and it stops the moment it has.
+const REFINE_POLL_MS = 5000;
 
 export function Sessions() {
   const { t } = useTranslation();
@@ -26,8 +30,25 @@ export function Sessions() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<{ id: number; text: string } | null>(null);
   const [importing, setImporting] = useState(false);
+  const [rerunning, setRerunning] = useState<number | null>(null);
 
   const fail = (err: unknown) => toast.error(err instanceof Error ? err.message : String(err));
+
+  const refine: RefineState = sessions.find(s => s.id === selected)?.refine.state ?? 'idle';
+  // The pass calls replace_lines, which drops every line and writes new ones with new ids. An edit
+  // saved during that window is silently discarded while the screen shows it saved, so editing is
+  // closed rather than left to look like it worked.
+  const locked = refine === 'refining';
+
+  const loadLines = useCallback((id: number) => {
+    appApi
+      .sessionLines(id)
+      .then(r => {
+        setLines(r.lines);
+        setNames(r.speakers);
+      })
+      .catch(fail);
+  }, []);
 
   useEffect(() => {
     appApi
@@ -41,15 +62,33 @@ export function Sessions() {
   }, []);
 
   useEffect(() => {
-    if (selected === null) return;
-    appApi
-      .sessionLines(selected)
-      .then(r => {
-        setLines(r.lines);
-        setNames(r.speakers);
-      })
-      .catch(fail);
-  }, [selected]);
+    if (selected !== null) loadLines(selected);
+  }, [selected, loadLines]);
+
+  // Held in a ref because ToastProvider builds its context value inline and includes the live
+  // toast list in it, so `toast` is a new object whenever any toast appears anywhere in the app.
+  // Depending on it here would tear down and restart the interval every time one did.
+  const notify = useRef({ toast, t });
+  notify.current = { toast, t };
+
+  // Poll only while something is actually being refined, and stop as soon as it is not. Without
+  // this the chip would say "refining" until someone reloaded the page by hand.
+  const wasRefining = useRef(false);
+  useEffect(() => {
+    if (refine !== 'refining') {
+      if (wasRefining.current && selected !== null) {
+        wasRefining.current = false;
+        notify.current.toast.success(notify.current.t('sessions.refineDone'));
+        loadLines(selected);
+      }
+      return;
+    }
+    wasRefining.current = true;
+    const timer = window.setInterval(() => {
+      appApi.sessions().then(setSessions).catch(() => {});
+    }, REFINE_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [refine, selected, loadLines]);
 
   // Speakers are identified by voice, not by name — the app never sees the participant list.
   // Naming them once here is what turns S1/S2 into a readable transcript.
@@ -93,8 +132,32 @@ export function Sessions() {
     }
   };
 
+  // Re-running is per line rather than per transcript: a failure is usually one utterance the
+  // decoder gave up on, and re-running the whole meeting to recover it is not a proportionate ask.
+  const rerunLine = async (lineId: number) => {
+    if (selected === null) return;
+    setRerunning(lineId);
+    try {
+      const r = await appApi.rerunLine(selected, lineId);
+      setLines(r.lines);
+      setNames(r.speakers);
+      if (r.status !== 'ok') toast.error(t(`sessions.${r.status === 'asr_failed' ? 'lineFailedAsr' : 'lineFailedTranslate'}`));
+    } catch (err) {
+      fail(err);
+    } finally {
+      setRerunning(null);
+    }
+  };
+
   const codes = [...new Set(lines.map(l => l.speaker))];
   const langs = [...new Set(lines.flatMap(l => Object.keys(l.translations)))];
+  const failed = lines.filter(l => l.status !== 'ok');
+  const refineLabel: Partial<Record<RefineState, string>> = {
+    refining: t('sessions.refining'),
+    refined: t('sessions.refined'),
+    failed: t('sessions.refineFailed'),
+    cancelled: t('sessions.refineCancelled'),
+  };
 
   if (loading) {
     return <PageSkeleton rows={4} />;
@@ -135,6 +198,7 @@ export function Sessions() {
               {sessions.map(s => (
                 <option key={s.id} value={s.id}>
                   {s.started} — {t('sessions.lineCount', { count: s.lines })}
+                  {s.refine.state === 'refining' ? ` · ${t('sessions.refining')}` : ''}
                 </option>
               ))}
             </select>
@@ -163,13 +227,39 @@ export function Sessions() {
             <h3 className="etable-panel-title">
               {t('sessions.transcript')}
               <span className="etable-count">{lines.length}</span>
+              {refine !== 'idle' && (
+                <span className={`sess-refine sess-refine-${refine}`}>{refineLabel[refine]}</span>
+              )}
             </h3>
+            {locked && <p className="sess-hint">{t('sessions.refiningHint')}</p>}
+            {failed.length > 0 && (
+              // Aggregated as well as marked inline: a two-hour meeting failing 5% is forty-odd
+              // marks scattered through the transcript, and nobody finds those by scrolling.
+              <p className="sess-failed-summary">{t('sessions.failedCount', { count: failed.length })}</p>
+            )}
             <div className="sess-lines">
               {lines.map(line => (
-                <article key={line.id} className="sess-line">
+                <article key={line.id} className={`sess-line${line.status === 'ok' ? '' : ' sess-line-failed'}`}>
                   <span className="sess-time">{clock(line.start)}</span>
                   <span className="sess-who">{names[line.speaker] || line.speaker}</span>
                   <div className="sess-body">
+                    {line.status !== 'ok' && (
+                      <div className="sess-status">
+                        <span className="sess-badge">
+                          {t(line.status === 'asr_failed' ? 'sessions.lineFailedAsr' : 'sessions.lineFailedTranslate')}
+                        </span>
+                        <button
+                          type="button"
+                          className="sess-rerun"
+                          disabled={rerunning !== null || locked}
+                          title={t('sessions.rerunLine')}
+                          onClick={() => rerunLine(line.id)}
+                        >
+                          <RotateCw size={13} />
+                          <span>{rerunning === line.id ? t('sessions.rerunning') : t('sessions.rerunLine')}</span>
+                        </button>
+                      </div>
+                    )}
                     {editing?.id === line.id ? (
                       <textarea
                         className="sess-source sess-editing"
@@ -191,10 +281,12 @@ export function Sessions() {
                       />
                     ) : (
                       <p
-                        className="sess-source"
+                        className={`sess-source${locked ? ' sess-source-locked' : ''}`}
                         lang={line.lang}
-                        title={t('sessions.editHint')}
-                        onClick={() => setEditing({ id: line.id, text: line.source })}
+                        title={locked ? t('sessions.editLocked') : t('sessions.editHint')}
+                        onClick={() => {
+                          if (!locked) setEditing({ id: line.id, text: line.source });
+                        }}
                       >
                         {line.source}
                       </p>
@@ -206,6 +298,15 @@ export function Sessions() {
                           {line.translations[l]}
                         </p>
                       ))}
+                    {/* One placeholder, not one per language. Without any, the translations simply
+                        vanish and read as "this meeting had no Vietnamese" rather than "this line
+                        failed to translate" — but repeating it per target language (and for the
+                        line's own language) turns one failure into three lines of noise. */}
+                    {line.status === 'translate_failed' && (
+                      <p className="sess-translation sess-translation-missing">
+                        {t('sessions.translationMissing')}
+                      </p>
+                    )}
                   </div>
                 </article>
               ))}

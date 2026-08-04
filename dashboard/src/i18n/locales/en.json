@@ -58,7 +58,21 @@
     "import": "Import a recording",
     "importHint": "A meeting recorded elsewhere becomes a session like any other: name the speakers to teach their voices, correct a line to teach the fix. Video or audio; the audio track is extracted with ffmpeg.",
     "importPick": "Choose a file",
-    "importing": "Transcribing — this takes about as long as the recording"
+    "importing": "Transcribing — this takes about as long as the recording",
+    "refining": "Refining",
+    "refined": "Refined",
+    "refineFailed": "Refining failed",
+    "refineCancelled": "Refining stopped for a meeting",
+    "refiningHint": "A more accurate pass is running over the whole recording. Editing is locked until it finishes, because it replaces every line.",
+    "refineDone": "Refining finished — the transcript has been updated",
+    "editLocked": "Locked while refining",
+    "lineFailedAsr": "Not recognised",
+    "lineFailedTranslate": "Not translated",
+    "rerunLine": "Run this line again",
+    "rerunning": "Running…",
+    "failedCount_one": "{{count}} line needs attention",
+    "failedCount_other": "{{count}} lines need attention",
+    "translationMissing": "Translation failed"
   },
   "glossary": {
     "title": "Glossary",

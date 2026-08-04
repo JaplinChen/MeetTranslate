@@ -80,6 +80,15 @@ class Transcriber:
         self._batched = None
         log.info("ct2 model %s on %s/%s", name, device, compute_type)
 
+    def set_hotwords(self, hotwords: str) -> None:
+        """Re-bias without reloading the model.
+
+        A term added during a meeting used to bias nothing until the next one, because the string
+        was baked in when the recogniser was built. Only the prompt text changes here; the weights
+        are untouched, so this costs nothing and can run between utterances.
+        """
+        self._hotwords = hotwords
+
     def transcribe_many(self, clips: list[np.ndarray], language: str) -> list[tuple[str, str]]:
         """Decode many utterances in one pass, keeping every boundary.
 
@@ -175,6 +184,36 @@ def maybe(languages: list[str], hotwords: str = "") -> Transcriber | None:
         return None
 
 
+# Characters of glossary allowed into the decoder prompt. Whisper reserves half its 448-token
+# context for prompt text, so hotwords past ~224 tokens are silently dropped — and it drops the
+# tail, which is whichever terms happen to sort last. Budgeting in characters rather than tokens
+# is deliberately pessimistic: one token per character is the worst case (Chinese), so 200 stays
+# inside the window even for a glossary that is entirely CJK, and leaves room for the scaffolding
+# faster-whisper wraps around it.
+HOTWORD_BUDGET = 200
+
+
 def hotwords_from(terms: list) -> str:
-    """faster-whisper takes one string; the glossary is a list of terms."""
-    return " ".join(t.source for t in terms)
+    """faster-whisper takes one string; the glossary is a list of terms.
+
+    Two things are filtered out. `protect` terms, because that mode means "this word is real, do
+    not rewrite it" — 才夠 is registered only to shield it from the corrector, and biasing the
+    decoder toward an ordinary word would manufacture the very mistake the glossary entry exists to
+    prevent. And anything past the budget, because the alternative is Whisper truncating it for us,
+    without saying so.
+    """
+    usable = [t for t in terms if getattr(t, "mode", "") != "protect"]
+    kept, used = [], 0
+    for term in usable:
+        cost = len(term.source) + 1  # the joining space
+        if used + cost > HOTWORD_BUDGET:
+            continue
+        kept.append(term.source)
+        used += cost
+    if len(kept) < len(usable):
+        # Named, not counted: knowing which terms lost their bias is the difference between
+        # diagnosing a recognition complaint and guessing at it.
+        dropped = [t.source for t in usable if t.source not in kept]
+        log.warning("glossary exceeds the %d-character hotword budget; %d term(s) not biased: %s",
+                    HOTWORD_BUDGET, len(dropped), ", ".join(dropped[:20]))
+    return " ".join(kept)

@@ -195,11 +195,13 @@ class Store:
             self._db.commit()
 
     def add_line(self, session_id: int, start: float, speaker: str, lang: str, source: str,
-                 translations: dict[str, str]) -> int:
+                 translations: dict[str, str], status: str = "ok",
+                 end_time: float | None = None) -> int:
         with self._lock:
             cur = self._db.execute(
-                "INSERT INTO line (session_id, start, speaker, lang, source) VALUES (?,?,?,?,?)",
-                (session_id, start, speaker, lang, source),
+                "INSERT INTO line (session_id, start, speaker, lang, source, status, end_time) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (session_id, start, speaker, lang, source, status, end_time),
             )
             line_id = int(cur.lastrowid)
             self._db.executemany(
@@ -221,6 +223,33 @@ class Store:
             )
             self._db.execute("UPDATE line SET refined=1 WHERE id=?", (line_id,))
             self._db.commit()
+
+    def line(self, line_id: int) -> dict | None:
+        with self._lock:
+            row = self._db.execute("SELECT * FROM line WHERE id=?", (line_id,)).fetchone()
+        return dict(row) if row else None
+
+    def replace_line(self, line_id: int, source: str, lang: str, translations: dict[str, str],
+                     status: str) -> None:
+        """Overwrite one line after re-running it. Leaves `refined` alone.
+
+        `refined` records that the translator revised this line in hindsight, which is a different
+        claim from "someone re-ran it", and conflating the two would let a rerun suppress the one
+        refinement pass the line is still entitled to.
+        """
+        with self._lock:
+            try:
+                self._db.execute("UPDATE line SET source=?, lang=?, status=? WHERE id=?",
+                                 (source, lang, status, line_id))
+                self._db.execute("DELETE FROM line_translation WHERE line_id=?", (line_id,))
+                self._db.executemany(
+                    "INSERT INTO line_translation (line_id, lang, text) VALUES (?,?,?)",
+                    [(line_id, k, v) for k, v in translations.items()],
+                )
+                self._db.commit()
+            except Exception:
+                self._db.rollback()
+                raise
 
     def replace_lines(self, session_id: int, rows: list[dict]) -> None:
         """Swap a session's whole transcript in one transaction.

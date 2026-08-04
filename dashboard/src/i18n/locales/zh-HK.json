@@ -58,7 +58,20 @@
     "import": "匯入錄影或錄音",
     "importHint": "在別處錄下的會議匯入後就是一般的會議紀錄：為發言者命名即可學會他的聲音，修正句子即可學會該修正。影片或音訊皆可，音軌會用 ffmpeg 抽出。",
     "importPick": "選擇檔案",
-    "importing": "轉錄中——所需時間與錄影長度相當"
+    "importing": "轉錄中——所需時間與錄影長度相當",
+    "refining": "精修中",
+    "refined": "已精修",
+    "refineFailed": "精修失敗",
+    "refineCancelled": "因會議開始而中止精修",
+    "refiningHint": "正在用更準確的方式重跑整段錄音。精修會取代每一行，因此完成前無法編輯。",
+    "refineDone": "精修完成 — 逐字稿已更新",
+    "editLocked": "精修中無法編輯",
+    "lineFailedAsr": "未能辨識",
+    "lineFailedTranslate": "未能翻譯",
+    "rerunLine": "重跑這一行",
+    "rerunning": "重跑中…",
+    "failedCount_other": "{{count}} 行需要處理",
+    "translationMissing": "翻譯失敗"
   },
   "glossary": {
     "title": "詞彙表",

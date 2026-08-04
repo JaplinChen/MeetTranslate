@@ -58,7 +58,20 @@
     "import": "Nhập bản ghi",
     "importHint": "Một cuộc họp ghi ở nơi khác sau khi nhập sẽ thành bản ghi bình thường: đặt tên người nói để học giọng, sửa một dòng để học bản sửa. Video hoặc âm thanh đều được; phần âm thanh được tách bằng ffmpeg.",
     "importPick": "Chọn tệp",
-    "importing": "Đang chuyển thành văn bản — mất khoảng bằng độ dài bản ghi"
+    "importing": "Đang chuyển thành văn bản — mất khoảng bằng độ dài bản ghi",
+    "refining": "Đang tinh chỉnh",
+    "refined": "Đã tinh chỉnh",
+    "refineFailed": "Tinh chỉnh thất bại",
+    "refineCancelled": "Đã dừng tinh chỉnh vì có cuộc họp",
+    "refiningHint": "Đang chạy lại toàn bộ bản ghi âm với độ chính xác cao hơn. Quá trình này thay thế mọi dòng, nên không thể sửa cho đến khi xong.",
+    "refineDone": "Tinh chỉnh xong — bản ghi đã được cập nhật",
+    "editLocked": "Không sửa được khi đang tinh chỉnh",
+    "lineFailedAsr": "Không nhận dạng được",
+    "lineFailedTranslate": "Không dịch được",
+    "rerunLine": "Chạy lại dòng này",
+    "rerunning": "Đang chạy…",
+    "failedCount_other": "{{count}} dòng cần xử lý",
+    "translationMissing": "Dịch thất bại"
   },
   "glossary": {
     "title": "Bảng thuật ngữ",

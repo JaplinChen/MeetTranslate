@@ -19,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import audio, config, correct, ingest, jobs, llm, postprocess, translate
+from . import asr, asr_gpu, audio, config, correct, ingest, jobs, llm, postprocess, translate
 from .hub import Hub
 from .pipeline import Pipeline
 from .store import TERM_MODES, Store
@@ -363,6 +363,88 @@ def reprocess(session_id: int) -> dict:
             store, session_id, wav, state["cfg"], _make_translator(), should_stop=cancel.is_set)):
         raise HTTPException(409, "already refining this session")
     return {"session": session_id, **(jobs.state(session_id) or {})}
+
+
+# Longest single utterance a rerun will decode. VAD cuts at 20 s, so anything past this is a row
+# whose end_time is wrong rather than a real utterance, and decoding it would tie up the card.
+RERUN_MAX_SECONDS = 60.0
+
+
+def _transcript(session_id: int, status: str) -> dict:
+    """The shape every transcript-mutating endpoint returns.
+
+    One helper rather than a literal per exit: the two rerun outcomes drifted apart once already,
+    one returning `line` where the other returned `lines`, which the page reads straight into
+    state — so a failed rerun blanked the transcript it was supposed to be fixing.
+    """
+    return {"lines": store.lines(session_id), "speakers": store.speaker_names(session_id),
+            "status": status}
+
+
+@app.post("/api/sessions/{session_id}/lines/{line_id}/rerun")
+def rerun_line(session_id: int, line_id: int) -> dict:
+    """Decode and translate one line again from the recording.
+
+    The audio comes from the session row, never from the request: the caller names a line, not a
+    path or an offset, so there is nothing here to point at another file. The work is bounded by
+    the line's own span and takes the same GPU gate as a full pass, because this endpoint has no
+    authentication in front of it and a loop over it would otherwise starve a live meeting.
+    """
+    if state["session"] == session_id:
+        raise HTTPException(409, "session is still recording")
+    session = store.session(session_id)
+    line = store.line(line_id)
+    if not session or not line or line["session_id"] != session_id:
+        raise HTTPException(404, "no such line")
+
+    wav = Path(session["wav_path"])
+    if not wav.is_file():
+        raise HTTPException(404, f"recording not found: {wav}")
+
+    start = float(line["start"])
+    end = line["end_time"] if line["end_time"] is not None else start + RERUN_MAX_SECONDS
+    seconds = min(max(float(end) - start, 0.0), RERUN_MAX_SECONDS)
+    if seconds <= 0:
+        raise HTTPException(400, "line has no duration to re-run")
+
+    with jobs.borrow_gpu():
+        try:
+            # Only this line's span is read, not the whole meeting: a ninety-minute wav does not
+            # belong in memory to re-decode four seconds of it.
+            samples, rate = sf.read(str(wav), dtype="float32", start=int(start * config.SAMPLE_RATE),
+                                    frames=int(seconds * config.SAMPLE_RATE), always_2d=False)
+        except Exception as exc:
+            raise HTTPException(400, f"could not read the recording: {exc}") from exc
+        if rate != config.SAMPLE_RATE:
+            raise HTTPException(400, f"{wav.name} is {rate} Hz, expected {config.SAMPLE_RATE}")
+        if getattr(samples, "ndim", 1) > 1:
+            samples = samples.mean(axis=1)
+
+        transcriber = (asr_gpu.maybe(state["cfg"].languages,
+                                     asr_gpu.hotwords_from(store.glossary()))
+                       or asr.Transcriber(model_dir=postprocess.best_model(), quantized=False,
+                                          languages=state["cfg"].languages))
+        text, used = transcriber.transcribe(samples, line["lang"] or "")
+
+    if not text:
+        store.replace_line(line_id, line["source"], line["lang"], {}, "asr_failed")
+        return _transcript(session_id, "asr_failed")
+
+    text = correct.Corrector(store.glossary(), store.corrections()).fix(text)
+    translator = _make_translator()
+    targets = [c for c in state["cfg"].languages if c != (used or line["lang"])]
+    translations, status = {}, "ok"
+    if translator and targets:
+        try:
+            translations = translator.translate(
+                translate.Line(text=text, lang=used or line["lang"], speaker=line["speaker"]),
+                targets, terms=store.glossary()).translations
+        except Exception:
+            log.exception("rerun translation failed for line %d", line_id)
+            status = "translate_failed"
+
+    store.replace_line(line_id, text, used or line["lang"], translations, status)
+    return _transcript(session_id, status)
 
 
 @app.get("/api/sessions/{session_id}/refine")
