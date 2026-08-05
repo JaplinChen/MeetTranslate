@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Loader2, Mic, Square } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
@@ -24,6 +25,8 @@ export function Capture() {
   const [deviceError, setDeviceError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [loudestSeen, setLoudestSeen] = useState(0);
+  // null until the config answers, so the warning cannot flash on before anyone knows it is true.
+  const [translatorReady, setTranslatorReady] = useState<boolean | null>(null);
 
   const fail = (err: unknown) => toast.error(err instanceof Error ? err.message : String(err));
 
@@ -39,6 +42,10 @@ export function Capture() {
 
   useEffect(() => {
     loadDevices();
+    // The server computes this on every config read and the page never asked: with no key set, a
+    // recording is transcribed but never translated, and the only mention was a server-side log
+    // line. A supported mode — so a warning with the way to fix it, not a refusal.
+    appApi.getConfig().then(c => setTranslatorReady(c.translatorReady)).catch(() => undefined);
     const tick = () =>
       appApi
         .recordingStatus()
@@ -98,6 +105,15 @@ export function Capture() {
         <div className="capture-alert" role="alert">
           <AlertTriangle size={18} />
           <span>{deviceError}</span>
+        </div>
+      )}
+
+      {translatorReady === false && (
+        <div className="capture-alert" role="alert">
+          <AlertTriangle size={18} />
+          <span>
+            {t('capture.noTranslator')} <Link to="/settings/llm">{t('capture.noTranslatorLink')}</Link>
+          </span>
         </div>
       )}
 
