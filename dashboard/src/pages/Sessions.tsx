@@ -49,6 +49,9 @@ export function Sessions() {
 
   const current = sessions.find(s => s.id === selected);
   const refine: RefineState = current?.refine.state ?? 'idle';
+  // The server puts the reason on every /sessions response and the page was dropping it: a failed
+  // pass said "精修失敗" and nothing else, while the thing that broke was named in the payload.
+  const refineError = current?.refine.error ?? '';
   // Playing a line, hearing a speaker and re-deriving the transcript all read the recording. When
   // it is gone they all fail the same way, so the page says so once instead of per click.
   const hasRecording = current?.hasRecording ?? true;
@@ -381,7 +384,9 @@ export function Sessions() {
             {t('sessions.transcript')}
             <span className="etable-count">{query.trim() ? `${shown.length} / ${lines.length}` : lines.length}</span>
             {refine !== 'idle' && (
-              <span className={`sess-refine sess-refine-${refine}`}>{refineLabel[refine]}</span>
+              <span className={`sess-refine sess-refine-${refine}`} title={refineError || undefined}>
+                {refineLabel[refine]}
+              </span>
             )}
             {/* A plain link, not a fetch-and-blob: the browser already knows how to save a
                 response, and `download` names the file after the meeting rather than "markdown". */}
@@ -416,6 +421,9 @@ export function Sessions() {
             />
           </div>
           {locked && <p className="sess-hint">{t('sessions.refiningHint')}</p>}
+          {refine === 'failed' && refineError && (
+            <p className="sess-refine-error">{t('sessions.refineFailedReason', { reason: refineError })}</p>
+          )}
           {!hasRecording && <p className="sess-no-audio">{t('sessions.noRecording')}</p>}
           {failed.length > 0 && (
             // Aggregated as well as marked inline: a two-hour meeting failing 5% is forty-odd
