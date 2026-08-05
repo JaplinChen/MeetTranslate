@@ -84,7 +84,9 @@
     "reprocessQueued": "已排入重新處理。",
     "playUnavailable": "伺服器無法提供這段錄音（HTTP {{status}}）。",
     "playUnreachable": "連不上伺服器，無法播放這一句。",
-    "playStaleServer": "後端目前跑的版本沒有播放功能的路由——重啟後端即可。"
+    "playStaleServer": "後端目前跑的版本沒有播放功能的路由——重啟後端即可。",
+    "searchPlaceholder": "搜尋這份逐字稿",
+    "searchEmpty": "沒有任何一句包含「{{query}}」。"
   },
   "glossary": {
     "title": "詞彙表",

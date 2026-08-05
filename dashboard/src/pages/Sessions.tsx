@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FileText, RefreshCw, Upload } from 'lucide-react';
+import { FileText, RefreshCw, Search, Upload } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { PageSkeleton } from '../components/PageSkeleton';
 import { TranscriptRow } from '../components/sessions/TranscriptRow';
@@ -37,6 +37,7 @@ export function Sessions() {
   const [rerunning, setRerunning] = useState<number | null>(null);
   const [tab, setTab] = useState<Tab>('transcript');
   const [playing, setPlaying] = useState<number | null>(null);
+  const [query, setQuery] = useState('');
   const [busy, setBusy] = useState(false);
   const tablistRef = useRef<HTMLDivElement>(null);
   const player = useRef<HTMLAudioElement | null>(null);
@@ -199,6 +200,10 @@ export function Sessions() {
     setPlaying(null);
   }, [selected, tab]);
 
+  // A query carried into another meeting shows it as empty, which reads as "this session has no
+  // lines" rather than "nothing here matches what you typed about the last one".
+  useEffect(() => setQuery(''), [selected]);
+
   // Re-running is per line rather than per transcript: a failure is usually one utterance the
   // decoder gave up on, and re-running the whole meeting to recover it is not a proportionate ask.
   const rerunLine = async (lineId: number) => {
@@ -215,6 +220,18 @@ export function Sessions() {
       setRerunning(null);
     }
   };
+
+  // 943 lines is not a list you scroll to check a word in. Matches the text as spoken, every
+  // translation of it, and the speaker — searching for a name is how you find what someone said
+  // once the voices have been named.
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return lines;
+    return lines.filter(l =>
+      l.source.toLowerCase().includes(q) ||
+      (names[l.speaker] || l.speaker).toLowerCase().includes(q) ||
+      Object.values(l.translations).some(v => v.toLowerCase().includes(q)));
+  }, [lines, names, query]);
 
   const codes = [...new Set(lines.map(l => l.speaker))];
   const langs = [...new Set(lines.flatMap(l => Object.keys(l.translations)))];
@@ -349,7 +366,7 @@ export function Sessions() {
         <section className="etable-panel" role="tabpanel" id="sess-panel-transcript" aria-labelledby="sess-tab-transcript">
           <h3 className="etable-panel-title">
             {t('sessions.transcript')}
-            <span className="etable-count">{lines.length}</span>
+            <span className="etable-count">{query.trim() ? `${shown.length} / ${lines.length}` : lines.length}</span>
             {refine !== 'idle' && (
               <span className={`sess-refine sess-refine-${refine}`}>{refineLabel[refine]}</span>
             )}
@@ -364,6 +381,16 @@ export function Sessions() {
               {locked ? t('sessions.reprocessing') : t('sessions.reprocess')}
             </button>
           </h3>
+          <div className="etable-search">
+            <Search className="etable-search-icon" size={15} />
+            <input
+              type="search"
+              value={query}
+              placeholder={t('sessions.searchPlaceholder')}
+              aria-label={t('sessions.searchPlaceholder')}
+              onChange={e => setQuery(e.target.value)}
+            />
+          </div>
           {locked && <p className="sess-hint">{t('sessions.refiningHint')}</p>}
           {!hasRecording && <p className="sess-no-audio">{t('sessions.noRecording')}</p>}
           {failed.length > 0 && (
@@ -372,7 +399,7 @@ export function Sessions() {
             <p className="sess-failed-summary">{t('sessions.failedCount', { count: failed.length })}</p>
           )}
           <div className="sess-lines">
-            {lines.map(line => (
+            {shown.map(line => (
               <TranscriptRow
                 key={line.id}
                 line={line}
@@ -389,6 +416,9 @@ export function Sessions() {
                 onPlay={playLine}
               />
             ))}
+            {query.trim() && shown.length === 0 && (
+              <p className="sess-hint">{t('sessions.searchEmpty', { query: query.trim() })}</p>
+            )}
           </div>
         </section>
       )}

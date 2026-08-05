@@ -84,7 +84,9 @@
     "reprocessQueued": "Reprocessing queued.",
     "playUnavailable": "The server could not return this clip (HTTP {{status}}).",
     "playUnreachable": "Could not reach the server to play this line.",
-    "playStaleServer": "This build of the server has no playback endpoint — restart the backend to pick it up."
+    "playStaleServer": "This build of the server has no playback endpoint — restart the backend to pick it up.",
+    "searchPlaceholder": "Search this transcript",
+    "searchEmpty": "No line contains “{{query}}”."
   },
   "glossary": {
     "title": "Glossary",

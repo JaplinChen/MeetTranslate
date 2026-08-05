@@ -84,7 +84,9 @@
     "reprocessQueued": "Đã xếp hàng xử lý lại.",
     "playUnavailable": "Máy chủ không trả về đoạn này (HTTP {{status}}).",
     "playUnreachable": "Không kết nối được máy chủ để phát câu này.",
-    "playStaleServer": "Bản máy chủ đang chạy chưa có endpoint phát lại — hãy khởi động lại backend."
+    "playStaleServer": "Bản máy chủ đang chạy chưa có endpoint phát lại — hãy khởi động lại backend.",
+    "searchPlaceholder": "Tìm trong bản ghi này",
+    "searchEmpty": "Không có dòng nào chứa “{{query}}”."
   },
   "glossary": {
     "title": "Bảng thuật ngữ",
