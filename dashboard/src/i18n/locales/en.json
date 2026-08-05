@@ -43,7 +43,9 @@
     "backlog": "Backlog",
     "dropped": "Dropped",
     "errors": "Errors",
-    "silentWarning": "Recording for several seconds with no audio at all. Check that Teams outputs to the selected virtual device and that the device is not muted."
+    "silentWarning": "Recording for several seconds with no audio at all. Check that Teams outputs to the selected virtual device and that the device is not muted.",
+    "noTranslator": "No translation key is configured — this meeting will be transcribed but not translated.",
+    "noTranslatorLink": "Set one up in LLM settings."
   },
   "sessions": {
     "title": "Sessions",

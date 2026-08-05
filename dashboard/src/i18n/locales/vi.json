@@ -43,7 +43,9 @@
     "backlog": "Tồn đọng",
     "dropped": "Mất khối",
     "errors": "Lỗi",
-    "silentWarning": "Đã thu vài giây nhưng hoàn toàn không có âm thanh. Kiểm tra Teams có xuất ra thiết bị ảo đã chọn và thiết bị đó không bị tắt tiếng."
+    "silentWarning": "Đã thu vài giây nhưng hoàn toàn không có âm thanh. Kiểm tra Teams có xuất ra thiết bị ảo đã chọn và thiết bị đó không bị tắt tiếng.",
+    "noTranslator": "Chưa cấu hình khoá dịch — cuộc họp này sẽ được ghi lại nhưng không được dịch.",
+    "noTranslatorLink": "Thiết lập trong cài đặt LLM."
   },
   "sessions": {
     "title": "Biên bản",

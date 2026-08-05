@@ -43,7 +43,9 @@
     "backlog": "積壓",
     "dropped": "掉塊",
     "errors": "錯誤",
-    "silentWarning": "已錄製數秒但完全沒有聲音。請確認 Teams 的輸出裝置指向所選的虛擬音效裝置，且該裝置未被靜音。"
+    "silentWarning": "已錄製數秒但完全沒有聲音。請確認 Teams 的輸出裝置指向所選的虛擬音效裝置，且該裝置未被靜音。",
+    "noTranslator": "尚未設定翻譯金鑰——這場會議只會轉錄，不會翻譯。",
+    "noTranslatorLink": "到 LLM 設定新增金鑰。"
   },
   "sessions": {
     "title": "會議紀錄",
