@@ -209,3 +209,33 @@ def test_a_learned_correction_can_be_fixed_in_place(client: TestClient) -> None:
     client.delete("/api/corrections/缺خ疫")
     client.delete("/api/corrections/CNT")
     assert len(client.get("/api/corrections").json()) == before
+
+
+def test_a_transcript_line_can_be_played_back(client: TestClient) -> None:
+    """Correcting a line means judging text against audio; the page had only the text."""
+    import soundfile as sf
+
+    wav = config.RECORDINGS_DIR / "playable.wav"
+    wav.parent.mkdir(parents=True, exist_ok=True)
+    sf.write(str(wav), np.zeros(config.SAMPLE_RATE * 120, dtype="float32"), config.SAMPLE_RATE)
+
+    session = main.store.start_session("now", str(wav))
+    short = main.store.add_line(session, 2.0, "S1", "zh", "短句", {}, end_time=5.0)
+    # Longer than the 4s a voice sample uses: a sentence cut off there cannot be checked.
+    long = main.store.add_line(session, 10.0, "S1", "zh", "很長的一句話", {}, end_time=25.0)
+    unbounded = main.store.add_line(session, 40.0, "S1", "zh", "沒有結束時間", {})
+
+    heard, rate = sf.read(io.BytesIO(client.get(f"/api/sessions/{session}/lines/{short}/clip").content))
+    assert len(heard) == 3 * rate, len(heard)
+
+    heard, rate = sf.read(io.BytesIO(client.get(f"/api/sessions/{session}/lines/{long}/clip").content))
+    assert len(heard) == 15 * rate, len(heard)
+
+    # No end_time: falls back to the sample length rather than reading to the end of the meeting.
+    heard, rate = sf.read(io.BytesIO(client.get(f"/api/sessions/{session}/lines/{unbounded}/clip").content))
+    assert len(heard) == main.CLIP_SECONDS * rate, len(heard)
+
+    # A line id from another session must not be playable through this one's recording.
+    other = seed_session("elsewhere.wav")
+    assert client.get(f"/api/sessions/{other}/lines/{short}/clip").status_code == 404
+    assert client.get(f"/api/sessions/{session}/lines/999999/clip").status_code == 404

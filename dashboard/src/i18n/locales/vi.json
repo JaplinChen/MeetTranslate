@@ -72,7 +72,10 @@
     "rerunning": "Đang chạy…",
     "translationMissing": "Dịch thất bại",
     "failedCount": "{{count}} dòng cần xử lý",
-    "clipLabel": "Phát mẫu giọng của {{code}}"
+    "clipLabel": "Phát mẫu giọng của {{code}}",
+    "playLine": "Phát câu này",
+    "stopLine": "Dừng",
+    "playFailed": "Câu này không có âm thanh."
   },
   "glossary": {
     "title": "Bảng thuật ngữ",

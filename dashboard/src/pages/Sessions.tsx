@@ -36,7 +36,9 @@ export function Sessions() {
   const [importing, setImporting] = useState(false);
   const [rerunning, setRerunning] = useState<number | null>(null);
   const [tab, setTab] = useState<Tab>('transcript');
+  const [playing, setPlaying] = useState<number | null>(null);
   const tablistRef = useRef<HTMLDivElement>(null);
+  const player = useRef<HTMLAudioElement | null>(null);
 
   const fail = (err: unknown) => toast.error(err instanceof Error ? err.message : String(err));
 
@@ -131,6 +133,33 @@ export function Sessions() {
       setImporting(false);
     }
   };
+
+  // Correcting a line is a judgement about whether the text matches what was said, so the audio has
+  // to be reachable from the line. One player for the whole transcript rather than one per row:
+  // clicking a second line replaces what is playing, which is also the behaviour you want.
+  const playLine = (lineId: number) => {
+    if (selected === null) return;
+    const audio = (player.current ??= new Audio());
+    if (playing === lineId) {
+      audio.pause();
+      setPlaying(null);
+      return;
+    }
+    audio.src = `${API_BASE_URL}/sessions/${selected}/lines/${lineId}/clip`;
+    audio.onended = () => setPlaying(null);
+    audio.onerror = () => {
+      setPlaying(null);
+      toast.error(t('sessions.playFailed'));
+    };
+    void audio.play().catch(() => {});
+    setPlaying(lineId);
+  };
+
+  // Switching session or tab leaves a clip playing over a transcript that is no longer on screen.
+  useEffect(() => {
+    player.current?.pause();
+    setPlaying(null);
+  }, [selected, tab]);
 
   // Re-running is per line rather than per transcript: a failure is usually one utterance the
   // decoder gave up on, and re-running the whole meeting to recover it is not a proportionate ask.
@@ -299,9 +328,11 @@ export function Sessions() {
                 locked={locked}
                 draft={editing}
                 rerunning={rerunning}
+                playing={playing}
                 onDraft={setEditing}
                 onSave={saveLine}
                 onRerun={rerunLine}
+                onPlay={playLine}
               />
             ))}
           </div>

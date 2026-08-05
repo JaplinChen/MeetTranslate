@@ -12,6 +12,10 @@ from . import main
 
 router = APIRouter()
 
+# A line whose end_time is wrong (or missing, on older rows) must not turn into a request for the
+# rest of the recording. Long enough for any real utterance; short enough to stay a clip.
+MAX_LINE_SECONDS = 60.0
+
 
 @router.put("/api/sessions/{session_id}/speakers")
 def put_speaker_names(session_id: int, body: dict) -> dict:
@@ -31,8 +35,13 @@ def get_known_speakers() -> list[dict]:
     return [{"name": name, "sessions": counts.get(name, 0)} for name, _ in main.store.known_speakers()]
 
 
-def _clip(sample: tuple[str, float] | None) -> Response:
-    """CLIP_SECONDS of a recording as a WAV, from wherever the sample points at."""
+def _clip(sample: tuple[str, float] | None, seconds: float | None = None) -> Response:
+    """A slice of a recording as a WAV, from wherever the sample points at.
+
+    `seconds` defaults to CLIP_SECONDS, which is the right length for "is this the same voice".
+    A transcript line passes its own duration instead: the question there is whether the text
+    matches what was said, and a sentence cut off at four seconds cannot answer it.
+    """
     if sample is None:
         raise HTTPException(404, "no recording for this voice")
     wav_path, start = sample
@@ -41,7 +50,7 @@ def _clip(sample: tuple[str, float] | None) -> Response:
 
     with sf.SoundFile(wav_path) as f:
         f.seek(min(int(start * f.samplerate), max(len(f) - 1, 0)))
-        block = f.read(main.CLIP_SECONDS * f.samplerate, dtype="int16")
+        block = f.read(int((seconds or main.CLIP_SECONDS) * f.samplerate), dtype="int16")
         rate = f.samplerate
     buf = io.BytesIO()
     sf.write(buf, block, rate, format="WAV", subtype="PCM_16")
@@ -62,6 +71,26 @@ def get_session_speaker_clip(session_id: int, code: str) -> Response:
     labelled S1..S35 — as the one place in the app asking a question it gave you nothing to answer.
     """
     return _clip(main.store.session_speaker_sample(session_id, code))
+
+
+@router.get("/api/sessions/{session_id}/lines/{line_id}/clip")
+def get_line_clip(session_id: int, line_id: int) -> Response:
+    """What was actually said on this line.
+
+    Correcting a transcript means deciding whether the text matches the audio, and until now the
+    audio was the one thing the page did not have. Plays the line's own span, so a long sentence is
+    not cut short — capped, because a bad end_time should not stream the rest of the meeting.
+    """
+    line = main.store.line(line_id)
+    if line is None or line["session_id"] != session_id:
+        raise HTTPException(404, f"no line {line_id} in session {session_id}")
+    session = main.store.session(session_id)
+    if session is None:
+        raise HTTPException(404, f"no session {session_id}")
+
+    end = line["end_time"]
+    span = max(float(end) - float(line["start"]), 0.0) if end is not None else 0.0
+    return _clip((session["wav_path"], line["start"]), min(span, MAX_LINE_SECONDS) or None)
 
 
 @router.put("/api/speakers/known/{name}")

@@ -144,7 +144,8 @@
    rows, pushing the text it belongs to away from the timestamp. Sized to a name, not to nothing. */
 .sess-page .sess-line {
   display: grid;
-  grid-template-columns: 3.5rem minmax(4rem, max-content) 1fr;
+  /* First column widened to hold the play button beside the timestamp. */
+  grid-template-columns: 5.5rem minmax(4rem, max-content) 1fr;
   gap: var(--space-3);
   padding: var(--space-2) 0;
   border-bottom: 1px solid var(--border);
@@ -155,6 +156,9 @@
 }
 
 .sess-page .sess-time {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
   color: var(--text-secondary);
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
@@ -195,7 +199,7 @@
 
 @media (max-width: 640px) {
   .sess-page .sess-line {
-    grid-template-columns: 3rem 1fr;
+    grid-template-columns: 5rem 1fr;
   }
 
   .sess-page .sess-who {
@@ -271,4 +275,32 @@
 
 .sess-page .sess-import input {
   display: none;
+}
+
+/* Always present rather than revealed on hover: the transcript is read on a laptop by someone
+   checking 943 lines, and a control that appears only under the pointer is one they have to hunt
+   for on every row. Muted until hovered so it does not compete with the text. */
+.sess-page .sess-play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.sess-page .sess-play:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.sess-page .sess-play:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
 }
