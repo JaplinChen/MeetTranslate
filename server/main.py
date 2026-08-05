@@ -139,6 +139,10 @@ _transcript = routes_sessions._transcript
 
 # ── static dashboard ────────────────────────────────────────────────────
 
+# Detail carried by the SPA guard's 404, so a caller can tell "this build has no such endpoint"
+# from "that endpoint says no". Read by the dashboard; changing it changes a contract.
+NO_SUCH_ENDPOINT = "no such endpoint in this build"
+
 if DIST.is_dir():
     app.mount("/assets", StaticFiles(directory=DIST / "assets"), name="assets")
 
@@ -152,7 +156,11 @@ if DIST.is_dir():
         # through to a GET-only route and come back as a bare 405, which reads as "wrong method"
         # when the truth is "no such endpoint" — the shape a stale server takes.
         if path.startswith("api/"):
-            raise HTTPException(404, "Not Found")
+            # Named, not "Not Found": this 404 and an endpoint answering "no such thing" are the
+            # same status but different problems, and the caller cannot tell them apart from the
+            # code alone. The dashboard reads this to say "restart the backend" instead of
+            # reporting the absence of data that is actually there.
+            raise HTTPException(404, NO_SUCH_ENDPOINT)
         candidate = DIST / path
         if path and candidate.is_file():
             return FileResponse(candidate)

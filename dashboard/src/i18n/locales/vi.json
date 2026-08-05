@@ -75,13 +75,16 @@
     "clipLabel": "Phát mẫu giọng của {{code}}",
     "playLine": "Phát câu này",
     "stopLine": "Dừng",
-    "playFailed": "Câu này không có âm thanh.",
+    "playFailed": "Câu này không có âm thanh được ghi.",
     "noRecording": "Bản ghi của cuộc họp này không còn trên đĩa, nên không thể phát lại.",
     "reprocess": "Xử lý lại",
     "reprocessing": "Đang xử lý lại…",
     "reprocessHint": "Dựng lại bản ghi này từ âm thanh bằng mô hình lớn nhất. Mọi dòng đều bị thay thế, nên các sửa tay ở đây sẽ mất.",
     "reprocessConfirm": "Xử lý lại cuộc họp này? Mọi dòng sẽ được viết lại, các sửa tay ở đây sẽ mất. Từ điển và các chỉnh sửa đã học vẫn được giữ.",
-    "reprocessQueued": "Đã xếp hàng xử lý lại."
+    "reprocessQueued": "Đã xếp hàng xử lý lại.",
+    "playUnavailable": "Máy chủ không trả về đoạn này (HTTP {{status}}).",
+    "playUnreachable": "Không kết nối được máy chủ để phát câu này.",
+    "playStaleServer": "Bản máy chủ đang chạy chưa có endpoint phát lại — hãy khởi động lại backend."
   },
   "glossary": {
     "title": "Bảng thuật ngữ",

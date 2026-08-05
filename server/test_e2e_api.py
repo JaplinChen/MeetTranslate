@@ -230,3 +230,18 @@ def test_an_endpoint_that_is_not_http_is_refused_by_the_route(client: TestClient
         body = {"provider": "ollama", "endpoint": endpoint, "model": "x"}
         assert client.post("/api/translate/llm/models", json=body).status_code == 400, endpoint
         assert client.post("/api/translate/llm/test", json=body).status_code == 400, endpoint
+
+
+def test_an_unknown_api_path_says_it_is_the_build_not_the_data(client: TestClient) -> None:
+    """A stale server answers 404 for every endpoint it has not been restarted into.
+
+    That is the same status a live endpoint uses to say "no such line", so the detail has to
+    distinguish them — otherwise the dashboard reports missing data that is sitting right there.
+    """
+    gone = client.get("/api/sessions/1/lines/1/clip-that-does-not-exist")
+    assert gone.status_code == 404
+    assert gone.json()["detail"] == main.NO_SUCH_ENDPOINT
+
+    # A real endpoint's 404 must not look like it.
+    real = client.get("/api/sessions/999999/lines/1/clip")
+    assert real.status_code == 404 and real.json()["detail"] != main.NO_SUCH_ENDPOINT

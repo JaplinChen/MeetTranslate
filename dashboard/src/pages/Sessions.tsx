@@ -7,7 +7,7 @@ import { TranscriptRow } from '../components/sessions/TranscriptRow';
 import { useToast } from '../components/Toast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { appApi, type RefineState, type SessionSummary, type TranscriptLine } from '../services/app.api';
-import { API_BASE_URL } from '../services/http';
+import { API_BASE_URL, NO_SUCH_ENDPOINT } from '../services/http';
 import './Sessions.css';
 import './Sessions.refine.css';
 
@@ -169,11 +169,25 @@ export function Sessions() {
       setPlaying(null);
       return;
     }
-    audio.src = `${API_BASE_URL}/sessions/${selected}/lines/${lineId}/clip`;
+    const url = `${API_BASE_URL}/sessions/${selected}/lines/${lineId}/clip`;
+    audio.src = url;
     audio.onended = () => setPlaying(null);
+    // <audio> reports that it failed, never why, and the two causes want different answers: this
+    // line genuinely has no audio, or the request never reached the endpoint — a backend still
+    // running the build from before the route existed answers 404 for every line in the meeting.
+    // One request, only on failure, to say which happened instead of guessing.
     audio.onerror = () => {
       setPlaying(null);
-      toast.error(t('sessions.playFailed'));
+      fetch(url)
+        .then(async r => {
+          const detail = await r.json().then(b => b?.detail).catch(() => '');
+          // The server marks its own "this build has no such endpoint" 404 so it is not mistaken
+          // for a line that has no audio — the two are the same status and opposite problems.
+          if (detail === NO_SUCH_ENDPOINT) return toast.error(t('sessions.playStaleServer'));
+          if (r.status === 404) return toast.error(t('sessions.playFailed'));
+          toast.error(t('sessions.playUnavailable', { status: r.status }));
+        })
+        .catch(() => toast.error(t('sessions.playUnreachable')));
     };
     void audio.play().catch(() => {});
     setPlaying(lineId);

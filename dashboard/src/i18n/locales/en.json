@@ -75,13 +75,16 @@
     "clipLabel": "Play a sample of {{code}}",
     "playLine": "Play this line",
     "stopLine": "Stop",
-    "playFailed": "No audio for this line.",
+    "playFailed": "No audio recorded for this line.",
     "noRecording": "The recording for this meeting is no longer on disk, so nothing here can be played back.",
     "reprocess": "Reprocess",
     "reprocessing": "Reprocessing…",
     "reprocessHint": "Re-derives this transcript from the recording with the largest model. Every line is replaced, so corrections made by hand here are lost.",
     "reprocessConfirm": "Reprocess this meeting? Every line is rewritten, so anything you corrected here by hand is lost. Words in the glossary and corrections already learned are kept.",
-    "reprocessQueued": "Reprocessing queued."
+    "reprocessQueued": "Reprocessing queued.",
+    "playUnavailable": "The server could not return this clip (HTTP {{status}}).",
+    "playUnreachable": "Could not reach the server to play this line.",
+    "playStaleServer": "This build of the server has no playback endpoint — restart the backend to pick it up."
   },
   "glossary": {
     "title": "Glossary",
