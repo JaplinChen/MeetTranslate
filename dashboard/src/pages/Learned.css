@@ -73,6 +73,11 @@
   margin-left: 0;
 }
 
+.learned-page .learned-edit + .learned-forget,
+.learned-page .learned-pair-edit + .learned-forget {
+  margin-left: 0;
+}
+
 .learned-page .learned-wrong {
   color: var(--text-muted);
   text-decoration: line-through;
@@ -97,6 +102,8 @@
   min-width: 0;
 }
 
+/* The pencil takes the auto margin, so it and the trash sit together at the row's edge. When both
+   carried margin-left:auto the free space was split between them and the pencil floated mid-row. */
 .learned-page .learned-edit,
 .learned-page .learned-save {
   margin-left: auto;
