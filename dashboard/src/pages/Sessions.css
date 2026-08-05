@@ -74,7 +74,8 @@
    them into aligned columns at any count and any width. */
 .sess-page .sess-names {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  /* Wider than before: each cell now carries a player as well as the field. */
+  grid-template-columns: repeat(auto-fill, minmax(22rem, 1fr));
   gap: var(--space-2) var(--space-3);
 }
 
@@ -84,7 +85,23 @@
   align-items: center;
 }
 
-.sess-page .sess-name span {
+.sess-page .sess-name-field {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+/* Sized down hard: the native control is built for a media player, and 35 of them at full size is
+   a wall of chrome around the fields that actually matter. */
+.sess-page .sess-clip {
+  flex: 0 0 auto;
+  width: 11rem;
+  height: 2rem;
+}
+
+.sess-page .sess-name-field span {
   min-width: 2.5rem;
   color: var(--text-secondary);
   font-family: var(--font-mono);
@@ -93,7 +110,7 @@
   font-weight: 600;
 }
 
-.sess-page .sess-name input {
+.sess-page .sess-name-field input {
   flex: 1;
   min-width: 0;
   padding: var(--space-2);
@@ -104,13 +121,13 @@
   transition: border-color 200ms ease;
 }
 
-.sess-page .sess-name input:hover {
+.sess-page .sess-name-field input:hover {
   border-color: var(--text-muted);
 }
 
 /* Keyboard focus was invisible: these are 31 identical boxes, and tabbing through them with no
    ring means losing your place entirely. */
-.sess-page .sess-name input:focus-visible,
+.sess-page .sess-name-field input:focus-visible,
 .sess-page .sess-select:focus-visible,
 .sess-page .sess-editing:focus-visible {
   outline: 2px solid var(--primary);

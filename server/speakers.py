@@ -94,6 +94,26 @@ class SpeakerStore:
             ).fetchone()
         return (row["wav"], row["start"]) if row else None
 
+    def session_speaker_sample(self, session_id: int, code: str) -> tuple[str, float] | None:
+        """Where to hear S3 in this meeting, before anyone has said who S3 is.
+
+        speaker_sample() goes through speaker_name, so it can only find a voice that already has a
+        name — which is exactly the voice nobody needs to hear. This one is keyed on the diariser's
+        own code, so it works while the field beside it is still empty.
+
+        The longest utterance, not the first: "謝謝" identifies nobody, and picking by length costs
+        an ORDER BY. Falls back to text length where the recording has no end time.
+        """
+        with self._lock:
+            row = self._db.execute(
+                "SELECT s.wav_path AS wav, l.start AS start FROM line l "
+                "JOIN session s ON s.id = l.session_id "
+                "WHERE l.session_id=? AND l.speaker=? "
+                "ORDER BY COALESCE(l.end_time - l.start, 0) DESC, LENGTH(l.source) DESC LIMIT 1",
+                (session_id, code),
+            ).fetchone()
+        return (row["wav"], row["start"]) if row else None
+
     def rename_speaker(self, old: str, new: str) -> None:
         """Rename a learned voice everywhere it is used, transcripts included.
 

@@ -7,6 +7,7 @@ import { TranscriptRow } from '../components/sessions/TranscriptRow';
 import { useToast } from '../components/Toast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { appApi, type RefineState, type SessionSummary, type TranscriptLine } from '../services/app.api';
+import { API_BASE_URL } from '../services/http';
 import './Sessions.css';
 import './Sessions.refine.css';
 
@@ -249,14 +250,25 @@ export function Sessions() {
           <p className="sess-hint">{t('sessions.speakersHint')}</p>
           <div className="sess-names">
             {codes.map(code => (
-              <label key={code} className="sess-name">
-                <span>{code}</span>
-                <input
-                  defaultValue={names[code] ?? ''}
-                  placeholder={t('sessions.namePlaceholder')}
-                  onBlur={e => saveName(code, e.target.value)}
+              <div key={code} className="sess-name">
+                <label className="sess-name-field">
+                  <span>{code}</span>
+                  <input
+                    defaultValue={names[code] ?? ''}
+                    placeholder={t('sessions.namePlaceholder')}
+                    onBlur={e => saveName(code, e.target.value)}
+                  />
+                </label>
+                {/* preload="none" because a meeting can have 35 of these and none of them is
+                    wanted until someone clicks. */}
+                <audio
+                  className="sess-clip"
+                  controls
+                  preload="none"
+                  aria-label={t('sessions.clipLabel', { code })}
+                  src={`${API_BASE_URL}/sessions/${selected}/speakers/${encodeURIComponent(code)}/clip`}
                 />
-              </label>
+              </div>
             ))}
           </div>
         </section>
