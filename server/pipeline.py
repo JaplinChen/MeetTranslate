@@ -89,8 +89,11 @@ class Pipeline:
         self._thread: threading.Thread | None = None
 
         self._context: list[translate.Line] = []
-        # (line id, start seconds, line) of the utterance eligible for one refinement pass.
-        self._previous: tuple[int, float, translate.Line] | None = None
+        # (line id, start seconds, line, translations as emitted) of the utterance eligible for one
+        # refinement pass. The translations ride along because a revision may touch only the source
+        # — the update event must still carry the rest, or the page replaces the line with one that
+        # has no subtitle under it.
+        self._previous: tuple[int, float, translate.Line, dict[str, str]] | None = None
         self._retries = Retries()
         self.backlog_peak = 0
         self.errors = 0
@@ -166,7 +169,7 @@ class Pipeline:
 
             self._apply_refinement(result)
 
-            self._previous = (line_id, segment.start, line)
+            self._previous = (line_id, segment.start, line, result.translations)
             self._context = (self._context + [line])[-config.CONTEXT_LINES:]
 
             # Only now, with this speaker's language possibly just settled, is a retry worth
@@ -250,8 +253,13 @@ class Pipeline:
         if not (result.previous_source or result.previous_translations):
             return
 
-        prev_id, prev_start, prev_line = self._previous
+        prev_id, prev_start, prev_line, prev_translations = self._previous
         source = result.previous_source or prev_line.text
         self._store.update_line(prev_id, source, result.previous_translations)
+        # The event mirrors what the store now holds: revised languages replaced, the rest kept.
+        # Emitted verbatim, a source-only revision blanked the subtitle the room was reading, and
+        # a partial one (en revised, vi not) blanked the other language — the page replaces the
+        # whole line with whatever the update carries.
+        merged = {**prev_translations, **result.previous_translations}
         self._emit(Emitted(prev_id, prev_start, prev_line.speaker, prev_line.lang, source,
-                           result.previous_translations, refined=True).event("update"))
+                           merged, refined=True).event("update"))
