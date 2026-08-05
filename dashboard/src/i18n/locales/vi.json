@@ -89,7 +89,6 @@
     "add": "Thêm",
     "remove": "Xoá",
     "empty": "Chưa có thuật ngữ nào.",
-    "modeHint": "Dịch cố định: luôn dùng bản dịch bạn nhập. Giữ nguyên: không dịch, phù hợp với các từ tiếng Anh dùng chung trong nhóm đa quốc gia (schedule, delay). Chỉ gợi ý nhận dạng: chỉ cải thiện nhận dạng giọng nói, không can thiệp bản dịch.",
     "mode": {
       "translate": "Dịch cố định",
       "keep": "Giữ nguyên",
@@ -97,7 +96,12 @@
       "protect": "Chỉ bảo vệ"
     },
     "clashWarning": "Lưu ý: từ này phát âm giống hệt {{list}} đã có trong bản ghi, thêm vào sẽ ghi đè lên chúng. Nếu đó là từ thật, hãy thêm chúng ở chế độ protect.",
-    "protectHint": "Bảo vệ tuyên bố đây là từ thật: không bị sửa, và không có từ nào bị sửa thành nó. Dành cho từ thường ngày trùng âm với thuật ngữ."
+    "modeHelp": {
+      "translate": "Luôn dùng bản dịch bạn nhập.",
+      "keep": "Không dịch — phù hợp với các từ tiếng Anh dùng chung trong nhóm đa quốc gia (schedule, delay).",
+      "hint": "Chỉ cải thiện nhận dạng giọng nói, không can thiệp bản dịch.",
+      "protect": "Bảo vệ tuyên bố đây là từ thật: không bị sửa, và không có từ nào bị sửa thành nó. Dành cho từ thường ngày trùng âm với thuật ngữ."
+    }
   },
   "display": {
     "title": "Phụ đề",
