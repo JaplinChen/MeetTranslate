@@ -24,6 +24,16 @@ test('an existing refine field is left alone', () => {
 });
 
 test('the rest of the session is carried through untouched', () => {
-  const { refine: _refine, ...rest } = withRefine(raw);
+  // Both fields this fills in are stripped; everything else must arrive exactly as it came.
+  const { refine: _refine, hasRecording: _hasRecording, ...rest } = withRefine(raw);
   assert.deepEqual(rest, raw);
+});
+
+test('a server that does not report hasRecording is assumed to have the audio', () => {
+  // Guessing the other way would hide working playback behind a "recording missing" notice.
+  assert.equal(withRefine(raw).hasRecording, true);
+});
+
+test('an explicit false is kept', () => {
+  assert.equal(withRefine({ ...raw, hasRecording: false }).hasRecording, false);
 });

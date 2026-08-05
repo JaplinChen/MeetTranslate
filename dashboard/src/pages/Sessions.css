@@ -304,3 +304,25 @@
   outline: 2px solid var(--primary);
   outline-offset: 1px;
 }
+
+/* Stated once at the top of the tab rather than discovered one failed click at a time. */
+.sess-page .sess-no-audio {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-inline-start: 3px solid var(--text-muted);
+  border-radius: var(--radius-sm);
+  background: var(--bg-light);
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.sess-page .sess-play:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.sess-page .sess-play:disabled:hover {
+  border-color: var(--border);
+  color: var(--text-muted);
+}

@@ -75,7 +75,8 @@
     "clipLabel": "Play a sample of {{code}}",
     "playLine": "Play this line",
     "stopLine": "Stop",
-    "playFailed": "No audio for this line."
+    "playFailed": "No audio for this line.",
+    "noRecording": "The recording for this meeting is no longer on disk, so nothing here can be played back."
   },
   "glossary": {
     "title": "Glossary",
