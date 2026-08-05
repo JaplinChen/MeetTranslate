@@ -113,46 +113,60 @@ export function Glossary() {
           </p>
         )}
         <div className="gloss-add">
-          <input
-            className="gloss-input"
-            placeholder={t('glossary.sourcePlaceholder')}
-            value={draft.source}
-            onChange={e => { setDraft({ ...draft, source: e.target.value }); setClash([]); }}
-            onKeyDown={e => e.key === 'Enter' && !busy && add()}
-          />
-          <select
-            value={draft.mode}
-            onChange={e => setDraft({ ...draft, mode: e.target.value as GlossaryTerm['mode'] })}
-          >
-            {MODES.map(m => (
-              <option key={m} value={m}>
-                {t(`glossary.mode.${m}`)}
-              </option>
-            ))}
-          </select>
+          <label className="gloss-field gloss-field-source">
+            <span>{t('glossary.source')}</span>
+            <input
+              className="gloss-input"
+              value={draft.source}
+              onChange={e => { setDraft({ ...draft, source: e.target.value }); setClash([]); }}
+              onKeyDown={e => e.key === 'Enter' && !busy && add()}
+            />
+          </label>
+          <label className="gloss-field gloss-field-mode">
+            <span>{t('glossary.modeLabel')}</span>
+            <select
+              value={draft.mode}
+              onChange={e => setDraft({ ...draft, mode: e.target.value as GlossaryTerm['mode'] })}
+            >
+              {MODES.map(m => (
+                <option key={m} value={m}>
+                  {t(`glossary.mode.${m}`)}
+                </option>
+              ))}
+            </select>
+          </label>
+          {/* What the chosen mode does, rather than all four at once. `protect` had an explanation
+              written for it that nothing ever rendered. */}
+          <p className="gloss-hint gloss-mode-help">{t(`glossary.modeHelp.${draft.mode}`)}</p>
           {/* Only `translate` needs per-language wording — `keep` and `hint` have no target text. */}
-          {draft.mode === 'translate' &&
-            languages.map(lang => (
-              <input
-                key={lang}
-                className="gloss-input gloss-target"
-                placeholder={t(`lang.${lang}`, { defaultValue: lang })}
-                value={draft.targets[lang] ?? ''}
-                onChange={e => setDraft({ ...draft, targets: { ...draft.targets, [lang]: e.target.value } })}
-              />
-            ))}
-          <input
-            className="gloss-input gloss-category"
-            placeholder={t('glossary.categoryPlaceholder')}
-            value={draft.category}
-            onChange={e => setDraft({ ...draft, category: e.target.value })}
-          />
-          <button className="btn-primary" onClick={add} disabled={busy || !draft.source.trim()}>
+          {draft.mode === 'translate' && (
+            <div className="gloss-targets">
+              {languages.map(lang => (
+                <label key={lang} className="gloss-field">
+                  <span>{t(`lang.${lang}`, { defaultValue: lang })}</span>
+                  <input
+                    className="gloss-input gloss-target"
+                    value={draft.targets[lang] ?? ''}
+                    onChange={e => setDraft({ ...draft, targets: { ...draft.targets, [lang]: e.target.value } })}
+                  />
+                </label>
+              ))}
+            </div>
+          )}
+          <label className="gloss-field gloss-field-category">
+            <span>{t('glossary.category')}</span>
+            <input
+              className="gloss-input gloss-category"
+              placeholder={t('glossary.categoryPlaceholder')}
+              value={draft.category}
+              onChange={e => setDraft({ ...draft, category: e.target.value })}
+            />
+          </label>
+          <button className="btn-primary gloss-submit" onClick={add} disabled={busy || !draft.source.trim()}>
             <Plus size={16} />
             {t('glossary.add')}
           </button>
         </div>
-        <p className="gloss-hint">{t('glossary.modeHint')}</p>
       </section>
 
       <section className="etable-panel">

@@ -89,7 +89,6 @@
     "add": "Add",
     "remove": "Remove",
     "empty": "No terms yet.",
-    "modeHint": "Fixed rendering: always use the translation you provide. Keep as-is: never translate it, right for English terms shared across a cross-border team (schedule, delay). Recognition hint only: improves speech recognition without affecting translation.",
     "mode": {
       "translate": "Fixed rendering",
       "keep": "Keep as-is",
@@ -97,7 +96,12 @@
       "protect": "Protect only"
     },
     "clashWarning": "Careful: this sounds identical to {{list}} already in your transcripts, and adding it would rewrite them. If those are real words, add them in protect mode too.",
-    "protectHint": "Protect declares a word real: never corrected, and nothing is ever corrected into it. For everyday words that sound like a term — 才夠 against 採購."
+    "modeHelp": {
+      "translate": "Always use the translation you provide.",
+      "keep": "Never translate it — right for English terms shared across a cross-border team (schedule, delay).",
+      "hint": "Improves speech recognition without affecting translation.",
+      "protect": "Protect declares a word real: never corrected, and nothing is ever corrected into it. For everyday words that sound like a term — 才夠 against 採購."
+    }
   },
   "display": {
     "title": "Subtitles",

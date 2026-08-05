@@ -1,9 +1,57 @@
 /* page-root: .gloss-page */
+/* A grid, not wrapping flex. Wrapping decided the rows by arithmetic: the term box took a whole
+   914px line to itself, the four-option mode select took another (there is a global
+   `select { width: 100% }`, so it filled whatever line it landed on), and the three languages,
+   the category and the button were left sharing the third. Rows are stated here instead:
+   term + mode, then the languages, then category + add. */
 .gloss-page .gloss-add {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: end;
+}
+
+/* Labels, because every field here was placeholder-only — which names a box until you type in it,
+   and then stops. */
+.gloss-page .gloss-field {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  align-items: center;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.gloss-page .gloss-field > span {
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.gloss-page .gloss-mode-help,
+.gloss-page .gloss-targets {
+  grid-column: 1 / -1;
+}
+
+.gloss-page .gloss-targets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: var(--space-3);
+}
+
+/* Sits with the term it belongs to rather than under the whole form. */
+.gloss-page .gloss-mode-help {
+  margin: 0;
+}
+
+.gloss-page .gloss-submit {
+  justify-content: center;
+}
+
+@media (max-width: 720px) {
+  .gloss-page .gloss-add {
+    grid-template-columns: 1fr;
+  }
 }
 
 .gloss-page .gloss-input,
@@ -16,15 +64,10 @@
   font-size: 0.9rem;
 }
 
+/* Each control fills the cell the grid gave it; the cell decides the width, not the control. */
 .gloss-page .gloss-input {
-  min-width: 10rem;
-  flex: 1 1 10rem;
-}
-
-.gloss-page .gloss-target,
-.gloss-page .gloss-category {
-  flex: 1 1 8rem;
-  min-width: 8rem;
+  width: 100%;
+  min-width: 0;
 }
 
 .gloss-page .gloss-hint,
