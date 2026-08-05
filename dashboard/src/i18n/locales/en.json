@@ -117,6 +117,11 @@
     "colourSpeakers": "Colour-code speakers",
     "openLive": "Open subtitle page (press F11 for fullscreen on the TV)"
   },
+  "live": {
+    "title": "Live",
+    "connecting": "Connecting…",
+    "waiting": "Waiting for someone to speak…"
+  },
   "llm": {
     "subtitle": "The model that drives automatic translation.",
     "save": "Save",

@@ -117,6 +117,11 @@
     "colourSpeakers": "Phân biệt người nói bằng màu",
     "openLive": "Mở trang phụ đề (nhấn F11 để toàn màn hình trên TV)"
   },
+  "live": {
+    "title": "Trực tiếp",
+    "connecting": "Đang kết nối…",
+    "waiting": "Đang chờ có người nói…"
+  },
   "llm": {
     "subtitle": "Mô hình thực hiện dịch tự động.",
     "save": "Lưu",

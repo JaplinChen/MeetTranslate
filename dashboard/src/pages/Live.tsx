@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { useLiveSocket, type LiveLine, type DisplaySettings } from '../hooks/useLiveSocket';
 import './Live.css';
@@ -40,7 +41,8 @@ function Row({ line, display, languages }: { line: LiveLine; display: DisplaySet
 }
 
 export function Live() {
-  useDocumentTitle('Live');
+  const { t } = useTranslation();
+  useDocumentTitle(t('live.title'));
   const { lines, display, languages, connected } = useLiveSocket();
   const [atBottom, setAtBottom] = useState(true);
   const endRef = useRef<HTMLDivElement>(null);
@@ -63,10 +65,10 @@ export function Live() {
       className={`live-page live-theme-${display.theme}`}
       style={{ '--live-font': `${display.font_size}px` } as React.CSSProperties}
     >
-      {!connected && <div className="live-banner">連線中…</div>}
+      {!connected && <div className="live-banner">{t('live.connecting')}</div>}
       <div className="live-scroll" ref={scrollRef} onScroll={onScroll}>
         {visible.length === 0 ? (
-          <p className="live-idle">等待發言…</p>
+          <p className="live-idle">{t('live.waiting')}</p>
         ) : (
           visible.map(line => <Row key={line.id} line={line} display={display} languages={languages} />)
         )}
