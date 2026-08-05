@@ -16,7 +16,7 @@ export function warnIfInsecureHttpUrl(url: string, label: string): string {
     const parsed = new URL(url);
     if (parsed.protocol === 'http:' && !isLocalhostHost(parsed.hostname)) {
       console.warn(
-        `[OpenWA] ${label} uses an insecure http:// URL (host: ${parsed.hostname}). ` +
+        `[MeetTranslate] ${label} uses an insecure http:// URL (host: ${parsed.hostname}). ` +
           'API keys are sent in cleartext over http. Use https:// in production.',
       );
     }
