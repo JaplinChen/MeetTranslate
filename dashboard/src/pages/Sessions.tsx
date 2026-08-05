@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Download, FileText, RefreshCw, Search, Upload } from 'lucide-react';
+import { ChevronDown, ChevronUp, Download, FileText, RefreshCw, Search, Upload } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { PageSkeleton } from '../components/PageSkeleton';
 import { TranscriptRow } from '../components/sessions/TranscriptRow';
 import { useToast } from '../components/Toast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
-import { appApi, type RefineState, type SessionSummary, type TranscriptLine } from '../services/app.api';
+import { appApi, type MeetingSummary, type RefineState, type SessionSummary, type TranscriptLine } from '../services/app.api';
 import { API_BASE_URL, NO_SUCH_ENDPOINT } from '../services/http';
 import './Sessions.css';
 import './Sessions.refine.css';
+import './Sessions.summary.css';
 
 // How often to re-check a session that is still being refined. The pass takes minutes, so this is
 // about noticing it finished rather than tracking progress, and it stops the moment it has.
@@ -23,7 +24,7 @@ const TABS = ['import', 'speakers', 'transcript'] as const;
 type Tab = (typeof TABS)[number];
 
 export function Sessions() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   useDocumentTitle(t('sessions.title'));
   const toast = useToast();
 
@@ -39,6 +40,10 @@ export function Sessions() {
   const [playing, setPlaying] = useState<number | null>(null);
   const [query, setQuery] = useState('');
   const [busy, setBusy] = useState(false);
+  const [summary, setSummary] = useState<MeetingSummary | null>(null);
+  const [sumExpanded, setSumExpanded] = useState(false);
+  const [sumLang, setSumLang] = useState<string | null>(null);
+  const [summarizing, setSummarizing] = useState(false);
   const tablistRef = useRef<HTMLDivElement>(null);
   const player = useRef<HTMLAudioElement | null>(null);
   // Read inside the callback so it does not have to depend on `playing` — a callback that changes
@@ -81,9 +86,20 @@ export function Sessions() {
       .finally(() => setLoading(false));
   }, []);
 
+  const loadSummary = useCallback((id: number) => {
+    appApi.sessionSummary(id).then(setSummary).catch(() => setSummary(null));
+  }, []);
+
   useEffect(() => {
     if (selected !== null) loadLines(selected);
   }, [selected, loadLines]);
+
+  useEffect(() => {
+    setSummary(null);
+    setSumExpanded(false);
+    setSumLang(null);
+    if (selected !== null) loadSummary(selected);
+  }, [selected, loadSummary]);
 
   // Poll only while something is actually being refined, and stop as soon as it is not. Without
   // this the chip would say "refining" until someone reloaded the page by hand.
@@ -94,6 +110,8 @@ export function Sessions() {
         wasRefining.current = false;
         toast.success(t('sessions.refineDone'));
         loadLines(selected);
+        // The pass ends by writing the summary, so whatever the card showed is now out of date.
+        loadSummary(selected);
       }
       return;
     }
@@ -102,7 +120,22 @@ export function Sessions() {
       appApi.sessions().then(setSessions).catch(() => {});
     }, REFINE_POLL_MS);
     return () => window.clearInterval(timer);
-  }, [refine, selected, loadLines, toast, t]);
+  }, [refine, selected, loadLines, loadSummary, toast, t]);
+
+  // Regenerates the summary alone — no ASR, no GPU. The job registry the refine poll watches
+  // dedups it, so refreshing the sessions list is what starts the poll that notices it finish.
+  const generateSummary = async () => {
+    if (selected === null || summarizing) return;
+    setSummarizing(true);
+    try {
+      setSummary(await appApi.summarizeSession(selected));
+      setSessions(await appApi.sessions());
+    } catch (err) {
+      fail(err);
+    } finally {
+      setSummarizing(false);
+    }
+  };
 
   // Speakers are identified by voice, not by name — the app never sees the participant list.
   // Naming them once here is what turns S1/S2 into a readable transcript.
@@ -252,6 +285,18 @@ export function Sessions() {
   const codes = [...new Set(lines.map(l => l.speaker))];
   const langs = useMemo(() => [...new Set(lines.flatMap(l => Object.keys(l.translations)))], [lines]);
   const failed = lines.filter(l => l.status !== 'ok');
+  // 'generating' is visible two ways — the summary endpoint says so, or the session's refine job
+  // is still running (the summary is its last stage). Either alone can be the first one seen.
+  const sumGenerating = summary?.state === 'generating' || refine === 'refining';
+  const sumStageLabel = current?.refine.stage === 'summarize' ? t('sessions.summarizing') : t('sessions.refining');
+  const sumLangs = summary?.summary ? Object.keys(summary.summary) : [];
+  // Prefix-match against the UI language (zh-HK → zh), falling back to whatever exists.
+  const uiBase = i18n.language.split('-')[0].toLowerCase();
+  const activeSumLang =
+    sumLang && sumLangs.includes(sumLang)
+      ? sumLang
+      : sumLangs.find(l => l.split('-')[0].toLowerCase() === uiBase) ?? sumLangs[0];
+  const sumContent = activeSumLang ? summary?.summary?.[activeSumLang] : undefined;
   const refineLabel: Partial<Record<RefineState, string>> = {
     refining: t('sessions.refining'),
     refined: t('sessions.refined'),
@@ -430,6 +475,101 @@ export function Sessions() {
             // marks scattered through the transcript, and nobody finds those by scrolling.
             <p className="sess-failed-summary">{t('sessions.failedCount', { count: failed.length })}</p>
           )}
+          {sumContent ? (
+            <div className="sess-summary">
+              <button
+                type="button"
+                className="sess-summary-head"
+                aria-expanded={sumExpanded}
+                title={t(sumExpanded ? 'sessions.summaryCollapse' : 'sessions.summaryExpand')}
+                onClick={() => setSumExpanded(v => !v)}
+              >
+                <span className="sess-summary-title">{sumContent.title || t('sessions.summaryTitle')}</span>
+                {!sumExpanded && <span className="sess-summary-preview">{sumContent.summary.split('\n')[0]}</span>}
+                {summary?.state === 'partial' && <span className="sess-summary-badge">{t('sessions.summaryPartial')}</span>}
+                {/* In the header, not only the body: stale is the one thing worth knowing before
+                    deciding whether to expand, and a collapsed card was hiding exactly that. */}
+                {summary?.stale && <span className="sess-summary-badge">{t('sessions.summaryStaleShort')}</span>}
+                {sumGenerating && <span className="sess-summary-badge">{sumStageLabel}</span>}
+                {sumExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </button>
+              {sumExpanded && (
+                <div className="sess-summary-body">
+                  {sumLangs.length > 1 && (
+                    <div className="sess-summary-langs">
+                      {sumLangs.map(l => (
+                        <button
+                          key={l}
+                          type="button"
+                          className={`sess-summary-lang ${l === activeSumLang ? 'active' : ''}`}
+                          onClick={() => setSumLang(l)}
+                        >
+                          {t(`lang.${l}`, l)}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <p className="sess-summary-text">{sumContent.summary}</p>
+                  {sumContent.decisions.length > 0 && (
+                    <>
+                      <h4 className="sess-summary-heading">{t('sessions.summaryDecisions')}</h4>
+                      <ul className="sess-summary-list">
+                        {sumContent.decisions.map((d, i) => <li key={i}>{d}</li>)}
+                      </ul>
+                    </>
+                  )}
+                  {sumContent.actions.length > 0 && (
+                    <>
+                      <h4 className="sess-summary-heading">{t('sessions.summaryActions')}</h4>
+                      <ul className="sess-summary-list">
+                        {sumContent.actions.map((a, i) => (
+                          <li key={i}>
+                            <span className="sess-summary-actor">
+                              {a.speaker ? names[a.speaker] || a.speaker : t('sessions.summaryUnassigned')}
+                            </span>
+                            {a.text}
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                  {summary?.stale && <p className="sess-summary-stale">{t('sessions.summaryStale')}</p>}
+                  {summary?.state === 'failed' && <p className="sess-summary-error">{t('sessions.summaryFailed')}</p>}
+                  <button
+                    type="button"
+                    className="sess-summary-regen"
+                    disabled={summarizing || sumGenerating}
+                    onClick={generateSummary}
+                  >
+                    {summarizing
+                      ? t('sessions.summaryRegenerating')
+                      : summary?.state === 'failed'
+                        ? t('sessions.summaryRetry')
+                        : t('sessions.summaryRegenerate')}
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : sumGenerating ? (
+            <div className="sess-summary sess-summary-cta">
+              <span className="sess-summary-title">{t('sessions.summaryTitle')}</span>
+              <span className="sess-summary-badge">{sumStageLabel}</span>
+            </div>
+          ) : summary?.state === 'failed' ? (
+            <div className="sess-summary sess-summary-cta">
+              <span className="sess-summary-error">{t('sessions.summaryFailed')}</span>
+              <button type="button" className="sess-summary-generate" disabled={summarizing} onClick={generateSummary}>
+                {summarizing ? t('sessions.summaryGenerating') : t('sessions.summaryRetry')}
+              </button>
+            </div>
+          ) : summary?.state === 'none' ? (
+            <div className="sess-summary sess-summary-cta">
+              <span className="sess-summary-title">{t('sessions.summaryTitle')}</span>
+              <button type="button" className="sess-summary-generate" disabled={summarizing} onClick={generateSummary}>
+                {summarizing ? t('sessions.summaryGenerating') : t('sessions.summaryGenerate')}
+              </button>
+            </div>
+          ) : null}
           <div className="sess-lines">
             {shown.map(line => (
               <TranscriptRow

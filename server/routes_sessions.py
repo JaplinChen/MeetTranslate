@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import time
@@ -105,11 +106,74 @@ def reprocess(session_id: int) -> dict:
     if not wav.is_file():
         raise HTTPException(404, f"recording not found: {wav}")
 
-    if not jobs.schedule(session_id, lambda cancel: main.postprocess.rewrite_session(
-            main.store, session_id, wav, main.state["cfg"], main._make_translator(),
-            should_stop=cancel.is_set)):
+    if not jobs.schedule(
+            session_id,
+            lambda cancel: main.postprocess.rewrite_session(
+                main.store, session_id, wav, main.state["cfg"], main._make_translator(),
+                should_stop=cancel.is_set),
+            followup=main.postmeeting.followup(main.store, main.state["cfg"].languages,
+                                               main.state["llm"], main._api_key(), session_id)):
         raise HTTPException(409, "already refining this session")
     return {"session": session_id, **(jobs.state(session_id) or {})}
+
+
+# Minutes between summary regenerations of an unchanged transcript. The endpoint has no
+# authentication, and each call spends real money or minutes of local compute; a stale summary is
+# exempt because regenerating one is the entire point of tracking staleness.
+SUMMARY_COOLDOWN_MINUTES = 5
+
+
+def _summary_body(session_id: int) -> dict:
+    """One shape for both summary endpoints, stale computed at read time."""
+    row = main.store.summary(session_id)
+    session = main.store.session(session_id)
+    job = jobs.state(session_id) or {}
+    generating = job.get("state") == "refining"
+    if not row:
+        return {"session": session_id, "state": "generating" if generating else "none",
+                "stale": False, "summary": None}
+    stale = bool(session) and int(session["lines_rev"]) != int(row["lines_rev"])
+    return {"session": session_id,
+            "state": "generating" if generating else row["status"],
+            "stale": stale,
+            "created": row["created"],
+            "summary": json.loads(row["json"])}
+
+
+@router.get("/api/sessions/{session_id}/summary")
+def get_summary(session_id: int) -> dict:
+    if not main.store.session(session_id):
+        raise HTTPException(404, "no such session")
+    return _summary_body(session_id)
+
+
+@router.post("/api/sessions/{session_id}/summarize")
+def summarize_session(session_id: int) -> dict:
+    """Regenerate the summary alone — no ASR, no GPU, just the LLM stages over stored lines."""
+    session = main.store.session(session_id)
+    if not session:
+        raise HTTPException(404, "no such session")
+    if main.state["session"] == session_id:
+        raise HTTPException(409, "session is still recording")
+
+    existing = main.store.summary(session_id)
+    if existing and int(session["lines_rev"]) == int(existing["lines_rev"]):
+        age = time.time() - time.mktime(time.strptime(existing["created"], "%Y-%m-%dT%H:%M:%S"))
+        if existing["status"] == "ok" and age < SUMMARY_COOLDOWN_MINUTES * 60:
+            raise HTTPException(
+                429, f"this summary is {int(age)}s old and the transcript has not changed — "
+                     f"edit a line first, or wait {SUMMARY_COOLDOWN_MINUTES} minutes")
+
+    def stages(cancel, set_stage):
+        set_stage("summarize")
+        main.postmeeting._summarize_stage(main.store, session_id, main.state["cfg"].languages,
+                                          main.state["llm"], main._api_key(), cancel)
+
+    # Through the job registry even though no GPU is involved: it is the dedup that stops two
+    # generations racing over one session, and the page already knows how to read its states.
+    if not jobs.schedule(session_id, lambda cancel: None, followup=stages):
+        raise HTTPException(409, "already refining this session")
+    return _summary_body(session_id)
 
 
 def _transcript(session_id: int, status: str) -> dict:

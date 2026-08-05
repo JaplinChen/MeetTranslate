@@ -104,6 +104,90 @@ def test_importing_a_recording_makes_it_a_session(client: TestClient) -> None:
     assert len({s["wav_path"] for s in imports}) == 2, imports
 
 
+def test_summary_lifecycle_none_then_stored_then_stale(client: TestClient) -> None:
+    """The three answers to "where is my summary": never ran, here it is, and it is out of date."""
+    jobs.reset()
+    session_id = seed_session("summary-life.wav")
+
+    body = client.get(f"/api/sessions/{session_id}/summary").json()
+    assert body["state"] == "none" and body["summary"] is None, body
+    assert client.get("/api/sessions/999999/summary").status_code == 404
+
+    rev = main.store.session(session_id)["lines_rev"]
+    main.store.set_summary(session_id, json.dumps(
+        {"zh": {"title": "週會", "summary": "談了排程", "decisions": ["交期延後"],
+                "actions": [{"text": "追蹤供應商", "speaker": "S1"}]}}, ensure_ascii=False),
+        "ok", rev, "2026-08-05T10:00:00")
+
+    body = client.get(f"/api/sessions/{session_id}/summary").json()
+    assert body["state"] == "ok" and not body["stale"], body
+    assert body["summary"]["zh"]["title"] == "週會", body
+
+    # Editing a line moves the revision; the same summary now admits it is stale.
+    line_id = main.store.lines(session_id)[0]["id"]
+    main.store.update_line(line_id, "改過的一行", {})
+    body = client.get(f"/api/sessions/{session_id}/summary").json()
+    assert body["stale"] is True, body
+
+
+def test_regenerating_a_fresh_summary_is_refused(client: TestClient) -> None:
+    """No auth in front of this endpoint, and every call spends money or minutes of compute."""
+    import time as _time
+
+    jobs.reset()
+    session_id = seed_session("summary-cool.wav")
+    rev = main.store.session(session_id)["lines_rev"]
+    now = _time.strftime("%Y-%m-%dT%H:%M:%S")
+    main.store.set_summary(session_id, "{}", "ok", rev, now)
+
+    assert client.post(f"/api/sessions/{session_id}/summarize").status_code == 429
+
+    # A stale summary is exempt: regenerating it is the point of tracking staleness.
+    line_id = main.store.lines(session_id)[0]["id"]
+    main.store.update_line(line_id, "剛改的一行", {})
+    r = client.post(f"/api/sessions/{session_id}/summarize")
+    assert r.status_code == 200, r.text
+    jobs.cancel_all(wait=2.0)
+
+    # And a failed summary is also exempt — retrying a failure is not abuse.
+    main.store.set_summary(session_id, "{}", "failed",
+                           main.store.session(session_id)["lines_rev"], now)
+    jobs.reset()
+    r = client.post(f"/api/sessions/{session_id}/summarize")
+    assert r.status_code == 200, r.text
+    jobs.cancel_all(wait=2.0)
+
+
+def test_markdown_export_carries_the_summary(client: TestClient) -> None:
+    """The export's reader was not in the room; the summary rides along, staleness admitted."""
+    jobs.reset()
+    session_id = seed_session("summary-md.wav")
+    rev = main.store.session(session_id)["lines_rev"]
+    main.store.set_summary(session_id, json.dumps(
+        {"zh": {"title": "產線週會", "summary": "確認委外排程。", "decisions": ["交期延到週五"],
+                "actions": [{"text": "回覆採購單", "speaker": "S1"}]},
+         "en": {"title": "Line weekly", "summary": "Confirmed outsourcing schedule.",
+                "decisions": [], "actions": []}}, ensure_ascii=False),
+        "ok", rev, "2026-08-05T10:00:00")
+    main.store.set_speaker_name(session_id, "S1", "陳經理")
+
+    md = client.get(f"/api/sessions/{session_id}/markdown").text
+    assert "## 會議摘要" in md and "產線週會" in md and "Line weekly" in md, md[:400]
+    assert "陳經理：回覆採購單" in md, md
+    assert "⚠" not in md
+
+    # Post-summary edits surface as a warning, not as silence.
+    line_id = main.store.lines(session_id)[0]["id"]
+    main.store.update_line(line_id, "後來改的", {})
+    md = client.get(f"/api/sessions/{session_id}/markdown").text
+    assert "摘要生成後逐字稿曾被修改" in md
+
+    # A failed summary never reaches the export.
+    main.store.set_summary(session_id, "{}", "failed", 0, "2026-08-05T10:00:00")
+    md = client.get(f"/api/sessions/{session_id}/markdown").text
+    assert "## 會議摘要" not in md
+
+
 def test_unknown_api_path_is_json_404(client: TestClient) -> None:
     r = client.get("/api/definitely-not-a-route")
     assert r.status_code == 404

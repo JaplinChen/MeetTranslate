@@ -35,6 +35,10 @@ class Job:
     """What the dashboard needs to say about a session's post-meeting pass."""
 
     state: str = "refining"  # refining | refined | failed | cancelled
+    # Which part of the pass is running. The state stays "refining" throughout so every existing
+    # consumer — the /refine endpoint, claim_gpu's stand-down scan, the tests — keeps working;
+    # the stage is extra detail for a page that wants to say "summarizing" instead of "refining".
+    stage: str = "rewrite"  # rewrite | refine | summarize
     error: str = ""
     cancel: threading.Event = field(default_factory=threading.Event)
     thread: threading.Thread | None = None
@@ -47,19 +51,29 @@ _lock = threading.Lock()
 def state(session_id: int) -> dict | None:
     with _lock:
         job = _jobs.get(session_id)
-        return {"state": job.state, "error": job.error} if job else None
+        return {"state": job.state, "stage": job.stage, "error": job.error} if job else None
 
 
 def states() -> dict[int, dict]:
     with _lock:
-        return {sid: {"state": j.state, "error": j.error} for sid, j in _jobs.items()}
+        return {sid: {"state": j.state, "stage": j.stage, "error": j.error}
+                for sid, j in _jobs.items()}
 
 
-def schedule(session_id: int, run: Callable[[threading.Event], None]) -> bool:
+def schedule(session_id: int, run: Callable[[threading.Event], None],
+             followup: Callable[[threading.Event, Callable[[str], None]], None] | None = None,
+             ) -> bool:
     """Run `run` on a worker once the GPU is free. False when this session already has a pass.
 
     `run` is handed the cancel event and is expected to check it; a pass that ignores it simply
     finishes, which is correct but makes the next meeting wait.
+
+    `followup` runs after the gate is released. It exists because the pass grew stages that never
+    touch the card — the LLM correction and the summary. Held inside the gate, a minutes-long
+    Ollama call would keep `claim_gpu` waiting past its timeout and the room would be told it
+    cannot start recording, on account of work that was not using the GPU at all. The followup
+    gets the cancel event and a stage setter; its failure fails the job the same way `run`'s does,
+    but whatever `run` already landed stays landed.
     """
     with _lock:
         existing = _jobs.get(session_id)
@@ -71,6 +85,10 @@ def schedule(session_id: int, run: Callable[[threading.Event], None]) -> bool:
             return False
         job = Job()
         _jobs[session_id] = job
+
+    def set_stage(stage: str) -> None:
+        with _lock:
+            job.stage = stage
 
     def worker() -> None:
         with _gpu:
@@ -86,6 +104,18 @@ def schedule(session_id: int, run: Callable[[threading.Event], None]) -> bool:
                 # A failed pass is a visible state, not a log line nobody reads. The transcript it
                 # was rewriting is still whole, so this is recoverable by re-running.
                 log.exception("post-meeting pass failed for session %d", session_id)
+                _finish(job, "failed", f"{type(exc).__name__}: {exc}")
+                return
+        # The card is free from here on. A meeting can start while the followup is still talking
+        # to a language model, which is the entire point of the split.
+        if followup:
+            try:
+                followup(job.cancel, set_stage)
+            except Cancelled:
+                _finish(job, "cancelled")
+                return
+            except Exception as exc:
+                log.exception("post-meeting followup failed for session %d", session_id)
                 _finish(job, "failed", f"{type(exc).__name__}: {exc}")
                 return
         _finish(job, "refined")

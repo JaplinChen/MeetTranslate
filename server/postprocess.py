@@ -8,6 +8,7 @@ every segment at once, then rewrites the stored transcript.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from dataclasses import dataclass
@@ -236,6 +237,40 @@ def rewrite_session(store: Store, session_id: int, wav: Path, cfg: config.Config
     return utterances
 
 
+def _summary_markdown(store: Store, session_id: int, names: dict[str, str]) -> list[str]:
+    """The summary block of the export, every generated language in full.
+
+    The export's reader is whoever was not in the room, so unlike the page there is no interface
+    language to pick by — all of them go in. A summary generated before the transcript's latest
+    edit is still included, but says so: an exported file that silently carried outdated decisions
+    would be trusted precisely because it is a file.
+    """
+    row = store.summary(session_id)
+    if not row or row["status"] == "failed":
+        return []
+    try:
+        per_language = json.loads(row["json"])
+    except ValueError:
+        return []
+
+    session = store.session(session_id)
+    stale = bool(session) and int(session["lines_rev"]) != int(row["lines_rev"])
+
+    out = ["## 會議摘要", ""]
+    if stale:
+        out += ["> ⚠ 摘要生成後逐字稿曾被修改，內容可能與下方逐字稿不一致。", ""]
+    for lang, s in per_language.items():
+        out += [f"### {s.get('title') or lang}（{lang}）", "", s.get("summary", ""), ""]
+        if s.get("decisions"):
+            out += ["**決議**", ""] + [f"- {d}" for d in s["decisions"]] + [""]
+        if s.get("actions"):
+            out += ["**行動項目**", ""]
+            out += [f"- {names.get(a.get('speaker', ''), a.get('speaker')) or '（未指定）'}："
+                    f"{a.get('text', '')}" for a in s["actions"]]
+            out += [""]
+    return out
+
+
 def to_markdown(store: Store, session_id: int) -> str:
     """Speaker-attributed transcript with every language stacked under each turn."""
     lines = store.lines(session_id)
@@ -244,6 +279,7 @@ def to_markdown(store: Store, session_id: int) -> str:
         return "# 會議紀錄\n\n（無內容）\n"
 
     out = ["# 會議紀錄", ""]
+    out += _summary_markdown(store, session_id, names)
     speakers = sorted({l["speaker"] for l in lines})
     out += ["## 發言者", ""]
     out += [f"- **{names.get(code, code)}**" + ("" if code in names else "（未命名）") for code in speakers]

@@ -21,7 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import config, jobs, llm, postprocess, translate
+from . import config, jobs, llm, postmeeting, postprocess, translate
 from .hub import Hub
 from .store import Store
 
@@ -74,7 +74,11 @@ def _refine(session_id: int, wav: Path) -> None:
         postprocess.rewrite_session(store, session_id, wav, state["cfg"], _make_translator(),
                                     should_stop=cancel.is_set)
 
-    if not jobs.schedule(session_id, run):
+    # The LLM stages ride as a followup so the GPU gate is already released while they run —
+    # a meeting can start recording while this session is still being corrected and summarized.
+    llm_stages = postmeeting.followup(store, state["cfg"].languages, state["llm"], _api_key(),
+                                      session_id)
+    if not jobs.schedule(session_id, run, followup=llm_stages):
         log.info("session %d is already being refined", session_id)
 
 
