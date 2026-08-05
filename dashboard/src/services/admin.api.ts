@@ -8,16 +8,13 @@
 
 import { request } from './http.ts';
 
+/** What /api/health actually answers. It used to also declare a timestamp and a `details` block
+ *  with database, redis and queue sub-states — none of which this app has, and none of which the
+ *  endpoint has ever sent. */
 export interface HealthStatus {
   status: 'ok' | 'error';
-  timestamp?: string;
-  /** Running backend version (from package.json) — read live so the sidebar never shows a stale build. */
+  /** Running backend version, read from the repo-root VERSION file the server also reads. */
   version?: string;
-  details?: {
-    database?: { status: string };
-    redis?: { status: string };
-    queue?: { status: string };
-  };
 }
 
 // Mirrors server/llm.py DEFAULT_ENDPOINTS, plus 'azure', which the backend accepts as a
@@ -34,22 +31,20 @@ export type LlmProvider =
   | 'openrouter'
   | 'nvidia_nim';
 
+/** What /api/translate/config answers — exactly the keys llm.py's to_json() builds.
+ *
+ *  It used to declare nine more: enabled, groupIds, includeFromMe, minSendIntervalMs,
+ *  notifyOnFailure, maxMessageLength, maxTranslationsPerMinute and the two llmPromptTemplate
+ *  fields. All of them are message-relay settings from the project this dashboard came from, all
+ *  were non-optional, and none has ever arrived. A non-optional field that is always undefined is
+ *  the shape that cost a blank transcript page in #37. */
 export interface TranslateConfig {
-  enabled: boolean;
-  groupIds: string[];
-  includeFromMe: boolean;
-  minSendIntervalMs: number;
-  notifyOnFailure: boolean;
-  maxMessageLength: number;
-  maxTranslationsPerMinute: number;
   llmProvider: LlmProvider;
   llmEndpoint: string;
   llmModel: string;
   llmApiKey: string;
   llmTemperature: number;
   llmFallbackModels: string[];
-  llmPromptTemplate: string;
-  llmPromptTemplateDefault?: string;
   apiKeySet?: boolean;
   llmProviderConfigs: Record<string, LlmProviderSaved>;
 }
@@ -95,7 +90,8 @@ export const healthApi = {
 
 export const translateApi = {
   getConfig: () => request<TranslateConfig>('/translate/config'),
-  updateConfig: ({ llmPromptTemplateDefault: _readonly, apiKeySet: _mask, ...config }: Partial<TranslateConfig>) =>
+  // apiKeySet is a mask the server computes; sending it back would be meaningless.
+  updateConfig: ({ apiKeySet: _mask, ...config }: Partial<TranslateConfig>) =>
     request<TranslateConfig>('/translate/config', {
       method: 'PUT',
       body: JSON.stringify(config),
