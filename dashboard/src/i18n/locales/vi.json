@@ -75,7 +75,8 @@
     "clipLabel": "Phát mẫu giọng của {{code}}",
     "playLine": "Phát câu này",
     "stopLine": "Dừng",
-    "playFailed": "Câu này không có âm thanh."
+    "playFailed": "Câu này không có âm thanh.",
+    "noRecording": "Bản ghi của cuộc họp này không còn trên đĩa, nên không thể phát lại."
   },
   "glossary": {
     "title": "Bảng thuật ngữ",

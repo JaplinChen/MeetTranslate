@@ -75,7 +75,8 @@
     "clipLabel": "播放 {{code}} 的聲音片段",
     "playLine": "播放這一句",
     "stopLine": "停止",
-    "playFailed": "這一句沒有可播放的錄音。"
+    "playFailed": "這一句沒有可播放的錄音。",
+    "noRecording": "這場會議的錄音檔已經不在，所以這裡的內容都無法播放。"
   },
   "glossary": {
     "title": "詞彙表",

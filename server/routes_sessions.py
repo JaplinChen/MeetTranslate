@@ -30,7 +30,11 @@ def get_sessions() -> list[dict]:
     still being refined before the user picks one, instead of after.
     """
     running = jobs.states()
-    return [{**s, "refine": running.get(s["id"], {"state": "idle", "error": ""})}
+    # Whether the recording is still on disk. Everything that reads audio — playing a line, hearing
+    # a speaker, re-deriving the transcript — fails without it, and the page could only find out by
+    # trying: 943 play buttons that each produce the same error is not a way to learn that.
+    return [{**s, "hasRecording": Path(s["wav_path"]).is_file(),
+             "refine": running.get(s["id"], {"state": "idle", "error": ""})}
             for s in main.store.sessions()]
 
 

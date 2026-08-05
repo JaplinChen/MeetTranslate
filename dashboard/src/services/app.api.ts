@@ -72,6 +72,8 @@ export interface SessionSummary {
   wav_path: string;
   lines: number;
   refine: { state: RefineState; error: string };
+  /** Whether the recording this session was made from is still on disk. */
+  hasRecording: boolean;
 }
 
 /** How a line ended up in the transcript. Distinct from `refined`, which is an LLM revision. */

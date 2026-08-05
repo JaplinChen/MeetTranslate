@@ -16,13 +16,14 @@ interface Props {
   draft: { id: number; text: string } | null; // the line being edited anywhere in the transcript
   rerunning: number | null;
   playing: number | null; // the line whose audio is currently playing, anywhere in the transcript
+  playable: boolean; // false once the session's recording is gone from disk
   onDraft: (draft: { id: number; text: string } | null) => void;
   onSave: (lineId: number, source: string, previous: string) => void;
   onRerun: (lineId: number) => void;
   onPlay: (lineId: number) => void;
 }
 
-export function TranscriptRow({ line, speaker, langs, locked, draft, rerunning, playing, onDraft, onSave, onRerun, onPlay }: Props) {
+export function TranscriptRow({ line, speaker, langs, locked, draft, rerunning, playing, playable, onDraft, onSave, onRerun, onPlay }: Props) {
   const { t } = useTranslation();
   const editing = draft?.id === line.id ? draft : null;
 
@@ -34,8 +35,9 @@ export function TranscriptRow({ line, speaker, langs, locked, draft, rerunning, 
         <button
           type="button"
           className="sess-play"
-          title={playing === line.id ? t('sessions.stopLine') : t('sessions.playLine')}
-          aria-label={playing === line.id ? t('sessions.stopLine') : t('sessions.playLine')}
+          disabled={!playable}
+          title={!playable ? t('sessions.noRecording') : playing === line.id ? t('sessions.stopLine') : t('sessions.playLine')}
+          aria-label={!playable ? t('sessions.noRecording') : playing === line.id ? t('sessions.stopLine') : t('sessions.playLine')}
           onClick={() => onPlay(line.id)}
         >
           {playing === line.id ? <Square size={11} /> : <Play size={11} />}

@@ -42,7 +42,11 @@ export function Sessions() {
 
   const fail = (err: unknown) => toast.error(err instanceof Error ? err.message : String(err));
 
-  const refine: RefineState = sessions.find(s => s.id === selected)?.refine.state ?? 'idle';
+  const current = sessions.find(s => s.id === selected);
+  const refine: RefineState = current?.refine.state ?? 'idle';
+  // Playing a line, hearing a speaker and re-deriving the transcript all read the recording. When
+  // it is gone they all fail the same way, so the page says so once instead of per click.
+  const hasRecording = current?.hasRecording ?? true;
   // The pass calls replace_lines, which drops every line and writes new ones with new ids. An edit
   // saved during that window is silently discarded while the screen shows it saved, so editing is
   // closed rather than left to look like it worked.
@@ -138,7 +142,7 @@ export function Sessions() {
   // to be reachable from the line. One player for the whole transcript rather than one per row:
   // clicking a second line replaces what is playing, which is also the behaviour you want.
   const playLine = (lineId: number) => {
-    if (selected === null) return;
+    if (selected === null || !hasRecording) return;
     const audio = (player.current ??= new Audio());
     if (playing === lineId) {
       audio.pause();
@@ -277,6 +281,7 @@ export function Sessions() {
       {active === 'speakers' && (
         <section className="etable-panel" role="tabpanel" id="sess-panel-speakers" aria-labelledby="sess-tab-speakers">
           <p className="sess-hint">{t('sessions.speakersHint')}</p>
+          {!hasRecording && <p className="sess-no-audio">{t('sessions.noRecording')}</p>}
           <div className="sess-names">
             {codes.map(code => (
               <div key={code} className="sess-name">
@@ -289,14 +294,17 @@ export function Sessions() {
                   />
                 </label>
                 {/* preload="none" because a meeting can have 35 of these and none of them is
-                    wanted until someone clicks. */}
-                <audio
-                  className="sess-clip"
-                  controls
-                  preload="none"
-                  aria-label={t('sessions.clipLabel', { code })}
-                  src={`${API_BASE_URL}/sessions/${selected}/speakers/${encodeURIComponent(code)}/clip`}
-                />
+                    wanted until someone clicks. Omitted entirely when the recording is gone —
+                    35 players that can only fail are worse than none. */}
+                {hasRecording && (
+                  <audio
+                    className="sess-clip"
+                    controls
+                    preload="none"
+                    aria-label={t('sessions.clipLabel', { code })}
+                    src={`${API_BASE_URL}/sessions/${selected}/speakers/${encodeURIComponent(code)}/clip`}
+                  />
+                )}
               </div>
             ))}
           </div>
@@ -313,6 +321,7 @@ export function Sessions() {
             )}
           </h3>
           {locked && <p className="sess-hint">{t('sessions.refiningHint')}</p>}
+          {!hasRecording && <p className="sess-no-audio">{t('sessions.noRecording')}</p>}
           {failed.length > 0 && (
             // Aggregated as well as marked inline: a two-hour meeting failing 5% is forty-odd
             // marks scattered through the transcript, and nobody finds those by scrolling.
@@ -329,6 +338,7 @@ export function Sessions() {
                 draft={editing}
                 rerunning={rerunning}
                 playing={playing}
+                playable={hasRecording}
                 onDraft={setEditing}
                 onSave={saveLine}
                 onRerun={rerunLine}
