@@ -217,6 +217,9 @@
     "noCorrections": "還沒學到任何修正。到逐字稿上點擊句子修改即可。",
     "forget": "忘掉這一項",
     "rename": "點一下改名",
-    "sessions": "會議 {{count}} 場"
+    "sessions": "會議 {{count}} 場",
+    "edit": "編輯這條修正",
+    "editWrong": "辨識成什麼",
+    "editRight": "實際說什麼"
   }
 }

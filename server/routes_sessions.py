@@ -66,6 +66,17 @@ def get_corrections() -> list[dict]:
     return [{"wrong": w, "right": r} for w, r in main.store.corrections().items()]
 
 
+@router.put("/api/corrections/{wrong}")
+def put_correction(wrong: str, body: dict) -> list[dict]:
+    try:
+        main.store.edit_correction(wrong, str(body.get("wrong", wrong)), str(body.get("right", "")))
+    except KeyError as exc:
+        raise HTTPException(404, f"no correction for {wrong}") from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return get_corrections()
+
+
 @router.delete("/api/corrections/{wrong}")
 def delete_correction(wrong: str) -> list[dict]:
     main.store.forget_correction(wrong)

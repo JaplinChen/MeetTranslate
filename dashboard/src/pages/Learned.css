@@ -83,6 +83,51 @@
   flex: none;
 }
 
+/* The two boxes take the space the two spans had, so a row does not jump when it opens. */
+.learned-page .learned-pair-edit {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  gap: 10px;
+  align-items: center;
+}
+
+.learned-page .learned-pair-edit .learned-rename {
+  flex: 1;
+  min-width: 0;
+}
+
+.learned-page .learned-edit,
+.learned-page .learned-save {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  padding: 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+/* Inside the form the save button is already last; the trash beside it keeps the auto margin. */
+.learned-page .learned-pair-edit .learned-save {
+  margin-left: 0;
+  color: var(--primary);
+}
+
+.learned-page .learned-edit:hover:not(:disabled),
+.learned-page .learned-save:hover:not(:disabled) {
+  border-color: var(--border);
+  color: var(--text-primary);
+}
+
+.learned-page .learned-edit:disabled,
+.learned-page .learned-save:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .learned-page .learned-forget {
   margin-left: auto;
   display: inline-flex;

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ArrowRight, Trash2 } from 'lucide-react';
+import { ArrowRight, Check, Pencil, Trash2 } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { PageSkeleton } from '../components/PageSkeleton';
 import { useToast } from '../components/Toast';
@@ -28,6 +28,8 @@ export function Learned() {
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
+  const [editingPair, setEditingPair] = useState<string | null>(null);
+  const [pair, setPair] = useState({ wrong: '', right: '' });
 
   const fail = (err: unknown) => toast.error(err instanceof Error ? err.message : String(err));
 
@@ -64,6 +66,21 @@ export function Learned() {
     setBusy(true);
     try {
       setSpeakers(await appApi.renameSpeaker(name, next));
+    } catch (err) {
+      fail(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Both sides are editable: the recogniser's mishearing is worth fixing when it was itself a typo,
+  // and the replacement is what actually lands in every future transcript.
+  const saveCorrection = async (original: string) => {
+    setEditingPair(null);
+    if (pair.wrong.trim() === original && pair.right.trim() === corrections.find(c => c.wrong === original)?.right) return;
+    setBusy(true);
+    try {
+      setCorrections(await appApi.editCorrection(original, { wrong: pair.wrong.trim(), right: pair.right.trim() }));
     } catch (err) {
       fail(err);
     } finally {
@@ -159,9 +176,54 @@ export function Learned() {
           <ul className="learned-list">
             {corrections.map(c => (
               <li key={c.wrong} className="learned-row">
-                <span className="learned-wrong">{c.wrong}</span>
-                <ArrowRight className="learned-arrow" size={14} />
-                <span className="learned-right">{c.right}</span>
+                {editingPair === c.wrong ? (
+                  // Enter saves from either box, Escape abandons — the same keys the speaker
+                  // rename above already uses.
+                  <form
+                    className="learned-pair-edit"
+                    onSubmit={e => {
+                      e.preventDefault();
+                      saveCorrection(c.wrong);
+                    }}
+                  >
+                    <input
+                      className="learned-rename"
+                      autoFocus
+                      aria-label={t('learned.editWrong')}
+                      value={pair.wrong}
+                      onChange={e => setPair(p => ({ ...p, wrong: e.target.value }))}
+                      onKeyDown={e => e.key === 'Escape' && setEditingPair(null)}
+                    />
+                    <ArrowRight className="learned-arrow" size={14} />
+                    <input
+                      className="learned-rename"
+                      aria-label={t('learned.editRight')}
+                      value={pair.right}
+                      onChange={e => setPair(p => ({ ...p, right: e.target.value }))}
+                      onKeyDown={e => e.key === 'Escape' && setEditingPair(null)}
+                    />
+                    <button className="learned-save" disabled={busy} title={t('common.save')}>
+                      <Check size={16} />
+                    </button>
+                  </form>
+                ) : (
+                  <>
+                    <span className="learned-wrong">{c.wrong}</span>
+                    <ArrowRight className="learned-arrow" size={14} />
+                    <span className="learned-right">{c.right}</span>
+                    <button
+                      className="learned-edit"
+                      disabled={busy}
+                      title={t('learned.edit')}
+                      onClick={() => {
+                        setPair({ wrong: c.wrong, right: c.right });
+                        setEditingPair(c.wrong);
+                      }}
+                    >
+                      <Pencil size={16} />
+                    </button>
+                  </>
+                )}
                 <button
                   className="learned-forget"
                   disabled={busy}

@@ -136,6 +136,12 @@ export const appApi = {
   forgetSpeaker: (name: string) =>
     request<KnownSpeaker[]>(`/speakers/known/${encodeURIComponent(name)}`, { method: 'DELETE' }),
   corrections: () => request<LearnedCorrection[]>('/corrections'),
+  // `wrong` is the key, so sending a different one renames the pair rather than adding another.
+  editCorrection: (wrong: string, next: LearnedCorrection) =>
+    request<LearnedCorrection[]>(`/corrections/${encodeURIComponent(wrong)}`, {
+      method: 'PUT',
+      body: JSON.stringify(next),
+    }),
   forgetCorrection: (wrong: string) =>
     request<LearnedCorrection[]>(`/corrections/${encodeURIComponent(wrong)}`, { method: 'DELETE' }),
   setLineSource: (id: number, lineId: number, source: string) =>
