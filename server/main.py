@@ -137,11 +137,24 @@ for _r in (routes_core, routes_glossary, routes_llm, routes_sessions, routes_spe
 _transcript = routes_sessions._transcript
 
 
-# ── static dashboard ────────────────────────────────────────────────────
+# ── unknown API paths ───────────────────────────────────────────────────
 
-# Detail carried by the SPA guard's 404, so a caller can tell "this build has no such endpoint"
-# from "that endpoint says no". Read by the dashboard; changing it changes a contract.
+# Detail carried by the 404 for an /api path this build has no route for, so a caller can tell it
+# from "that endpoint says no" — the same status, opposite problems. Read by the dashboard to say
+# "restart the backend" instead of reporting the absence of data that is actually there.
+# Changing this string changes a contract; both sides assert it.
 NO_SUCH_ENDPOINT = "no such endpoint in this build"
+
+
+# Registered after every real router, and unconditionally: this is an API guarantee, and hanging it
+# off the static-dashboard block made it depend on whether the frontend had been built — true when
+# serving the bundled app, false on a bare API deployment and in CI.
+@app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+def unknown_api(path: str) -> None:
+    raise HTTPException(404, NO_SUCH_ENDPOINT)
+
+
+# ── static dashboard ────────────────────────────────────────────────────
 
 if DIST.is_dir():
     app.mount("/assets", StaticFiles(directory=DIST / "assets"), name="assets")
@@ -149,18 +162,9 @@ if DIST.is_dir():
     @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
     def spa(path: str) -> FileResponse:
         """Client-side routing: unknown paths return index.html, real files are served as-is."""
-        # Without this an unknown /api/* path would return the HTML shell with status 200, which
-        # surfaces as a confusing JSON parse error in the dashboard instead of a plain 404.
-        #
-        # Every method, not just GET: a POST to an endpoint this build does not have used to fall
-        # through to a GET-only route and come back as a bare 405, which reads as "wrong method"
-        # when the truth is "no such endpoint" — the shape a stale server takes.
-        if path.startswith("api/"):
-            # Named, not "Not Found": this 404 and an endpoint answering "no such thing" are the
-            # same status but different problems, and the caller cannot tell them apart from the
-            # code alone. The dashboard reads this to say "restart the backend" instead of
-            # reporting the absence of data that is actually there.
-            raise HTTPException(404, NO_SUCH_ENDPOINT)
+        # /api paths never reach here — unknown_api above claims them, for every method, so a
+        # stale endpoint answers a named 404 rather than the HTML shell with status 200 (which
+        # surfaced as a JSON parse error) or a bare 405 from falling through to a GET-only route.
         candidate = DIST / path
         if path and candidate.is_file():
             return FileResponse(candidate)
