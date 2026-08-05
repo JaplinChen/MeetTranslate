@@ -15,15 +15,15 @@ import './components/etable/shell.css';
 import './components/etable/table.css';
 import './components/etable/controls.css';
 
-const Capture = lazy(() => import('./pages/Capture').then(m => ({ default: m.Capture })));
-const Sessions = lazy(() => import('./pages/Sessions').then(m => ({ default: m.Sessions })));
-const Glossary = lazy(() => import('./pages/Glossary').then(m => ({ default: m.Glossary })));
-const Learned = lazy(() => import('./pages/Learned').then(m => ({ default: m.Learned })));
-const Live = lazy(() => import('./pages/Live').then(m => ({ default: m.Live })));
-const Display = lazy(() => import('./pages/Display').then(m => ({ default: m.Display })));
-const LlmSettings = lazy(() => import('./pages/LlmSettings').then(m => ({ default: m.LlmSettings })));
-const KeyProxy = lazy(() => import('./pages/KeyProxy').then(m => ({ default: m.KeyProxy })));
-const Settings = lazy(() => import('./pages/Settings').then(m => ({ default: m.Settings })));
+const Capture = lazy('Capture', () => import('./pages/Capture').then(m => ({ default: m.Capture })));
+const Sessions = lazy('Sessions', () => import('./pages/Sessions').then(m => ({ default: m.Sessions })));
+const Glossary = lazy('Glossary', () => import('./pages/Glossary').then(m => ({ default: m.Glossary })));
+const Learned = lazy('Learned', () => import('./pages/Learned').then(m => ({ default: m.Learned })));
+const Live = lazy('Live', () => import('./pages/Live').then(m => ({ default: m.Live })));
+const Display = lazy('Display', () => import('./pages/Display').then(m => ({ default: m.Display })));
+const LlmSettings = lazy('LlmSettings', () => import('./pages/LlmSettings').then(m => ({ default: m.LlmSettings })));
+const KeyProxy = lazy('KeyProxy', () => import('./pages/KeyProxy').then(m => ({ default: m.KeyProxy })));
+const Settings = lazy('Settings', () => import('./pages/Settings').then(m => ({ default: m.Settings })));
 
 const loadingFallback = (
   <div className="app-loading">
