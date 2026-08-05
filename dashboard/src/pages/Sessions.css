@@ -353,3 +353,29 @@
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+/* Same shape as the reprocess control beside it; the auto margin lives on whichever comes first. */
+.sess-page .sess-export {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-inline-start: auto;
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.sess-page .sess-export:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  text-decoration: none;
+}
+
+/* With the export link taking the auto margin, reprocess sits directly beside it. */
+.sess-page .sess-export ~ .sess-reprocess {
+  margin-inline-start: 0;
+}
