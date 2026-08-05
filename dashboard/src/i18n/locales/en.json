@@ -86,7 +86,9 @@
     "playUnreachable": "Could not reach the server to play this line.",
     "playStaleServer": "This build of the server has no playback endpoint — restart the backend to pick it up.",
     "searchPlaceholder": "Search this transcript",
-    "searchEmpty": "No line contains “{{query}}”."
+    "searchEmpty": "No line contains “{{query}}”.",
+    "export": "Export",
+    "exportHint": "Download this transcript as Markdown — speaker names, timestamps and every translation as they stand now."
   },
   "glossary": {
     "title": "Glossary",

@@ -86,7 +86,9 @@
     "playUnreachable": "Không kết nối được máy chủ để phát câu này.",
     "playStaleServer": "Bản máy chủ đang chạy chưa có endpoint phát lại — hãy khởi động lại backend.",
     "searchPlaceholder": "Tìm trong bản ghi này",
-    "searchEmpty": "Không có dòng nào chứa “{{query}}”."
+    "searchEmpty": "Không có dòng nào chứa “{{query}}”.",
+    "export": "Xuất",
+    "exportHint": "Tải bản ghi này dưới dạng Markdown — tên người nói, mốc thời gian và mọi bản dịch hiện tại."
   },
   "glossary": {
     "title": "Bảng thuật ngữ",

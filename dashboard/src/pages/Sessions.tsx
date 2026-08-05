@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FileText, RefreshCw, Search, Upload } from 'lucide-react';
+import { Download, FileText, RefreshCw, Search, Upload } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { PageSkeleton } from '../components/PageSkeleton';
 import { TranscriptRow } from '../components/sessions/TranscriptRow';
@@ -370,6 +370,17 @@ export function Sessions() {
             {refine !== 'idle' && (
               <span className={`sess-refine sess-refine-${refine}`}>{refineLabel[refine]}</span>
             )}
+            {/* A plain link, not a fetch-and-blob: the browser already knows how to save a
+                response, and `download` names the file after the meeting rather than "markdown". */}
+            <a
+              className="sess-export"
+              href={`${API_BASE_URL}/sessions/${selected}/markdown`}
+              download={`${t('sessions.title')}-${(current?.started ?? '').slice(0, 10)}.md`}
+              title={t('sessions.exportHint')}
+            >
+              <Download size={13} />
+              {t('sessions.export')}
+            </a>
             <button
               type="button"
               className="sess-reprocess"

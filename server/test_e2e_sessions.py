@@ -239,3 +239,26 @@ def test_a_transcript_line_can_be_played_back(client: TestClient) -> None:
     other = seed_session("elsewhere.wav")
     assert client.get(f"/api/sessions/{other}/lines/{short}/clip").status_code == 404
     assert client.get(f"/api/sessions/{session}/lines/999999/clip").status_code == 404
+
+
+def test_a_session_exports_as_markdown(client: TestClient) -> None:
+    """The point of correcting 943 lines is taking the result somewhere else."""
+    session = seed_session("exportable.wav")
+    main.store.add_line(session, 65.0, "S2", "zh", "切削液要換了", {"en": "the coolant needs changing"})
+    main.store.set_speaker_name(session, "S2", "王經理")
+
+    md = client.get(f"/api/sessions/{session}/markdown")
+    assert md.status_code == 200
+    assert md.headers["content-type"].startswith("text/markdown")
+    body = md.text
+
+    # A named speaker appears by name; one nobody named is still listed, marked as such.
+    assert "- **王經理**" in body
+    assert "（未命名）" in body
+
+    # Timestamp, speaker and the line itself, with the translation stacked under it.
+    assert "**[1:05] 王經理**" in body
+    assert "> 切削液要換了" in body
+    assert "> _en_ the coolant needs changing" in body
+
+    assert client.get("/api/sessions/999999/markdown").status_code == 404
