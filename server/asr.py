@@ -162,6 +162,21 @@ def default_threads() -> int:
     return min(4, max(2, (os.cpu_count() or 4) // 4))
 
 
+def missing_models(cfg: config.Config) -> list[str]:
+    """Which of the files a live pipeline needs are not on disk, named so they can be gone and got.
+
+    Constructing a Transcriber does not check — recognizers are built on first use, and that is
+    also how the language-selection logic is tested on machines with no models. The VAD is worse:
+    sherpa raises its own error mentioning a path, from a background thread.
+    """
+    absent = [str(p) for p in (config.VAD_MODEL, config.SPEAKER_MODEL) if not p.is_file()]
+    try:
+        Transcriber(model_dir=cfg.whisper_dir(), languages=cfg.languages)._paths()
+    except FileNotFoundError as exc:
+        absent.append(str(exc))
+    return absent
+
+
 class Transcriber:
     """Whisper recognizers, one per language, created on first use."""
 
@@ -178,12 +193,6 @@ class Transcriber:
         # Anything outside the configured set is a detection failure, not a participant.
         self._languages = list(languages or [])
         self._cache: dict[str, sherpa_onnx.OfflineRecognizer] = {}
-        # Recognizers are built on first use, but the files they need are checked now. Left until
-        # the first utterance, a machine with no weights downloaded accepted "start recording",
-        # captured the whole meeting, and produced nothing — the error happened on the pipeline
-        # thread, where the only trace was a log line nobody was watching. Four is_file() calls
-        # turn that into a refusal before anything is recorded.
-        self._paths()
 
     def _paths(self) -> tuple[str, str, str]:
         stem = self._dir.name.replace("sherpa-onnx-whisper-", "")
