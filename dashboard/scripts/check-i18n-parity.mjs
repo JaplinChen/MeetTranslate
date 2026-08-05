@@ -132,6 +132,36 @@ for (const file of localeFiles) {
   }
 }
 
+// 4. STRINGS THAT NEVER REACHED i18n AT ALL (hard fail). Everything above compares locales to
+//    en.json, so a literal typed straight into JSX is invisible to it — en.json does not have the
+//    key either, and nothing is out of parity. That is how the subtitle page, the one screen shown
+//    to a room that by definition does not share a language, ended up hard-coded.
+//    CJK only: it catches an author writing in their own language, which is the way this actually
+//    happens. An English literal still slips through — a real check needs the linter's AST.
+const SOURCE_DIR = join(__dirname, '..', 'src');
+const CJK_IN_JSX = /(?:>|\{')\s*[^<>{}'"]*[㐀-鿿][^<>{}'"]*(?:<|'\})/;
+
+function* sourceFiles(dir) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, entry.name);
+    if (entry.isDirectory()) yield* sourceFiles(p);
+    else if (entry.name.endsWith('.tsx')) yield p;
+  }
+}
+
+const hardCoded = [];
+for (const file of sourceFiles(SOURCE_DIR)) {
+  readFileSync(file, 'utf8').split('\n').forEach((line, i) => {
+    if (CJK_IN_JSX.test(line)) hardCoded.push(`${file.slice(SOURCE_DIR.length + 1)}:${i + 1}: ${line.trim()}`);
+  });
+}
+
+if (hardCoded.length > 0) {
+  hasErrors = true;
+  console.error(`\n[FAIL] ${hardCoded.length} hard-coded CJK string(s) in JSX — move them into the locales:`);
+  for (const h of hardCoded) console.error(`  ! ${h}`);
+}
+
 if (hasErrors) {
   console.error('\ni18n parity check FAILED.');
   process.exit(1);

@@ -117,6 +117,11 @@
     "colourSpeakers": "以顏色區分發言者",
     "openLive": "開啟字幕頁（投影到電視後按 F11 全螢幕）"
   },
+  "live": {
+    "title": "即時字幕",
+    "connecting": "連線中…",
+    "waiting": "等待發言…"
+  },
   "llm": {
     "subtitle": "設定驅動自動翻譯的模型。",
     "save": "儲存",
