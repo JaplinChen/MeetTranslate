@@ -178,6 +178,12 @@ class Transcriber:
         # Anything outside the configured set is a detection failure, not a participant.
         self._languages = list(languages or [])
         self._cache: dict[str, sherpa_onnx.OfflineRecognizer] = {}
+        # Recognizers are built on first use, but the files they need are checked now. Left until
+        # the first utterance, a machine with no weights downloaded accepted "start recording",
+        # captured the whole meeting, and produced nothing — the error happened on the pipeline
+        # thread, where the only trace was a log line nobody was watching. Four is_file() calls
+        # turn that into a refusal before anything is recorded.
+        self._paths()
 
     def _paths(self) -> tuple[str, str, str]:
         stem = self._dir.name.replace("sherpa-onnx-whisper-", "")

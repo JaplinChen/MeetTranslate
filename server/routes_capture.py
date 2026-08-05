@@ -39,7 +39,14 @@ def start_recording() -> dict:
     # and a stranded permit is silent: every later pass simply waits, forever, on nothing.
     try:
         session_id = main.store.start_session(time.strftime("%Y-%m-%dT%H:%M:%S"), str(path))
-        pipe = Pipeline(cfg, main.store, session_id, main._make_translator(), main.hub.publish)
+        try:
+            # Constructing the pipeline is what loads the recogniser, the VAD and the speaker model
+            # off disk. Missing weights raised out of here as an unhandled error, so the page showed
+            # "HTTP 500" — while the exception itself named the exact file. That message is the
+            # whole answer on a machine where the models were never downloaded.
+            pipe = Pipeline(cfg, main.store, session_id, main._make_translator(), main.hub.publish)
+        except FileNotFoundError as exc:
+            raise HTTPException(503, f"speech model not ready: {exc}") from exc
         rec = audio.Recorder(candidates, tap=pipe.tap)
         try:
             rec.start(path)

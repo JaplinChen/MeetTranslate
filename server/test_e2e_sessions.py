@@ -262,3 +262,45 @@ def test_a_session_exports_as_markdown(client: TestClient) -> None:
     assert "> _en_ the coolant needs changing" in body
 
     assert client.get("/api/sessions/999999/markdown").status_code == 404
+
+
+def test_starting_without_models_says_which_file_is_missing(client: TestClient) -> None:
+    """The one thing a first run gets wrong, and the app knows exactly what it is.
+
+    Loading the recogniser happens while the request is still open, so a missing weights file left
+    the route as an unhandled FileNotFoundError — a bare 500 with no body, which the dashboard can
+    only render as "HTTP 500". The exception names the file; the answer is to say so.
+    """
+    import os
+
+    from . import audio
+
+    cfg = main.state["cfg"]
+    saved = (cfg.whisper_model, config.WHISPER_DIRS["small"], audio.candidate_devices,
+             os.environ.get("MEETTRANSLATE_NO_GPU"))
+    # Deterministic on any machine: point the size this config resolves to at a path that is not
+    # there (whisper_dir falls back to "small" for anything it does not know), keep the GPU
+    # recogniser out of it since that one would succeed, and stub device resolution because it runs
+    # first and fails on any runner without a virtual audio device.
+    cfg.whisper_model = "small"
+    config.WHISPER_DIRS["small"] = config.MODELS_DIR / "definitely-not-downloaded"
+    audio.candidate_devices = lambda fragment: [None]
+    os.environ["MEETTRANSLATE_NO_GPU"] = "1"
+    try:
+        started = client.post("/api/recording/start")
+    finally:
+        cfg.whisper_model, config.WHISPER_DIRS["small"], audio.candidate_devices, no_gpu = saved
+        if no_gpu is None:
+            os.environ.pop("MEETTRANSLATE_NO_GPU", None)
+        else:
+            os.environ["MEETTRANSLATE_NO_GPU"] = no_gpu
+
+    assert started.status_code != 500, started.text
+    assert started.status_code == 503, f"{started.status_code}: {started.text}"
+    detail = started.json()["detail"]
+    assert "model" in detail.lower(), detail
+    # It has to name the thing to go and get, not just say something is missing.
+    assert "whisper" in detail.lower() or "weights" in detail.lower(), detail
+
+    # And the failed start must not leave the card claimed or a session half-open.
+    assert client.get("/api/recording/status").json()["recording"] is False
