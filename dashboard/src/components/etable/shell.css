@@ -53,31 +53,6 @@
   cursor: not-allowed;
 }
 
-.etable-page .etable-tabs {
-  display: inline-flex;
-  gap: var(--space-1);
-  margin-bottom: var(--space-5);
-  padding: var(--space-1);
-  background: var(--bg-light);
-  border: 1px solid var(--border);
-  border-radius: calc(var(--radius) + 0.25rem);
-}
-
-.etable-page .etable-tab {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-4);
-  border: none;
-  background: none;
-  cursor: pointer;
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-  border-radius: var(--radius);
-  transition: background 0.15s, color 0.15s;
-}
-
 .etable-page .etable-tab:hover:not(.active) {
   color: var(--text-primary);
   background: var(--bg-card, var(--bg-white));
@@ -120,7 +95,6 @@
   padding: var(--space-5);
 }
 
-
 .etable-page .etable-panel-title {
   margin: 0 0 var(--space-4);
   font-size: 1rem;
@@ -145,38 +119,6 @@
   font-weight: 600;
 }
 
-.etable-page .etable-add {
-  display: flex;
-  /* One row on desktop: key → val → category → button all inline. Narrow viewports wrap
-     (below) so inputs don't get crushed to 72px and clip their placeholders. */
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: var(--space-2);
-  margin-bottom: var(--space-3);
-}
-
-@media (max-width: 640px) {
-  .etable-page .etable-add {
-    flex-wrap: wrap;
-  }
-}
-
-.etable-page .etable-add input {
-  flex: 1 1 6rem;
-  min-width: 0;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-light);
-  color: var(--text-primary);
-  font-size: 0.9375rem;
-}
-
-.etable-page .etable-arrow {
-  color: var(--text-secondary);
-  font-size: 1.1rem;
-}
-
 .etable-page .etable-search {
   position: relative;
   margin-top: var(--space-2);
@@ -189,11 +131,6 @@
 .etable-page .etable-search input {
   flex: 1;
   min-width: 0;
-}
-
-.etable-page .etable-cat-filter {
-  flex: 0 0 auto;
-  height: 100%;
 }
 
 .etable-page .etable-search-icon {
