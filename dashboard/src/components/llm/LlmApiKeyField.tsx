@@ -2,6 +2,7 @@ import { useId, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Loader2, Check, Eye, EyeOff, ExternalLink } from 'lucide-react';
 import type { ProviderMeta } from './providerMeta';
+import { NO_AUTOFILL } from '../../utils/noAutofill';
 
 interface Props {
   meta: ProviderMeta;
@@ -52,13 +53,7 @@ export function LlmApiKeyField({
             value={apiKey}
             placeholder={keySet && !apiKey ? t('llm.apiKeyStored') : undefined}
             disabled={!canWrite}
-            // Chrome ignores autoComplete="off" on password fields and autofills the site's saved
-            // login key here — which would silently overwrite the provider key on save. "new-password"
-            // is the reliable opt-out; the data-* attrs stop 1Password/LastPass doing the same.
-            autoComplete="new-password"
-            data-1p-ignore
-            data-lpignore="true"
-            data-form-type="other"
+            {...NO_AUTOFILL}
             onChange={e => onChange(e.target.value)}
           />
           {/* Named, because the icon is the whole button — unlabelled it announces as "button".
