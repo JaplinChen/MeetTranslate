@@ -88,7 +88,8 @@
     "searchPlaceholder": "Tìm trong bản ghi này",
     "searchEmpty": "Không có dòng nào chứa “{{query}}”.",
     "export": "Xuất",
-    "exportHint": "Tải bản ghi này dưới dạng Markdown — tên người nói, mốc thời gian và mọi bản dịch hiện tại."
+    "exportHint": "Tải bản ghi này dưới dạng Markdown — tên người nói, mốc thời gian và mọi bản dịch hiện tại.",
+    "pick": "Chọn cuộc họp"
   },
   "glossary": {
     "title": "Bảng thuật ngữ",
