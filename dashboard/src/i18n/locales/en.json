@@ -89,7 +89,8 @@
     "searchEmpty": "No line contains “{{query}}”.",
     "export": "Export",
     "exportHint": "Download this transcript as Markdown — speaker names, timestamps and every translation as they stand now.",
-    "pick": "Which meeting"
+    "pick": "Which meeting",
+    "refineFailedReason": "The post-meeting pass failed: {{reason}}"
   },
   "glossary": {
     "title": "Glossary",

@@ -379,3 +379,15 @@
 .sess-page .sess-export ~ .sess-reprocess {
   margin-inline-start: 0;
 }
+
+/* The pass failed and the server said why. Stated where the chip is, not left in a tooltip. */
+.sess-page .sess-refine-error {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--error);
+  border-inline-start: 3px solid var(--error);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
