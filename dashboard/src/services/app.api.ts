@@ -159,6 +159,4 @@ export const appApi = {
     request<{ session: number; state: RefineState; error: string }>(`/sessions/${id}/reprocess`, {
       method: 'POST',
     }),
-  refineState: (id: number) =>
-    request<{ session: number; state: RefineState; error: string }>(`/sessions/${id}/refine`),
 };
