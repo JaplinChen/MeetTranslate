@@ -156,6 +156,38 @@ for (const file of sourceFiles(SOURCE_DIR)) {
   });
 }
 
+// 5. KEYS THE CODE ASKS FOR THAT en.json DOES NOT HAVE (hard fail). Parity compares locales against
+//    en.json, so a key missing from *every* locale is missing from the reference too and nothing is
+//    out of parity — it just renders as the literal `theme.dark` on screen. i18next does warn, but
+//    only in dev and only to the console, which is where the five theme mode labels sat.
+//
+//    Static `t('a.b')` calls are read directly. Keys built at runtime (`t(`theme.${mode}`)`) cannot
+//    be, so the families that do that declare their members here instead.
+const DYNAMIC_KEY_FAMILIES = {
+  // AppearanceMenu renders one button per Theme in useTheme.ts.
+  theme: ['light', 'dark', 'system', 'anthropic', 'anthropic-dark'],
+};
+
+const referenced = new Set();
+for (const [family, members] of Object.entries(DYNAMIC_KEY_FAMILIES)) {
+  for (const member of members) referenced.add(`${family}.${member}`);
+}
+for (const file of sourceFiles(SOURCE_DIR)) {
+  const src = readFileSync(file, 'utf8');
+  // t('some.key') — skip calls carrying a defaultValue, which render fine without an entry.
+  for (const m of src.matchAll(/\bt\(\s*'([a-zA-Z][\w.-]*)'\s*(,[^)]*)?\)/g)) {
+    if (m[2]?.includes('defaultValue')) continue;
+    referenced.add(m[1]);
+  }
+}
+
+const missingFromReference = [...referenced].filter(k => !referenceEntries.has(k)).sort();
+if (missingFromReference.length > 0) {
+  hasErrors = true;
+  console.error(`\n[FAIL] ${missingFromReference.length} key(s) used in code but absent from ${REFERENCE}:`);
+  for (const k of missingFromReference) console.error(`  ! ${k}`);
+}
+
 if (hardCoded.length > 0) {
   hasErrors = true;
   console.error(`\n[FAIL] ${hardCoded.length} hard-coded CJK string(s) in JSX — move them into the locales:`);

@@ -184,10 +184,15 @@
     "quotaNoneHint": "This provider does not report a quota"
   },
   "theme": {
-    "label": "Appearance",
+    "label": "Appearance: {{value}}",
     "appearance": "Appearance",
     "mode": "Mode",
-    "palette": "Palette"
+    "palette": "Palette",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System",
+    "anthropic": "Anthropic",
+    "anthropic-dark": "Anthropic dark"
   },
   "errorBoundary": {
     "title": "Something went wrong",
