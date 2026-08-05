@@ -72,7 +72,10 @@
     "rerunning": "重跑中…",
     "translationMissing": "翻譯失敗",
     "failedCount": "{{count}} 行需要處理",
-    "clipLabel": "播放 {{code}} 的聲音片段"
+    "clipLabel": "播放 {{code}} 的聲音片段",
+    "playLine": "播放這一句",
+    "stopLine": "停止",
+    "playFailed": "這一句沒有可播放的錄音。"
   },
   "glossary": {
     "title": "詞彙表",

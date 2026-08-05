@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { RotateCw } from 'lucide-react';
+import { Play, RotateCw, Square } from 'lucide-react';
 import type { TranscriptLine } from '../../services/app.api';
 
 const clock = (seconds: number) => {
@@ -15,18 +15,33 @@ interface Props {
   locked: boolean; // a refine pass is running; see the comment on `draft`
   draft: { id: number; text: string } | null; // the line being edited anywhere in the transcript
   rerunning: number | null;
+  playing: number | null; // the line whose audio is currently playing, anywhere in the transcript
   onDraft: (draft: { id: number; text: string } | null) => void;
   onSave: (lineId: number, source: string, previous: string) => void;
   onRerun: (lineId: number) => void;
+  onPlay: (lineId: number) => void;
 }
 
-export function TranscriptRow({ line, speaker, langs, locked, draft, rerunning, onDraft, onSave, onRerun }: Props) {
+export function TranscriptRow({ line, speaker, langs, locked, draft, rerunning, playing, onDraft, onSave, onRerun, onPlay }: Props) {
   const { t } = useTranslation();
   const editing = draft?.id === line.id ? draft : null;
 
   return (
     <article className={`sess-line${line.status === 'ok' ? '' : ' sess-line-failed'}`}>
-      <span className="sess-time">{clock(line.start)}</span>
+      <div className="sess-time">
+        {/* One button per line, but one <audio> for the whole transcript — 943 media elements is
+            not a price worth paying for a control that plays one thing at a time. */}
+        <button
+          type="button"
+          className="sess-play"
+          title={playing === line.id ? t('sessions.stopLine') : t('sessions.playLine')}
+          aria-label={playing === line.id ? t('sessions.stopLine') : t('sessions.playLine')}
+          onClick={() => onPlay(line.id)}
+        >
+          {playing === line.id ? <Square size={11} /> : <Play size={11} />}
+        </button>
+        <span>{clock(line.start)}</span>
+      </div>
       <span className="sess-who">{speaker}</span>
       <div className="sess-body">
         {line.status !== 'ok' && (
