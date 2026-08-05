@@ -1,0 +1,29 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { withRefine } from './sessionSummary.ts';
+
+// A server older than the refine field omits it, and `SessionSummary` says it is always there.
+// Every consumer reads `s.refine.state` on that promise — the session dropdown does it inside a
+// map over all sessions, so one legacy row threw and the ErrorBoundary blanked the whole
+// transcript. Normalising here is what makes the type true; these guard that it stays true.
+
+const raw = { id: 1, started: '2026-01-01 10:00', ended: null, wav_path: 'a.wav', lines: 12 };
+
+test('a session with no refine field gets an idle one', () => {
+  const s = withRefine(raw);
+  assert.deepEqual(s.refine, { state: 'idle', error: '' });
+});
+
+test('reading .refine.state on a legacy session does not throw', () => {
+  assert.doesNotThrow(() => withRefine(raw).refine.state);
+});
+
+test('an existing refine field is left alone', () => {
+  const refine = { state: 'failed' as const, error: 'model timed out' };
+  assert.deepEqual(withRefine({ ...raw, refine }).refine, refine);
+});
+
+test('the rest of the session is carried through untouched', () => {
+  const { refine: _refine, ...rest } = withRefine(raw);
+  assert.deepEqual(rest, raw);
+});

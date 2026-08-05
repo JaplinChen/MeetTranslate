@@ -30,11 +30,7 @@ export function Sessions() {
 
   const fail = (err: unknown) => toast.error(err instanceof Error ? err.message : String(err));
 
-  // `?.refine?.state`, not `?.refine.state`: the type says refine is always there, but a backend
-  // older than the field is not a hypothetical — it happens every time the server is left running
-  // across an update, and the missing property threw, which the ErrorBoundary turned into a blank
-  // page for the whole transcript. Falling back to 'idle' loses the chip and keeps the meeting.
-  const refine: RefineState = sessions.find(s => s.id === selected)?.refine?.state ?? 'idle';
+  const refine: RefineState = sessions.find(s => s.id === selected)?.refine.state ?? 'idle';
   // The pass calls replace_lines, which drops every line and writes new ones with new ids. An edit
   // saved during that window is silently discarded while the screen shows it saved, so editing is
   // closed rather than left to look like it worked.
