@@ -88,7 +88,8 @@
     "searchPlaceholder": "搜尋這份逐字稿",
     "searchEmpty": "沒有任何一句包含「{{query}}」。",
     "export": "匯出",
-    "exportHint": "把這份逐字稿下載成 Markdown——目前的發言者名稱、時間戳與所有譯文。"
+    "exportHint": "把這份逐字稿下載成 Markdown——目前的發言者名稱、時間戳與所有譯文。",
+    "pick": "選擇會議"
   },
   "glossary": {
     "title": "詞彙表",

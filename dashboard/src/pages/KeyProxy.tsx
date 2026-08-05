@@ -133,6 +133,7 @@ export function KeyProxy() {
           <input
             className="keyproxy-input"
             type="password"
+            aria-label={t('keyproxy.key')}
             {...NO_AUTOFILL}
             placeholder={t('keyproxy.keyPlaceholder')}
             value={apiKey}
@@ -143,6 +144,7 @@ export function KeyProxy() {
           <input
             className="keyproxy-account-input"
             type="text"
+            aria-label={t('keyproxy.account')}
             autoComplete="off"
             placeholder={t('keyproxy.accountPlaceholder')}
             value={account}

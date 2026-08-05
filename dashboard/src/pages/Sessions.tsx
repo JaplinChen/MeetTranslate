@@ -270,7 +270,7 @@ export function Sessions() {
 
       {hasSessions && (
         <section className="etable-panel">
-          <select className="sess-select" value={selected ?? ''} onChange={e => setSelected(Number(e.target.value))}>
+          <select className="sess-select" aria-label={t('sessions.pick')} value={selected ?? ''} onChange={e => setSelected(Number(e.target.value))}>
             {sessions.map(s => (
               <option key={s.id} value={s.id}>
                 {s.started} — {t('sessions.lineCount', { count: s.lines })}

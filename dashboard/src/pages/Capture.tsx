@@ -113,6 +113,7 @@ export function Capture() {
         <p className="capture-hint">{t('capture.deviceHint')}</p>
         <select
           className="capture-select"
+          aria-label={t('capture.device')}
           value={configured}
           onChange={e => selectDevice(e.target.value)}
           disabled={busy || recording}
