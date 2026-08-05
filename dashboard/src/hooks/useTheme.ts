@@ -1,15 +1,25 @@
 import { useState, useEffect, useCallback } from 'react';
 
 export type Theme = 'light' | 'dark' | 'system' | 'anthropic' | 'anthropic-dark';
-export type ThemePalette = 'openwa' | 'blue' | 'graphite' | 'indigo' | 'amber' | 'rose' | 'teal';
+export type ThemePalette = 'green' | 'blue' | 'graphite' | 'indigo' | 'amber' | 'rose' | 'teal';
 
-const THEME_KEY = 'openwalab_theme';
-const PALETTE_KEY = 'openwalab_palette';
+const THEME_KEY = 'meettranslate_theme';
+const PALETTE_KEY = 'meettranslate_palette';
+
+// Keys this app was shipped with before it stopped carrying the name of the project it was lifted
+// from. Read once, so an existing tab keeps the theme it was set to instead of snapping back.
+const LEGACY_THEME_KEY = 'openwalab_theme';
+const LEGACY_PALETTE_KEY = 'openwalab_palette';
+
+function readSetting(key: string, legacyKey: string): string | null {
+  return localStorage.getItem(key) ?? localStorage.getItem(legacyKey);
+}
 
 export const paletteOptions: Array<{ value: ThemePalette; label: string; color: string }> = [
-  // The stored value stays 'openwa': it is what is already in every user's localStorage, and
-  // renaming it would silently reset their palette. Only the label was ever shown.
-  { value: 'openwa', label: 'Green', color: '#25d366' },
+  // Renaming this value costs nothing: theme.css has no [data-palette='green'] rule (nor did it
+  // have one for the old name) because this palette is the base :root, so a stored value that no
+  // longer parses falls through to exactly the same colour.
+  { value: 'green', label: 'Green', color: '#25d366' },
   { value: 'blue', label: 'Blue', color: '#2563eb' },
   { value: 'graphite', label: 'Graphite', color: '#64748b' },
   { value: 'indigo', label: 'Indigo', color: '#4f46e5' },
@@ -34,12 +44,12 @@ function isPalette(value: string | null): value is ThemePalette {
 
 export function useTheme() {
   const [theme, setThemeState] = useState<Theme>(() => {
-    const saved = localStorage.getItem(THEME_KEY);
+    const saved = readSetting(THEME_KEY, LEGACY_THEME_KEY);
     return isTheme(saved) ? saved : 'anthropic';
   });
   const [palette, setPaletteState] = useState<ThemePalette>(() => {
-    const saved = localStorage.getItem(PALETTE_KEY);
-    return isPalette(saved) ? saved : 'openwa';
+    const saved = readSetting(PALETTE_KEY, LEGACY_PALETTE_KEY);
+    return isPalette(saved) ? saved : 'green';
   });
 
   const applyTheme = useCallback((newTheme: Theme) => {
