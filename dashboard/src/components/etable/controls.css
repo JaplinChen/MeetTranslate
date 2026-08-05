@@ -1,42 +1,4 @@
-/* Below and beside the table: pagination, the loading spinner, and the import toolbar. */
-/* Pagination (scoped copy of the logs-page pattern) */
-.etable-page .pagination{
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: var(--space-2);
-  margin-top: var(--space-3);
-}
 
-.etable-page .pagination button{
-  padding: var(--space-2) var(--space-4);
-  font-size: 0.875rem;
-  background: var(--bg-white);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  color: var(--text-secondary);
-  transition: all 0.2s;
-}
-
-.etable-page .pagination button:hover:not(:disabled){
-  background: var(--bg-light);
-}
-
-.etable-page .pagination button:disabled{
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.etable-page .page-numbers{
-  display: flex;
-  gap: var(--space-1);
-}
-
-.etable-page .page-numbers button{
-  min-width: 36px;
-  padding: var(--space-2);
-}
 
 .etable-page .page-numbers button.active{
   background: var(--primary);
@@ -51,43 +13,5 @@
 @keyframes spin{
   from{ transform: rotate(0deg); }
   to{ transform: rotate(360deg); }
-}
-
-.etable-page .senders-import{
-  display: flex;
-  gap: var(--space-2);
-  align-items: center;
-  /* Two buttons + the select overflow a narrow viewport, and .etable-page clips overflow-x, so the
-     last control would be unreachable. Wrap instead. */
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-/* The select was claiming its full 220px and leaving the buttons ~110px, which broke their
-   labels across three lines. The buttons keep their natural width; the select gives way. */
-.etable-page .senders-import button{
-  flex: 0 0 auto;
-  white-space: nowrap;
-  /* btn-primary and btn-secondary carry different global padding (40.5px vs 46.7px tall); pin both
-     to the select's 36px so the three toolbar controls line up. */
-  height: 36px;
-  padding: 0 var(--space-4);
-}
-
-.etable-page .senders-import select{
-  /* Basis (not max-width) is what decides wrapping, so keep it small: the select gives up width to
-     hold the two buttons on one row, and only then does the toolbar wrap. */
-  flex: 1 1 120px;
-  min-width: 0;
-}
-
-.etable-page .senders-import select{
-  height: 36px;
-  padding: 0 var(--space-2);
-  border: 1px solid var(--border, #e2e2e2);
-  border-radius: var(--radius);
-  background: var(--bg-white);
-  color: inherit;
-  max-width: 220px;
 }
 
