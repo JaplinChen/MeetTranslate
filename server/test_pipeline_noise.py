@@ -1,0 +1,124 @@
+"""What the recogniser produces that nobody said: collapsed decodes, room noise, boilerplate.
+
+Every string here came out of a real recording. A filter that is too eager deletes speech, so the
+checks come in pairs: the hallucination is dropped, and the real sentence that looks like it stays.
+"""
+
+from __future__ import annotations
+
+from . import asr
+
+
+def test_subtitling_credits_are_not_speech() -> None:
+    """More of the same training data surfacing in the silence between speakers.
+
+    These arrived once batching changed which hallucination Whisper reached for, which is a good
+    reminder that the list is a list and not a rule.
+    """
+    for text in ("MING PAO CANADA MANGA", "MING PAO CANADA 字幕組",
+                 "中文字幕由 Amara.org 社群提供", "本期影片就分享到這裡,謝謝收看",
+                 "多謝您的收看,我們下期見!", "希望大家多多支援"):
+        assert asr.is_hallucination(text), text
+
+    # A sign-off is the end of a line; arranging a meeting is not.
+    assert not asr.is_hallucination("我們下次見面再談這個")
+    assert not asr.is_hallucination("本期的採購單要重新確認")
+    assert not asr.is_hallucination("這個字幕要放在電視上")
+
+
+def test_a_collapse_is_dropped_whoever_chose_the_language() -> None:
+    """The check used to run only when a language was forced.
+
+    So a first-pass auto-detect could return 產品 產品 產品 產品 產品, keep it, and have the
+    language it invented for that counted as evidence of what the speaker speaks — which is how
+    433 Chinese lines ended up labelled English across seven interviews.
+    """
+    assert asr.is_degenerate("產品 產品 產品 產品 產品")
+    assert asr.is_degenerate("前來,前來,前來,前來,前來,前來,前來,前來")
+    # Short repetition is how people talk.
+    assert not asr.is_degenerate("大家好大家好")
+    assert not asr.is_degenerate("介紹 介紹 介紹")
+
+
+def test_degenerate_detects_collapsed_decode() -> None:
+    # The real output of forcing zh on English audio.
+    assert asr.is_degenerate("前來,前來,前來,前來,前來,前來,前來,前來,前來,前來,前來")
+    assert asr.is_degenerate("the the the the the the the the the the the")
+
+
+def test_noise_annotations_are_dropped() -> None:
+    """Every one of these came out of ten minutes of room noise before a real meeting started."""
+    for text in ("[MUSIC PLAYING]", "(static)", "[BLANK_AUDIO]", "(upbeat music)", "(indistinct)", "[static"):
+        assert asr.is_noise(text), text
+
+
+def test_youtube_boilerplate_is_dropped() -> None:
+    """Whisper answers unreadable audio with subtitle sign-offs. On seven real interviews these
+    were 15% of every Vietnamese line, and none of it was spoken."""
+    for text in ("Cảm ơn các bạn đã theo dõi và đăng ký kênh của mình.",
+                 "Hãy subscribe cho kênh La La School",
+                 "Cảm ơn các bạn đã theo dõi và hẹn gặp lại.",
+                 "您可以訂閱我們的頻道,並且請點選訂閱",
+                 "明鏡及點點欄目",
+                 "I'll see you in a minute. Thanks for watching."):
+        assert asr.is_hallucination(text), text
+
+
+def test_broadcast_signoffs_are_dropped_even_when_spaced() -> None:
+    """Verbatim from a factory morning meeting: three of these landed in a row at 12:21 with the
+    real agenda starting at 12:36. The decoder writes Mandarin word by word, so the boilerplate
+    arrives spaced — and every phrase here was tried only against the unspaced form before."""
+    for text in ("本集完",
+                 "本節目 繼續 更多 內容 歡迎收看",
+                 "請您 關注",
+                 "訂閱 我們的 頻道"):
+        assert asr.is_hallucination(text), text
+
+
+def test_boilerplate_is_caught_before_it_is_converted_to_traditional() -> None:
+    """The line is judged before `_post` runs, and Whisper always emits Simplified.
+
+    Every phrase in the list is written in Traditional, so a Simplified sign-off matched nothing
+    and was then converted on its way into the transcript: 本期影片就分享到這裡 sat in a real
+    meeting transcript while `本期(影片|節目)` had been in the pattern all along.
+    """
+    for text in ("本期视频就分享到这里", "欢迎收看", "请您关注", "订阅我们的频道", "谢谢观看"):
+        assert asr.is_hallucination(text), text
+
+    for text in ("本集团今年的目标是降低不良率", "这个议题请大家多关注", "我们要订阅这个服务吗"):
+        assert not asr.is_hallucination(text), text
+
+
+def test_hallucination_filter_spares_real_speech() -> None:
+    """Matched as phrases: a meeting may say 訂閱 or subscribe without meaning a channel."""
+    for text in ("Bây giờ mình hiện tại đang làm thủ công bằng Excel.",
+                 "我們要訂閱這個服務嗎",
+                 "我們的料號其實變動很大",
+                 "這個 schedule 要 delay 一週",
+                 # Measured on that same recording: 謝謝 appears in 39 lines, plenty of them real
+                 # speech, so politeness is never on its own grounds for dropping a line.
+                 "好 謝謝 再請社管去檢討一下空壓機的能力夠不夠",
+                 "數量比較多 速度又快 之後我再做個整理 再告訴大家 謝謝",
+                 # 本集團 and 節目 belong to a real meeting; only the broadcast phrasing goes.
+                 "本集團今年的目標是降低不良率",
+                 "尾牙的節目安排請各部門回報",
+                 "這個議題請大家多關注"):
+        assert not asr.is_hallucination(text), text
+
+
+def test_noise_keeps_speech_containing_brackets() -> None:
+    assert not asr.is_noise("這個 (ERP) 系統要換掉")
+    assert not asr.is_noise("- All right")
+    assert not asr.is_noise("")
+
+
+def test_degenerate_accepts_normal_speech() -> None:
+    assert not asr.is_degenerate("這個 schedule 要 delay 一週，我們下週再確認一次時程")
+    assert not asr.is_degenerate("After early nightfall the yellow lamps would light up the squalid quarter")
+    assert not asr.is_degenerate("Chúng ta cần xác nhận lại lịch trình vào tuần sau nhé")
+
+
+def test_degenerate_ignores_short_text() -> None:
+    """A terse reply must never be mistaken for a collapse."""
+    assert not asr.is_degenerate("好的")
+    assert not asr.is_degenerate("OK OK")
