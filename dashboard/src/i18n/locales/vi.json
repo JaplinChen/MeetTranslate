@@ -154,7 +154,10 @@
     "perProviderFallbackHint": "Các mô hình khác của nhà cung cấp này, thử lần lượt sau mô hình ở trên.",
     "style": "Phong cách",
     "stylePrecise": "Chính xác",
-    "styleFluent": "Tự nhiên"
+    "styleFluent": "Tự nhiên",
+    "showKey": "Hiện khoá API",
+    "hideKey": "Ẩn khoá API",
+    "removeFallback": "Xoá mô hình dự phòng này"
   },
   "keyproxy": {
     "title": "Khoá LLM",

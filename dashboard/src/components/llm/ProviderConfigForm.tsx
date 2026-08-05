@@ -162,7 +162,12 @@ export function ProviderConfigForm({ value, keySet, canWrite, allowNone, exclude
             <li key={m}>
               <span>{m}</span>
               {canWrite && (
-                <button className="llm-fallback-del" onClick={() => removeFallback(m)}>
+                <button
+                  className="llm-fallback-del"
+                  onClick={() => removeFallback(m)}
+                  title={t('llm.removeFallback')}
+                  aria-label={`${t('llm.removeFallback')}: ${m}`}
+                >
                   <Trash2 size={14} />
                 </button>
               )}

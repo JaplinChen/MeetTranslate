@@ -154,7 +154,10 @@
     "perProviderFallbackHint": "Extra models of this provider, tried in order after the model above.",
     "style": "Style",
     "stylePrecise": "Precise",
-    "styleFluent": "Fluent"
+    "styleFluent": "Fluent",
+    "showKey": "Show the API key",
+    "hideKey": "Hide the API key",
+    "removeFallback": "Remove this fallback model"
   },
   "keyproxy": {
     "title": "LLM keys",

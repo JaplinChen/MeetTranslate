@@ -100,9 +100,6 @@ export const translateApi = {
       method: 'PUT',
       body: JSON.stringify(config),
     }),
-  // NOTE: /translate/llm/test and /translate/llm/models have no route in server/. Both currently
-  // come back as the JSON 404 the SPA guard returns, which the provider form reports as a failed
-  // test. Kept because the form calls them and removing them would only move the break.
   testLlm: (probe: LlmProbe) =>
     request<{ ok: boolean; message: string }>('/translate/llm/test', {
       method: 'POST',

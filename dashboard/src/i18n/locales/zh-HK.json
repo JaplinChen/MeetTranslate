@@ -154,7 +154,10 @@
     "perProviderFallbackHint": "此供應商的其他模型，會在上方模型之後依序嘗試。",
     "style": "風格",
     "stylePrecise": "精準",
-    "styleFluent": "流暢"
+    "styleFluent": "流暢",
+    "showKey": "顯示 API 金鑰",
+    "hideKey": "隱藏 API 金鑰",
+    "removeFallback": "移除這個備援模型"
   },
   "keyproxy": {
     "title": "LLM 金鑰",

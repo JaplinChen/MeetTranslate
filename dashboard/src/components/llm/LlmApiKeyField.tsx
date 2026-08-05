@@ -61,7 +61,17 @@ export function LlmApiKeyField({
             data-form-type="other"
             onChange={e => onChange(e.target.value)}
           />
-          <button className="llm-eye" onClick={toggleShowKey} type="button" tabIndex={-1}>
+          {/* Named, because the icon is the whole button — unlabelled it announces as "button".
+              Reachable too: tabIndex={-1} kept it off the tab order, so revealing the key was a
+              mouse-only action and there is no other way to do it. */}
+          <button
+            className="llm-eye"
+            onClick={toggleShowKey}
+            type="button"
+            aria-pressed={showKey}
+            title={showKey ? t('llm.hideKey') : t('llm.showKey')}
+            aria-label={showKey ? t('llm.hideKey') : t('llm.showKey')}
+          >
             {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
           </button>
         </div>
