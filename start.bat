@@ -23,9 +23,22 @@ if not exist ".venv\Scripts\python.exe" (
     )
 )
 
-if not exist "dashboard\dist\index.html" (
+rem Rebuild when any source is newer than the bundle, not just when the bundle is missing. The
+rem existence check alone meant the dashboard was built once, ever: after that the folder was
+rem there, so every later `git pull` started a backend that had moved and a frontend that had not.
+set REBUILD=no
+for /f %%r in ('powershell -NoProfile -Command ^
+    "$b = Get-Item 'dashboard/dist/index.html' -ErrorAction SilentlyContinue;" ^
+    "if (-not $b) { 'yes'; exit }" ^
+    "$src = Get-ChildItem 'dashboard/src','dashboard/package.json','dashboard/vite.config.ts','dashboard/index.html' -Recurse -File -ErrorAction SilentlyContinue |" ^
+    "  Where-Object { $_.LastWriteTime -gt $b.LastWriteTime } | Select-Object -First 1;" ^
+    "if ($src) { 'yes' } else { 'no' }"') do set REBUILD=%%r
+
+if "%REBUILD%"=="yes" (
     echo Building dashboard...
     pushd dashboard && call npm install --silent && call npm run build && popd || goto :fail
+) else (
+    echo Dashboard bundle is up to date.
 )
 
 start "" http://127.0.0.1:%PORT%/
