@@ -1,4 +1,4 @@
-import { useState, useCallback, type ReactNode } from 'react';
+import { useState, useCallback, useMemo, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CheckCircle, XCircle, AlertCircle, Info, X } from 'lucide-react';
 import { ToastContext, type Toast } from './Toast';
@@ -98,8 +98,16 @@ export function ToastProvider({ children }: ToastProviderProps) {
     [addToast],
   );
 
+  // Memoised, and without `toasts`: built inline it was a new object on every toast, so every
+  // consumer of useToast re-rendered whenever one appeared or expired anywhere in the app —
+  // and any effect depending on `toast` tore down and restarted with it.
+  const value = useMemo(
+    () => ({ addToast, removeToast, success, error, warning, info }),
+    [addToast, removeToast, success, error, warning, info],
+  );
+
   return (
-    <ToastContext.Provider value={{ toasts, addToast, removeToast, success, error, warning, info }}>
+    <ToastContext.Provider value={value}>
       {children}
       <ToastContainer toasts={toasts} removeToast={removeToast} />
     </ToastContext.Provider>
