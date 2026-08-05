@@ -12,8 +12,10 @@ export interface Toast {
   dedupeKey?: string;
 }
 
+/** Firing side only — deliberately no `toasts` array. Every member is referentially stable, so the
+ *  context value never changes identity and a toast appearing re-renders nothing but the container.
+ *  The live list reaches ToastContainer as a prop, which is the only thing that renders it. */
 export interface ToastContextValue {
-  toasts: Toast[];
   addToast: (toast: Omit<Toast, 'id'>) => void;
   removeToast: (id: string) => void;
   success: (title: string, message?: string) => void;

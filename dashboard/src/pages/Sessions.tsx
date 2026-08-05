@@ -61,16 +61,6 @@ export function Sessions() {
     if (selected !== null) loadLines(selected);
   }, [selected, loadLines]);
 
-  // Held in a ref because ToastProvider builds its context value inline and includes the live
-  // toast list in it, so `toast` is a new object whenever any toast appears anywhere in the app.
-  // Depending on it below would tear down and restart the poll interval every time one did.
-  // Written in an effect, not during render: a ref assigned while rendering is a React rule
-  // violation, and under concurrent rendering a discarded render would still have moved it.
-  const notify = useRef({ toast, t });
-  useEffect(() => {
-    notify.current = { toast, t };
-  });
-
   // Poll only while something is actually being refined, and stop as soon as it is not. Without
   // this the chip would say "refining" until someone reloaded the page by hand.
   const wasRefining = useRef(false);
@@ -78,7 +68,7 @@ export function Sessions() {
     if (refine !== 'refining') {
       if (wasRefining.current && selected !== null) {
         wasRefining.current = false;
-        notify.current.toast.success(notify.current.t('sessions.refineDone'));
+        toast.success(t('sessions.refineDone'));
         loadLines(selected);
       }
       return;
@@ -88,7 +78,7 @@ export function Sessions() {
       appApi.sessions().then(setSessions).catch(() => {});
     }, REFINE_POLL_MS);
     return () => window.clearInterval(timer);
-  }, [refine, selected, loadLines]);
+  }, [refine, selected, loadLines, toast, t]);
 
   // Speakers are identified by voice, not by name — the app never sees the participant list.
   // Naming them once here is what turns S1/S2 into a readable transcript.
