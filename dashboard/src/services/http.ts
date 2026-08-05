@@ -11,6 +11,11 @@ import { warnIfInsecureHttpUrl } from '../utils/urlSecurity.ts';
 // touched the service layer, whatever it was actually asserting.
 const API_ORIGIN = (import.meta.env?.VITE_API_URL ?? '').replace(/\/+$/, '');
 export const API_BASE_URL = `${API_ORIGIN}/api`;
+
+/** The detail the server's SPA guard puts on a 404 for an /api path it has no route for. Lets a
+ *  caller tell "this build does not have that endpoint" from "that endpoint says no" — the same
+ *  status code, opposite problems. Must match server/main.py's NO_SUCH_ENDPOINT. */
+export const NO_SUCH_ENDPOINT = 'no such endpoint in this build';
 if (API_ORIGIN) warnIfInsecureHttpUrl(API_ORIGIN, 'VITE_API_URL');
 
 export async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
