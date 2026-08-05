@@ -41,6 +41,9 @@ export function Sessions() {
   const [busy, setBusy] = useState(false);
   const tablistRef = useRef<HTMLDivElement>(null);
   const player = useRef<HTMLAudioElement | null>(null);
+  // Read inside the callback so it does not have to depend on `playing` — a callback that changes
+  // identity on every play invalidates all 943 memoised rows, which is what this is avoiding.
+  const playingRef = useRef<number | null>(null);
 
   const fail = (err: unknown) => toast.error(err instanceof Error ? err.message : String(err));
 
@@ -114,7 +117,7 @@ export function Sessions() {
   //
   // A textarea rather than contentEditable: this transcript is mostly Chinese, and an IME
   // composing inside a contentEditable fires input and blur events mid-character.
-  const saveLine = async (lineId: number, source: string, previous: string) => {
+  const saveLine = useCallback(async (lineId: number, source: string, previous: string) => {
     setEditing(null);
     if (selected === null || source.trim() === previous || !source.trim()) return;
     try {
@@ -123,7 +126,10 @@ export function Sessions() {
     } catch (err) {
       fail(err);
     }
-  };
+    // `fail` is recreated each render by design (it closes over the toast); depending on it would
+    // defeat the memoisation these callbacks exist to enable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected]);
 
   // A recording made elsewhere teaches the same things a live capture does, once it is a session:
   // names attach to voices, corrections attach to lines.
@@ -162,23 +168,27 @@ export function Sessions() {
   // Correcting a line is a judgement about whether the text matches what was said, so the audio has
   // to be reachable from the line. One player for the whole transcript rather than one per row:
   // clicking a second line replaces what is playing, which is also the behaviour you want.
-  const playLine = (lineId: number) => {
-    if (selected === null || !hasRecording) return;
+  // No hasRecording check here: the button carries `playable`, so it is disabled when there is
+  // nothing to play. Re-checking would also make this callback depend on a value that changes with
+  // the session, which is exactly what the memoised rows must not see.
+  const playLine = useCallback((lineId: number) => {
+    if (selected === null) return;
+    const setNow = (v: number | null) => { playingRef.current = v; setPlaying(v); };
     const audio = (player.current ??= new Audio());
-    if (playing === lineId) {
+    if (playingRef.current === lineId) {
       audio.pause();
-      setPlaying(null);
+      setNow(null);
       return;
     }
     const url = `${API_BASE_URL}/sessions/${selected}/lines/${lineId}/clip`;
     audio.src = url;
-    audio.onended = () => setPlaying(null);
+    audio.onended = () => setNow(null);
     // <audio> reports that it failed, never why, and the two causes want different answers: this
     // line genuinely has no audio, or the request never reached the endpoint — a backend still
     // running the build from before the route existed answers 404 for every line in the meeting.
     // One request, only on failure, to say which happened instead of guessing.
     audio.onerror = () => {
-      setPlaying(null);
+      setNow(null);
       fetch(url)
         .then(async r => {
           const detail = await r.json().then(b => b?.detail).catch(() => '');
@@ -191,8 +201,8 @@ export function Sessions() {
         .catch(() => toast.error(t('sessions.playUnreachable')));
     };
     void audio.play().catch(() => {});
-    setPlaying(lineId);
-  };
+    setNow(lineId);
+  }, [selected, t, toast]);
 
   // Switching session or tab leaves a clip playing over a transcript that is no longer on screen.
   useEffect(() => {
@@ -206,7 +216,7 @@ export function Sessions() {
 
   // Re-running is per line rather than per transcript: a failure is usually one utterance the
   // decoder gave up on, and re-running the whole meeting to recover it is not a proportionate ask.
-  const rerunLine = async (lineId: number) => {
+  const rerunLine = useCallback(async (lineId: number) => {
     if (selected === null) return;
     setRerunning(lineId);
     try {
@@ -219,7 +229,10 @@ export function Sessions() {
     } finally {
       setRerunning(null);
     }
-  };
+    // `fail` closes over the toast and is recreated each render; depending on it would defeat the
+    // memoisation these stable callbacks exist to enable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, t, toast]);
 
   // 943 lines is not a list you scroll to check a word in. Matches the text as spoken, every
   // translation of it, and the speaker — searching for a name is how you find what someone said
@@ -234,7 +247,7 @@ export function Sessions() {
   }, [lines, names, query]);
 
   const codes = [...new Set(lines.map(l => l.speaker))];
-  const langs = [...new Set(lines.flatMap(l => Object.keys(l.translations)))];
+  const langs = useMemo(() => [...new Set(lines.flatMap(l => Object.keys(l.translations)))], [lines]);
   const failed = lines.filter(l => l.status !== 'ok');
   const refineLabel: Partial<Record<RefineState, string>> = {
     refining: t('sessions.refining'),
@@ -417,9 +430,10 @@ export function Sessions() {
                 speaker={names[line.speaker] || line.speaker}
                 langs={langs}
                 locked={locked}
-                draft={editing}
-                rerunning={rerunning}
-                playing={playing}
+                draftText={editing?.id === line.id ? editing.text : null}
+                isRerunning={rerunning === line.id}
+                rerunBlocked={rerunning !== null}
+                isPlaying={playing === line.id}
                 playable={hasRecording}
                 onDraft={setEditing}
                 onSave={saveLine}

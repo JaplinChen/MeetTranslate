@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Play, RotateCw, Square } from 'lucide-react';
 import type { TranscriptLine } from '../../services/app.api';
@@ -12,10 +13,13 @@ interface Props {
   line: TranscriptLine;
   speaker: string; // resolved display name, or the S1/S2 code when nobody has named the voice
   langs: string[]; // every target language in this transcript, so rows render them in one order
-  locked: boolean; // a refine pass is running; see the comment on `draft`
-  draft: { id: number; text: string } | null; // the line being edited anywhere in the transcript
-  rerunning: number | null;
-  playing: number | null; // the line whose audio is currently playing, anywhere in the transcript
+  locked: boolean; // a refine pass is running; see the comment on `draftText`
+  // Per row, not per transcript: a row that is handed "which line is playing" re-renders whenever
+  // any other line starts playing, and there are 943 of them.
+  draftText: string | null; // this row's edit in progress, or null when it is not being edited
+  isRerunning: boolean;
+  rerunBlocked: boolean; // some other line is re-running, so this button waits its turn
+  isPlaying: boolean;
   playable: boolean; // false once the session's recording is gone from disk
   onDraft: (draft: { id: number; text: string } | null) => void;
   onSave: (lineId: number, source: string, previous: string) => void;
@@ -23,9 +27,9 @@ interface Props {
   onPlay: (lineId: number) => void;
 }
 
-export function TranscriptRow({ line, speaker, langs, locked, draft, rerunning, playing, playable, onDraft, onSave, onRerun, onPlay }: Props) {
+function Row({ line, speaker, langs, locked, draftText, isRerunning, rerunBlocked, isPlaying, playable, onDraft, onSave, onRerun, onPlay }: Props) {
   const { t } = useTranslation();
-  const editing = draft?.id === line.id ? draft : null;
+  const editing = draftText === null ? null : { id: line.id, text: draftText };
 
   return (
     <article className={`sess-line${line.status === 'ok' ? '' : ' sess-line-failed'}`}>
@@ -36,11 +40,11 @@ export function TranscriptRow({ line, speaker, langs, locked, draft, rerunning, 
           type="button"
           className="sess-play"
           disabled={!playable}
-          title={!playable ? t('sessions.noRecording') : playing === line.id ? t('sessions.stopLine') : t('sessions.playLine')}
-          aria-label={!playable ? t('sessions.noRecording') : playing === line.id ? t('sessions.stopLine') : t('sessions.playLine')}
+          title={!playable ? t('sessions.noRecording') : isPlaying ? t('sessions.stopLine') : t('sessions.playLine')}
+          aria-label={!playable ? t('sessions.noRecording') : isPlaying ? t('sessions.stopLine') : t('sessions.playLine')}
           onClick={() => onPlay(line.id)}
         >
-          {playing === line.id ? <Square size={11} /> : <Play size={11} />}
+          {isPlaying ? <Square size={11} /> : <Play size={11} />}
         </button>
         <span>{clock(line.start)}</span>
       </div>
@@ -54,12 +58,12 @@ export function TranscriptRow({ line, speaker, langs, locked, draft, rerunning, 
             <button
               type="button"
               className="sess-rerun"
-              disabled={rerunning !== null || locked}
+              disabled={rerunBlocked || locked}
               title={t('sessions.rerunLine')}
               onClick={() => onRerun(line.id)}
             >
               <RotateCw size={13} />
-              <span>{rerunning === line.id ? t('sessions.rerunning') : t('sessions.rerunLine')}</span>
+              <span>{isRerunning ? t('sessions.rerunning') : t('sessions.rerunLine')}</span>
             </button>
           </div>
         )}
@@ -112,3 +116,8 @@ export function TranscriptRow({ line, speaker, langs, locked, draft, rerunning, 
     </article>
   );
 }
+
+/* 943 rows, and every click used to repaint all of them: `playing` and `draft` were transcript-wide,
+   so any change to either invalidated every row. Memoised, with per-row props, a play click repaints
+   the row that stopped and the row that started. */
+export const TranscriptRow = memo(Row);
