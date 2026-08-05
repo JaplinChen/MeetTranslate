@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 from fastapi.testclient import TestClient
 
-from . import config, main, translate
+from . import config, llm_probe, main, translate
 
 
 def test_health_and_config_roundtrip(client: TestClient) -> None:
@@ -160,3 +160,73 @@ def test_every_script_flag_is_wired_to_something(tmp: Path) -> None:
         source = path.read_text(encoding="utf-8")
         for flag in re.findall(r'add_argument\("--([a-z-]+)"', source):
             assert f"args.{flag.replace('-', '_')}" in source, f"{path.name}: --{flag} is unused"
+
+
+def test_the_llm_probe_endpoints_answer_in_the_shape_the_page_reads(client: TestClient) -> None:
+    """Both buttons on the provider form. The provider itself is stubbed; the wiring is the point.
+
+    These two routes did not exist for a while, and because an unknown /api/* path returns a JSON
+    404 rather than the HTML shell, the page reported it as a provider that refused the key —
+    a backend gap wearing the costume of a wrong API key.
+    """
+    seen: list[tuple] = []
+    real_check, real_list = llm_probe.check, llm_probe.list_models
+    try:
+        llm_probe.check = lambda *a: (seen.append(a), (True, "ok"))[1]
+        llm_probe.list_models = lambda *a: (seen.append(a), ["m-2", "m-1"])[1]
+
+        body = {"provider": "openai", "endpoint": "https://api.openai.com/v1/chat/completions",
+                "model": "gpt-4o", "apiKey": "sk-typed"}
+        r = client.post("/api/translate/llm/test", json=body)
+        assert r.status_code == 200, r.text
+        assert r.json() == {"ok": True, "message": "ok"}
+        assert seen[-1] == ("openai", "https://api.openai.com/v1/chat/completions", "gpt-4o", "sk-typed")
+
+        assert client.post("/api/translate/llm/models", json=body).json() == {"models": ["m-2", "m-1"]}
+
+        # No endpoint: the provider's default is used rather than 400ing on a field the page
+        # deliberately hides for providers whose endpoint is fixed.
+        client.post("/api/translate/llm/test", json={"provider": "groq", "model": "x", "apiKey": "k"})
+        assert seen[-1][1] == "https://api.groq.com/openai/v1"
+
+        # A provider the page could not know the endpoint of, and no endpoint typed.
+        assert client.post("/api/translate/llm/test", json={"provider": "azure"}).status_code == 400
+        assert client.post("/api/translate/llm/test", json={"model": "x"}).status_code == 400
+
+        # A provider that refuses is a 502 on the models route: the page shows the reason, and a
+        # 200 with an empty list would read as "this provider has no models".
+        def refuse(*_a):
+            raise llm_probe.ProbeError("401 Unauthorized")
+
+        llm_probe.list_models = refuse
+        assert client.post("/api/translate/llm/models", json=body).status_code == 502
+    finally:
+        llm_probe.check, llm_probe.list_models = real_check, real_list
+
+
+def test_the_llm_probe_falls_back_to_the_key_already_stored(client: TestClient) -> None:
+    """The page cannot send a key it was never given: `llmApiKey` comes back empty by design.
+
+    Without this, Verify worked once — right after typing the key — and failed on every later
+    visit, which reads as a key that expired rather than a page that never had one.
+    """
+    client.put("/api/translate/config", json={"llmProvider": "anthropic", "llmApiKey": "sk-stored"})
+    seen: list[tuple] = []
+    real_check = llm_probe.check
+    try:
+        llm_probe.check = lambda *a: (seen.append(a), (True, "ok"))[1]
+        client.post("/api/translate/llm/test", json={"provider": "anthropic", "model": "claude-opus-5"})
+        assert seen[-1][3] == "sk-stored", seen
+    finally:
+        llm_probe.check = real_check
+
+
+def test_an_endpoint_that_is_not_http_is_refused_by_the_route(client: TestClient) -> None:
+    """This process fetches whatever the endpoint box holds, so the scheme is checked at the edge.
+
+    400 rather than 502: nothing upstream failed — there is no upstream for file://.
+    """
+    for endpoint in ("file:///C:/Windows/win.ini", "ftp://example.com/x"):
+        body = {"provider": "ollama", "endpoint": endpoint, "model": "x"}
+        assert client.post("/api/translate/llm/models", json=body).status_code == 400, endpoint
+        assert client.post("/api/translate/llm/test", json=body).status_code == 400, endpoint
