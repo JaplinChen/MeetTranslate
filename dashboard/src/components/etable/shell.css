@@ -101,8 +101,16 @@
   color: var(--primary-ink);
 }
 
+/* Panels size to their content and the page scrolls — one scrollbar, no nesting.
+
+   This was flex:1, which only works when a page has exactly one panel. Every page here has two or
+   more, so they split the viewport evenly regardless of what is in them: on the learned page an
+   empty "known voices" panel held 277px of a 720px viewport while the 32 corrections beside it were
+   given the same 277px for 1944px of rows. The sessions page hit this first, with four panels, and
+   fixed it for itself; this is that fix moved to where the rule is, so the next page with two
+   panels does not have to rediscover it. */
 .etable-page .etable-panel {
-  flex: 1;
+  flex: 0 0 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -112,11 +120,6 @@
   padding: var(--space-5);
 }
 
-/* The dup-check panel is a small collapsible control sharing the terms tab with the table below it,
-   so it must not grab the panel's default flex:1 and push the table off-screen. */
-.etable-page .etable-panel--dup {
-  flex: 0 0 auto;
-}
 
 .etable-page .etable-panel-title {
   margin: 0 0 var(--space-4);

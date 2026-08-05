@@ -1,15 +1,6 @@
 /* page-root: .sess-page */
-/* The shared panel is flex:1 because the glossary page has exactly one of them. This page has
-   four, so they split the viewport four ways and every one overflows its share: with 31 speakers
-   the name inputs spilled 273px over the transcript, and the transcript itself wanted 39,637px in
-   a 138px box. Panels here size to their content and the page scrolls — one scrollbar, no nesting.
-
-   Scoped to this page: the rule is global once the stylesheet loads, and the glossary still wants
-   its single panel to fill the height. Both class names on the selector so it outranks the shared
-   rule outright — matching its specificity would leave the winner decided by bundle order. */
-.etable-page.sess-page .etable-panel {
-  flex: 0 0 auto;
-}
+/* The four-panels-splitting-the-viewport fix that used to live here is now the shared default in
+   components/etable/shell.css, where every other multi-panel page gets it too. */
 
 .sess-page .sess-select {
   width: 100%;
