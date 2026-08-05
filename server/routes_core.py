@@ -13,7 +13,7 @@ router = APIRouter()
 
 @router.get("/api/health")
 def health() -> dict:
-    return {"status": "ok", "version": "0.1.0"}
+    return {"status": "ok", "version": config.VERSION}
 
 
 @router.get("/api/devices")

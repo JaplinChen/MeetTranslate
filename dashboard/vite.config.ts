@@ -3,12 +3,17 @@ import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// Single source of truth for the version shown in the dashboard: read it from
-// package.json at build time so the sidebar always reflects the actual release
-// (bumped via `npm version`), instead of a hard-coded literal that silently
-// drifts. APP_VERSION env still overrides if explicitly provided.
-const { version: pkgVersion } = JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf-8')) as {
-  version: string;
+// Single source of truth for the version shown in the dashboard, read at build time instead of a
+// hard-coded literal that silently drifts. The repo-root VERSION file is authoritative because the
+// server reads the same file for /api/health — and the sidebar prefers the server's answer, so two
+// sources meant a bump in one of them changed nothing on screen. package.json is the fallback for
+// a dashboard built on its own; APP_VERSION env still overrides both.
+const readVersion = (): string => {
+  try {
+    return readFileSync(resolve(process.cwd(), '..', 'VERSION'), 'utf-8').trim();
+  } catch {
+    return (JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf-8')) as { version: string }).version;
+  }
 };
 
 // https://vite.dev/config/
@@ -16,7 +21,7 @@ export default defineConfig({
   plugins: [react()],
   appType: 'spa', // Enable SPA fallback for client-side routing
   define: {
-    __APP_VERSION__: JSON.stringify(process.env.APP_VERSION || pkgVersion),
+    __APP_VERSION__: JSON.stringify(process.env.APP_VERSION || readVersion()),
     __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
   },
   server: {

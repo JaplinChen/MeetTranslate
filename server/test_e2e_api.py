@@ -13,7 +13,12 @@ from . import config, llm_probe, main, translate
 
 
 def test_health_and_config_roundtrip(client: TestClient) -> None:
-    assert client.get("/api/health").json()["status"] == "ok"
+    health = client.get("/api/health").json()
+    assert health["status"] == "ok"
+    # From the VERSION file, not a literal: the dashboard overwrites its own build-time version with
+    # this answer, so a literal here decided what the sidebar said no matter what was released.
+    assert health["version"] == config.VERSION
+    assert health["version"] == (config.ROOT / "VERSION").read_text(encoding="utf-8").strip()
 
     cfg = client.get("/api/config").json()
     assert cfg["languages"] == ["zh", "vi", "en"]

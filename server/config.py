@@ -12,6 +12,12 @@ CONFIG_PATH = ROOT / "config.json"
 RECORDINGS_DIR = ROOT / "recordings"
 MODELS_DIR = ROOT / "models"
 
+# One file both sides read, so a bump moves the number everywhere it is shown. /api/health used to
+# answer a literal "0.1.0" that was tied to nothing — and the dashboard overwrites its own
+# build-time version with that answer, so the literal decided what the sidebar said. A bump in
+# package.json alone would have left the UI reporting the old number.
+VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip() if (ROOT / "VERSION").is_file() else "0.0.0"
+
 # Whisper wants 16 kHz mono; capturing at that rate avoids a resample step later.
 SAMPLE_RATE = 16_000
 CHANNELS = 1
