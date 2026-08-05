@@ -119,3 +119,53 @@ def test_a_failed_translation_costs_the_translation_not_the_line(tmp: Path) -> N
         assert emitted and emitted[0]["line"]["status"] == "translate_failed", emitted
     finally:
         st.close()
+
+
+def test_a_source_only_refinement_keeps_the_translations_on_screen(tmp: Path) -> None:
+    """A revision that touches only the source must not blank the subtitle under it.
+
+    The store merges (update_line upserts), so the database kept the old translations — but the
+    update event carried `previous_translations` verbatim. The subtitle page replaces the line
+    with whatever the update holds, so a source-only revision erased the translated text the room
+    was reading, and a partial one (en revised, vi not) erased the other language.
+    """
+    from .e2e_support import headless_pipeline
+
+    class ReviseSourceOnly:
+        def __init__(self):
+            self.calls = 0
+
+        def translate(self, line, targets, context=None, previous=None, terms=None):
+            self.calls += 1
+            out = {t: f"[{t}] {line.text}" for t in targets}
+            if self.calls == 2:   # judge the first line wrong, but revise only its source text
+                return translate.Result(out, "修過的第一句", {})
+            if self.calls == 3:   # revise the second line's en only; vi was fine
+                return translate.Result(out, "修過的第二句", {"en": "revised en"})
+            return translate.Result(out)
+
+    st = store_mod.Store(tmp / "refine-emit.db")
+    session = st.start_session("now", "x.wav")
+    events: list[dict] = []
+    cfg = config.Config(languages=["zh", "vi", "en"])
+    pipe = headless_pipeline(cfg, st, session, ReviseSourceOnly(), events.append)
+
+    for k, text in enumerate(["第一句", "第二句", "第三句"]):
+        pipe._transcriber = type("T", (), {"transcribe": staticmethod(lambda s, l, _t=text: (_t, "zh")),
+                                           "set_hotwords": staticmethod(lambda h: None)})()
+        pipe._handle(asr.Segment(np.zeros(1600, dtype="float32"), start=float(k)))
+    assert pipe.errors == 0
+
+    updates = [e["line"] for e in events if e["type"] == "update"]
+    assert len(updates) == 2, [e["type"] for e in events]
+
+    # Source-only revision: the event must still carry the translations the line already had.
+    first = updates[0]
+    assert first["source"] == "修過的第一句"
+    assert first["translations"].get("en") == "[en] 第一句", first["translations"]
+    assert first["translations"].get("vi") == "[vi] 第一句", first["translations"]
+
+    # Partial revision: en replaced, vi preserved.
+    second = updates[1]
+    assert second["translations"].get("en") == "revised en", second["translations"]
+    assert second["translations"].get("vi") == "[vi] 第二句", second["translations"]
