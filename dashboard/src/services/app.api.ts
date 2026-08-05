@@ -1,4 +1,5 @@
 import { request } from './http';
+import { withRefine, type RawSessionSummary } from './sessionSummary';
 
 export interface DisplaySettings {
   font_size: number;
@@ -107,7 +108,7 @@ export const appApi = {
   stopRecording: () => request<RecordingStatus>('/recording/stop', { method: 'POST' }),
   recordingStatus: () => request<RecordingStatus>('/recording/status'),
 
-  sessions: () => request<SessionSummary[]>('/sessions'),
+  sessions: async () => (await request<RawSessionSummary[]>('/sessions')).map(withRefine),
   // Sent as the raw body rather than a form: the server needs the bytes, not a field name.
   importRecording: (file: File) =>
     request<{ id: number; lines: number }>(`/sessions/import?filename=${encodeURIComponent(file.name)}`, {
