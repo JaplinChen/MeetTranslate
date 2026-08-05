@@ -326,3 +326,30 @@
   border-color: var(--border);
   color: var(--text-muted);
 }
+
+/* Sits in the transcript title beside the refine chip: it is an action on this transcript, and the
+   chip beside it is what tells you whether one is already running. */
+.sess-page .sess-reprocess {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-inline-start: auto;
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.sess-page .sess-reprocess:hover:not(:disabled) {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.sess-page .sess-reprocess:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

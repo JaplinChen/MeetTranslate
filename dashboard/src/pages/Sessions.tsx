@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FileText, Upload } from 'lucide-react';
+import { FileText, RefreshCw, Upload } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { PageSkeleton } from '../components/PageSkeleton';
 import { TranscriptRow } from '../components/sessions/TranscriptRow';
@@ -37,6 +37,7 @@ export function Sessions() {
   const [rerunning, setRerunning] = useState<number | null>(null);
   const [tab, setTab] = useState<Tab>('transcript');
   const [playing, setPlaying] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
   const tablistRef = useRef<HTMLDivElement>(null);
   const player = useRef<HTMLAudioElement | null>(null);
 
@@ -135,6 +136,25 @@ export function Sessions() {
       fail(err);
     } finally {
       setImporting(false);
+    }
+  };
+
+  // Re-deriving the transcript throws away every hand correction on it, and there is no undo, so
+  // it asks first. window.confirm rather than a dialog component: this is the only place in the app
+  // that needs one, and a bespoke modal would be more code than the thing it guards.
+  const reprocessSession = async () => {
+    if (selected === null || !hasRecording || locked) return;
+    if (!window.confirm(t('sessions.reprocessConfirm'))) return;
+    setBusy(true);
+    try {
+      await appApi.reprocess(selected);
+      // Refetch rather than patch state: the refine chip and the poll both read from this list.
+      setSessions(await appApi.sessions());
+      toast.success(t('sessions.reprocessQueued'));
+    } catch (err) {
+      fail(err);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -319,6 +339,16 @@ export function Sessions() {
             {refine !== 'idle' && (
               <span className={`sess-refine sess-refine-${refine}`}>{refineLabel[refine]}</span>
             )}
+            <button
+              type="button"
+              className="sess-reprocess"
+              disabled={busy || locked || !hasRecording}
+              title={hasRecording ? t('sessions.reprocessHint') : t('sessions.noRecording')}
+              onClick={reprocessSession}
+            >
+              <RefreshCw size={13} />
+              {locked ? t('sessions.reprocessing') : t('sessions.reprocess')}
+            </button>
           </h3>
           {locked && <p className="sess-hint">{t('sessions.refiningHint')}</p>}
           {!hasRecording && <p className="sess-no-audio">{t('sessions.noRecording')}</p>}

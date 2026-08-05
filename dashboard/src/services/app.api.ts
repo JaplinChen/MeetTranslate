@@ -153,6 +153,12 @@ export const appApi = {
   rerunLine: (id: number, lineId: number) =>
     request<{ lines: TranscriptLine[]; speakers: Record<string, string>; status: LineStatus }>(
       `/sessions/${id}/lines/${lineId}/rerun`, { method: 'POST' }),
+  // Re-derives the whole transcript from the recording with the largest model. Every line is
+  // replaced, so anything corrected by hand since the meeting is overwritten.
+  reprocess: (id: number) =>
+    request<{ session: number; state: RefineState; error: string }>(`/sessions/${id}/reprocess`, {
+      method: 'POST',
+    }),
   refineState: (id: number) =>
     request<{ session: number; state: RefineState; error: string }>(`/sessions/${id}/refine`),
 };
