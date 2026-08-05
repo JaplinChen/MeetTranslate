@@ -1,4 +1,4 @@
-import type { SessionSummary } from './app.api';
+import type { SessionSummary } from './app.api.ts';
 
 /** What `/sessions` actually returns. A server older than the refine field omits it, which happens
  *  every time one is left running across an update. */

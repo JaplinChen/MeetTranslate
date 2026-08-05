@@ -1,11 +1,15 @@
 // API Service Layer for MeetTranslate Dashboard
 // Single-user local app: the server listens on localhost only, so there is no auth header.
 
-import { warnIfInsecureHttpUrl } from '../utils/urlSecurity';
+import { warnIfInsecureHttpUrl } from '../utils/urlSecurity.ts';
 
 // Same-origin '/api' by default. Set VITE_API_URL to an API ORIGIN (e.g. http://localhost:8010)
 // when the dashboard dev server and the Python service run on different ports.
-const API_ORIGIN = (import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '');
+//
+// `env?.` because Vite defines `import.meta.env` and plain Node does not: this module runs under
+// `node --test` too, where the bare property read threw at import time and took down any test that
+// touched the service layer, whatever it was actually asserting.
+const API_ORIGIN = (import.meta.env?.VITE_API_URL ?? '').replace(/\/+$/, '');
 export const API_BASE_URL = `${API_ORIGIN}/api`;
 if (API_ORIGIN) warnIfInsecureHttpUrl(API_ORIGIN, 'VITE_API_URL');
 

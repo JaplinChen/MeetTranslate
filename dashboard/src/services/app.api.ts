@@ -1,5 +1,5 @@
-import { request } from './http';
-import { withRefine, type RawSessionSummary } from './sessionSummary';
+import { request } from './http.ts';
+import { withRefine, type RawSessionSummary } from './sessionSummary.ts';
 
 export interface DisplaySettings {
   font_size: number;
