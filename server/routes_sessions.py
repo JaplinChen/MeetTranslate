@@ -191,7 +191,12 @@ def rerun_line(session_id: int, line_id: int) -> dict:
 
 @router.get("/api/sessions/{session_id}/refine")
 def refine_state(session_id: int) -> dict:
-    """Where the post-meeting pass got to. `idle` means there has not been one this run."""
+    """Where the post-meeting pass got to. `idle` means there has not been one this run.
+
+    The dashboard reads refine state off the session list instead — carried there so it can show
+    which meetings are still being refined before you pick one. This is the per-session probe the
+    e2e suite waits on, which is why it has no browser caller and is not dead.
+    """
     return {"session": session_id, **(jobs.state(session_id) or {"state": "idle", "error": ""})}
 
 
