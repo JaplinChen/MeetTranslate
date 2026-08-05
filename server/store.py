@@ -259,6 +259,31 @@ class Store(SpeakerStore):
             return {r["wrong"]: r["right"] for r in
                     self._db.execute("SELECT wrong, right FROM correction ORDER BY LENGTH(wrong) DESC")}
 
+    def edit_correction(self, old_wrong: str, wrong: str, right: str) -> None:
+        """Fix a learned pair in place, either side of it.
+
+        Until now the only repair was to delete and re-learn, which means finding the line it came
+        from and correcting it again — and a pair learned from a typo is exactly the one you cannot
+        reproduce on demand. `wrong` is the key, so changing it is a rename rather than an update.
+        """
+        wrong, right = wrong.strip(), right.strip()
+        if not wrong or not right:
+            raise ValueError("both sides of a correction must be filled in")
+        if wrong == right:
+            raise ValueError("a correction that rewrites text to itself would never stop matching")
+        with self._lock:
+            if wrong != old_wrong and self._db.execute(
+                "SELECT 1 FROM correction WHERE wrong=?", (wrong,)
+            ).fetchone():
+                # Overwriting would silently discard whichever pair the user was not looking at.
+                raise ValueError(f"there is already a correction for {wrong}")
+            changed = self._db.execute(
+                "UPDATE correction SET wrong=?, right=? WHERE wrong=?", (wrong, right, old_wrong)
+            ).rowcount
+            if not changed:
+                raise KeyError(old_wrong)
+            self._db.commit()
+
     def forget_correction(self, wrong: str) -> None:
         with self._lock:
             self._db.execute("DELETE FROM correction WHERE wrong=?", (wrong,))

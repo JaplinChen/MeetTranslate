@@ -176,3 +176,36 @@ def test_unnamed_speaker_can_be_heard_before_naming(client: TestClient) -> None:
     assert client.get(f"/api/sessions/{session}/speakers/S2/clip").status_code == 200
     assert client.get(f"/api/sessions/{session}/speakers/S9/clip").status_code == 404
     assert client.get(f"/api/sessions/999999/speakers/S1/clip").status_code == 404
+
+
+def test_a_learned_correction_can_be_fixed_in_place(client: TestClient) -> None:
+    """Deleting and re-learning means reproducing the line it came from, which a typo rarely is."""
+    session = seed_session("editable.wav")
+    # This suite shares one store in one global order, so a check that seeds rows has to remove
+    # them again — a later one asserts the exact contents of this table.
+    before = len(client.get("/api/corrections").json())
+    main.store.add_correction("缺消疫", "切削夜")
+    main.store.add_correction("CNT", "吸菸")
+
+    # The right-hand side was itself mistyped: fix it without touching what it matches.
+    fixed = client.put("/api/corrections/缺消疫", json={"right": "切削液"}).json()
+    assert {c["wrong"]: c["right"] for c in fixed}["缺消疫"] == "切削液"
+
+    # The left-hand side is the key, so changing it is a rename: the old text stops matching.
+    renamed = client.put("/api/corrections/缺消疫", json={"wrong": "缺خ疫", "right": "切削液"}).json()
+    pairs = {c["wrong"]: c["right"] for c in renamed}
+    assert "缺消疫" not in pairs and pairs["缺خ疫"] == "切削液"
+
+    # Renaming onto an existing pair would drop whichever one the user was not looking at.
+    assert client.put("/api/corrections/缺خ疫", json={"wrong": "CNT", "right": "切削液"}).status_code == 400
+    assert client.put("/api/corrections/缺خ疫", json={"right": ""}).status_code == 400
+    assert client.put("/api/corrections/缺خ疫", json={"wrong": "同", "right": "同"}).status_code == 400
+    assert client.put("/api/corrections/nothing-here", json={"right": "x"}).status_code == 404
+
+    # The rejected edits above left nothing behind: still the two seeded here and whatever existed.
+    assert len(client.get("/api/corrections").json()) == before + 2
+    assert client.get(f"/api/sessions/{session}/lines").status_code == 200
+
+    client.delete("/api/corrections/缺خ疫")
+    client.delete("/api/corrections/CNT")
+    assert len(client.get("/api/corrections").json()) == before

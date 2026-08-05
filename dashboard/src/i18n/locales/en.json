@@ -217,6 +217,9 @@
     "noCorrections": "No corrections learned yet. Edit a transcript line to teach one.",
     "forget": "Forget this",
     "rename": "Click to rename",
-    "sessions": "meetings: {{count}}"
+    "sessions": "meetings: {{count}}",
+    "edit": "Edit this correction",
+    "editWrong": "What it was misheard as",
+    "editRight": "What was actually said"
   }
 }

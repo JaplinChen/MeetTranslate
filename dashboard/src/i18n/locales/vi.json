@@ -217,6 +217,9 @@
     "noCorrections": "Chưa học được sửa lỗi nào. Hãy sửa một dòng trong bản ghi.",
     "forget": "Xoá mục này",
     "rename": "Bấm để đổi tên",
-    "sessions": "{{count}} cuộc họp"
+    "sessions": "{{count}} cuộc họp",
+    "edit": "Sửa chỉnh sửa này",
+    "editWrong": "Nghe nhầm thành",
+    "editRight": "Thực tế đã nói"
   }
 }
