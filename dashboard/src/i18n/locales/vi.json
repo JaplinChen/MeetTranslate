@@ -71,7 +71,8 @@
     "rerunLine": "Chạy lại dòng này",
     "rerunning": "Đang chạy…",
     "translationMissing": "Dịch thất bại",
-    "failedCount": "{{count}} dòng cần xử lý"
+    "failedCount": "{{count}} dòng cần xử lý",
+    "clipLabel": "Phát mẫu giọng của {{code}}"
   },
   "glossary": {
     "title": "Bảng thuật ngữ",

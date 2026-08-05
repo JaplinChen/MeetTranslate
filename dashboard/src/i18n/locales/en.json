@@ -71,7 +71,8 @@
     "rerunLine": "Run this line again",
     "rerunning": "Running…",
     "translationMissing": "Translation failed",
-    "failedCount": "{{count}} lines need attention"
+    "failedCount": "{{count}} lines need attention",
+    "clipLabel": "Play a sample of {{code}}"
   },
   "glossary": {
     "title": "Glossary",

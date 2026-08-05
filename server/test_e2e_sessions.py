@@ -141,3 +141,38 @@ def test_rerunning_a_line_refuses_what_it_should(client: TestClient) -> None:
     # A line with no duration is refused rather than decoded as a 60-second span.
     main.store.replace_line(line_id, "一行", "zh", {}, "ok")
     assert client.post(f"/api/sessions/{session_id}/lines/{line_id}/rerun").status_code == 400
+
+
+def test_unnamed_speaker_can_be_heard_before_naming(client: TestClient) -> None:
+    """The naming screen shows S1..S35 and asks who they are; it has to let you hear them.
+
+    /api/speakers/known/{name}/clip resolves a voice through the name attached to it, so it can only
+    play back a speaker who has already been identified — no use to the screen doing the identifying.
+    """
+    import soundfile as sf
+
+    wav = config.RECORDINGS_DIR / "unnamed.wav"
+    wav.parent.mkdir(parents=True, exist_ok=True)
+    sf.write(str(wav), np.zeros(config.SAMPLE_RATE * 30, dtype="float32"), config.SAMPLE_RATE)
+
+    session = main.store.start_session("now", str(wav))
+    # "謝謝" first and longer speech later: picking the earliest line would play the useless one.
+    main.store.add_line(session, 1.0, "S1", "zh", "謝謝", {}, end_time=1.4)
+    main.store.add_line(session, 12.0, "S1", "zh", "這段話長得多，聽得出是誰", {}, end_time=20.0)
+    main.store.add_line(session, 3.0, "S2", "zh", "另一個人", {}, end_time=5.0)
+
+    # Nobody has been named — the endpoint keyed on names finds nothing to play.
+    assert client.get("/api/speakers/known/S1/clip").status_code == 404
+
+    clip = client.get(f"/api/sessions/{session}/speakers/S1/clip")
+    assert clip.status_code == 200 and clip.headers["content-type"] == "audio/wav"
+    heard, rate = sf.read(io.BytesIO(clip.content))
+    assert len(heard) == main.CLIP_SECONDS * rate, len(heard)
+
+    # Which line it picked cannot be heard — the fixture is silence — so assert it directly:
+    # the 8-second utterance at 12.0s, not the 0.4-second "謝謝" that comes first.
+    assert main.store.session_speaker_sample(session, "S1") == (str(wav), 12.0)
+
+    assert client.get(f"/api/sessions/{session}/speakers/S2/clip").status_code == 200
+    assert client.get(f"/api/sessions/{session}/speakers/S9/clip").status_code == 404
+    assert client.get(f"/api/sessions/999999/speakers/S1/clip").status_code == 404

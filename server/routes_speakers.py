@@ -31,10 +31,8 @@ def get_known_speakers() -> list[dict]:
     return [{"name": name, "sessions": counts.get(name, 0)} for name, _ in main.store.known_speakers()]
 
 
-@router.get("/api/speakers/known/{name}/clip")
-def get_speaker_clip(name: str) -> Response:
-    """A few seconds of the voice behind the name, so a wrong match is audible rather than guessed."""
-    sample = main.store.speaker_sample(name)
+def _clip(sample: tuple[str, float] | None) -> Response:
+    """CLIP_SECONDS of a recording as a WAV, from wherever the sample points at."""
     if sample is None:
         raise HTTPException(404, "no recording for this voice")
     wav_path, start = sample
@@ -48,6 +46,22 @@ def get_speaker_clip(name: str) -> Response:
     buf = io.BytesIO()
     sf.write(buf, block, rate, format="WAV", subtype="PCM_16")
     return Response(buf.getvalue(), media_type="audio/wav")
+
+
+@router.get("/api/speakers/known/{name}/clip")
+def get_speaker_clip(name: str) -> Response:
+    """A few seconds of the voice behind the name, so a wrong match is audible rather than guessed."""
+    return _clip(main.store.speaker_sample(name))
+
+
+@router.get("/api/sessions/{session_id}/speakers/{code}/clip")
+def get_session_speaker_clip(session_id: int, code: str) -> Response:
+    """The same, for a speaker this meeting has not named yet.
+
+    The one above needs a name to find a voice, which leaves the naming screen — thirty-five boxes
+    labelled S1..S35 — as the one place in the app asking a question it gave you nothing to answer.
+    """
+    return _clip(main.store.session_speaker_sample(session_id, code))
 
 
 @router.put("/api/speakers/known/{name}")
