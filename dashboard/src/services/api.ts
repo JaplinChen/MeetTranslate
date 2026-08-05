@@ -1,2 +1,2 @@
-export * from './http';
-export * from './admin.api';
+export * from './http.ts';
+export * from './admin.api.ts';

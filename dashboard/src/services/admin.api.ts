@@ -6,7 +6,7 @@
    none of those endpoints exist in server/, so it is gone. What is left is what the pages
    actually reach for. */
 
-import { request } from './http';
+import { request } from './http.ts';
 
 export interface HealthStatus {
   status: 'ok' | 'error';
