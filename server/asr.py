@@ -162,6 +162,21 @@ def default_threads() -> int:
     return min(4, max(2, (os.cpu_count() or 4) // 4))
 
 
+def missing_models(cfg: config.Config) -> list[str]:
+    """Which of the files a live pipeline needs are not on disk, named so they can be gone and got.
+
+    Constructing a Transcriber does not check — recognizers are built on first use, and that is
+    also how the language-selection logic is tested on machines with no models. The VAD is worse:
+    sherpa raises its own error mentioning a path, from a background thread.
+    """
+    absent = [str(p) for p in (config.VAD_MODEL, config.SPEAKER_MODEL) if not p.is_file()]
+    try:
+        Transcriber(model_dir=cfg.whisper_dir(), languages=cfg.languages)._paths()
+    except FileNotFoundError as exc:
+        absent.append(str(exc))
+    return absent
+
+
 class Transcriber:
     """Whisper recognizers, one per language, created on first use."""
 

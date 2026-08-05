@@ -70,6 +70,14 @@ class Pipeline:
         self._translator = translator
         self._emit = emit
 
+        # Every model this needs, checked before any of them is opened. They load lazily or raise
+        # library errors that say nothing useful, and the pipeline runs on its own thread — so a
+        # machine with nothing downloaded used to accept "start recording", capture the whole
+        # meeting and produce zero lines, with the only trace a log line nobody was watching.
+        missing = asr.missing_models(cfg)
+        if missing:
+            raise FileNotFoundError("speech models not found: " + ", ".join(missing))
+
         self.tap: queue.Queue[np.ndarray | None] = queue.Queue(maxsize=TAP_CAPACITY)
         self._vad = asr.Vad()
         # GPU first: measured on this box it is both faster and markedly more accurate.
