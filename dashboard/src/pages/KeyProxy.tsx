@@ -5,6 +5,7 @@ import { keyProxyApi, type KeyStatus } from '../services/api';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { useResizableCol } from '../hooks/useResizableCol';
 import { useRole } from '../hooks/useRole';
+import { NO_AUTOFILL } from '../utils/noAutofill';
 import { useToast } from '../components/Toast';
 import { PageHeader } from '../components/PageHeader';
 import { PageSkeleton } from '../components/PageSkeleton';
@@ -132,7 +133,7 @@ export function KeyProxy() {
           <input
             className="keyproxy-input"
             type="password"
-            autoComplete="off"
+            {...NO_AUTOFILL}
             placeholder={t('keyproxy.keyPlaceholder')}
             value={apiKey}
             onChange={e => setApiKey(e.target.value)}
