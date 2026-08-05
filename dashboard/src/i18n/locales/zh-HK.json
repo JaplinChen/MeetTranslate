@@ -184,10 +184,15 @@
     "quotaNoneHint": "此供應商未回報配額"
   },
   "theme": {
-    "label": "外觀",
+    "label": "外觀：{{value}}",
     "appearance": "外觀",
     "mode": "模式",
-    "palette": "配色"
+    "palette": "配色",
+    "light": "淺色",
+    "dark": "深色",
+    "system": "跟隨系統",
+    "anthropic": "Anthropic",
+    "anthropic-dark": "Anthropic 深色"
   },
   "errorBoundary": {
     "title": "發生錯誤",

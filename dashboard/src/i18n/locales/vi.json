@@ -184,10 +184,15 @@
     "quotaNoneHint": "Nhà cung cấp này không báo hạn mức"
   },
   "theme": {
-    "label": "Giao diện",
+    "label": "Giao diện: {{value}}",
     "appearance": "Giao diện",
     "mode": "Chế độ",
-    "palette": "Bảng màu"
+    "palette": "Bảng màu",
+    "light": "Sáng",
+    "dark": "Tối",
+    "system": "Theo hệ thống",
+    "anthropic": "Anthropic",
+    "anthropic-dark": "Anthropic tối"
   },
   "errorBoundary": {
     "title": "Đã xảy ra lỗi",
