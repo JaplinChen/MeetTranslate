@@ -14,6 +14,13 @@ import './Sessions.refine.css';
 // about noticing it finished rather than tracking progress, and it stops the moment it has.
 const REFINE_POLL_MS = 5000;
 
+// One meeting is an import control, up to 35 speaker fields and ~950 transcript rows. Stacked they
+// are one column metres long, where naming a speaker means scrolling past the transcript to find
+// the field and scrolling back to see whether it took. Each is its own view; the session picker
+// stays outside them because both of the other two are about whichever session it points at.
+const TABS = ['import', 'speakers', 'transcript'] as const;
+type Tab = (typeof TABS)[number];
+
 export function Sessions() {
   const { t } = useTranslation();
   useDocumentTitle(t('sessions.title'));
@@ -27,6 +34,8 @@ export function Sessions() {
   const [editing, setEditing] = useState<{ id: number; text: string } | null>(null);
   const [importing, setImporting] = useState(false);
   const [rerunning, setRerunning] = useState<number | null>(null);
+  const [tab, setTab] = useState<Tab>('transcript');
+  const tablistRef = useRef<HTMLDivElement>(null);
 
   const fail = (err: unknown) => toast.error(err instanceof Error ? err.message : String(err));
 
@@ -153,98 +162,138 @@ export function Sessions() {
     return <PageSkeleton rows={4} />;
   }
 
+  // With nothing imported there is no session for the other two to be about, so the choice is not
+  // offered rather than offered and empty.
+  const hasSessions = sessions.length > 0;
+  const active: Tab = hasSessions ? tab : 'import';
+
+  // Left/Right move between tabs, which is what a tablist is expected to do once its buttons claim
+  // role="tab" — without it the role announces an interaction the keyboard cannot perform.
+  const onTabKeys = (event: React.KeyboardEvent) => {
+    const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+    if (!step) return;
+    event.preventDefault();
+    const enabled = TABS.filter(id => id === 'import' || hasSessions);
+    const next = enabled[(enabled.indexOf(active) + step + enabled.length) % enabled.length];
+    setTab(next);
+    tablistRef.current?.querySelector<HTMLButtonElement>(`#sess-tab-${next}`)?.focus();
+  };
+
   return (
     <div className="etable-page sess-page">
       <PageHeader title={t('sessions.title')} subtitle={t('sessions.subtitle')} />
 
-      <section className="etable-panel">
-        <h3 className="etable-panel-title">{t('sessions.import')}</h3>
-        <p className="sess-hint">{t('sessions.importHint')}</p>
-        <label className="sess-import">
-          <Upload size={16} />
-          <span>{importing ? t('sessions.importing') : t('sessions.importPick')}</span>
-          <input
-            type="file"
-            accept="video/*,audio/*"
-            disabled={importing}
-            onChange={e => {
-              const file = e.target.files?.[0];
-              e.target.value = '';
-              if (file) importRecording(file);
-            }}
-          />
-        </label>
-      </section>
+      {hasSessions && (
+        <section className="etable-panel">
+          <select className="sess-select" value={selected ?? ''} onChange={e => setSelected(Number(e.target.value))}>
+            {sessions.map(s => (
+              <option key={s.id} value={s.id}>
+                {s.started} — {t('sessions.lineCount', { count: s.lines })}
+                {s.refine.state === 'refining' ? ` · ${t('sessions.refining')}` : ''}
+              </option>
+            ))}
+          </select>
+        </section>
+      )}
 
-      {sessions.length === 0 ? (
-        <div className="sess-empty">
-          <FileText size={32} strokeWidth={1} />
-          <span>{t('sessions.empty')}</span>
-        </div>
-      ) : (
-        <>
-          <section className="etable-panel">
-            <select className="sess-select" value={selected ?? ''} onChange={e => setSelected(Number(e.target.value))}>
-              {sessions.map(s => (
-                <option key={s.id} value={s.id}>
-                  {s.started} — {t('sessions.lineCount', { count: s.lines })}
-                  {s.refine.state === 'refining' ? ` · ${t('sessions.refining')}` : ''}
-                </option>
-              ))}
-            </select>
-          </section>
+      <div className="sess-tabs" role="tablist" aria-label={t('sessions.title')} ref={tablistRef} onKeyDown={onTabKeys}>
+        {TABS.map(id => (
+          <button
+            key={id}
+            id={`sess-tab-${id}`}
+            role="tab"
+            type="button"
+            aria-selected={active === id}
+            aria-controls={`sess-panel-${id}`}
+            // Only the active tab is in the tab order; arrows move within the list. Five stops for
+            // three tabs is what makes a tablist tedious to tab past.
+            tabIndex={active === id ? 0 : -1}
+            disabled={id !== 'import' && !hasSessions}
+            className={`sess-tab ${active === id ? 'active' : ''}`}
+            onClick={() => setTab(id)}
+          >
+            {t(`sessions.${id}`)}
+            {id === 'transcript' && hasSessions && <span className="etable-count">{lines.length}</span>}
+          </button>
+        ))}
+      </div>
 
-          {codes.length > 0 && (
-            <section className="etable-panel">
-              <h3 className="etable-panel-title">{t('sessions.speakers')}</h3>
-              <p className="sess-hint">{t('sessions.speakersHint')}</p>
-              <div className="sess-names">
-                {codes.map(code => (
-                  <label key={code} className="sess-name">
-                    <span>{code}</span>
-                    <input
-                      defaultValue={names[code] ?? ''}
-                      placeholder={t('sessions.namePlaceholder')}
-                      onBlur={e => saveName(code, e.target.value)}
-                    />
-                  </label>
-                ))}
-              </div>
-            </section>
-          )}
-
-          <section className="etable-panel">
-            <h3 className="etable-panel-title">
-              {t('sessions.transcript')}
-              <span className="etable-count">{lines.length}</span>
-              {refine !== 'idle' && (
-                <span className={`sess-refine sess-refine-${refine}`}>{refineLabel[refine]}</span>
-              )}
-            </h3>
-            {locked && <p className="sess-hint">{t('sessions.refiningHint')}</p>}
-            {failed.length > 0 && (
-              // Aggregated as well as marked inline: a two-hour meeting failing 5% is forty-odd
-              // marks scattered through the transcript, and nobody finds those by scrolling.
-              <p className="sess-failed-summary">{t('sessions.failedCount', { count: failed.length })}</p>
-            )}
-            <div className="sess-lines">
-              {lines.map(line => (
-                <TranscriptRow
-                  key={line.id}
-                  line={line}
-                  speaker={names[line.speaker] || line.speaker}
-                  langs={langs}
-                  locked={locked}
-                  draft={editing}
-                  rerunning={rerunning}
-                  onDraft={setEditing}
-                  onSave={saveLine}
-                  onRerun={rerunLine}
-                />
-              ))}
+      {active === 'import' && (
+        <section className="etable-panel" role="tabpanel" id="sess-panel-import" aria-labelledby="sess-tab-import">
+          <p className="sess-hint">{t('sessions.importHint')}</p>
+          <label className="sess-import">
+            <Upload size={16} />
+            <span>{importing ? t('sessions.importing') : t('sessions.importPick')}</span>
+            <input
+              type="file"
+              accept="video/*,audio/*"
+              disabled={importing}
+              onChange={e => {
+                const file = e.target.files?.[0];
+                e.target.value = '';
+                if (file) importRecording(file);
+              }}
+            />
+          </label>
+          {!hasSessions && (
+            <div className="sess-empty">
+              <FileText size={32} strokeWidth={1} />
+              <span>{t('sessions.empty')}</span>
             </div>
-          </section>
-        </>
+          )}
+        </section>
+      )}
+
+      {active === 'speakers' && (
+        <section className="etable-panel" role="tabpanel" id="sess-panel-speakers" aria-labelledby="sess-tab-speakers">
+          <p className="sess-hint">{t('sessions.speakersHint')}</p>
+          <div className="sess-names">
+            {codes.map(code => (
+              <label key={code} className="sess-name">
+                <span>{code}</span>
+                <input
+                  defaultValue={names[code] ?? ''}
+                  placeholder={t('sessions.namePlaceholder')}
+                  onBlur={e => saveName(code, e.target.value)}
+                />
+              </label>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {active === 'transcript' && (
+        <section className="etable-panel" role="tabpanel" id="sess-panel-transcript" aria-labelledby="sess-tab-transcript">
+          <h3 className="etable-panel-title">
+            {t('sessions.transcript')}
+            <span className="etable-count">{lines.length}</span>
+            {refine !== 'idle' && (
+              <span className={`sess-refine sess-refine-${refine}`}>{refineLabel[refine]}</span>
+            )}
+          </h3>
+          {locked && <p className="sess-hint">{t('sessions.refiningHint')}</p>}
+          {failed.length > 0 && (
+            // Aggregated as well as marked inline: a two-hour meeting failing 5% is forty-odd
+            // marks scattered through the transcript, and nobody finds those by scrolling.
+            <p className="sess-failed-summary">{t('sessions.failedCount', { count: failed.length })}</p>
+          )}
+          <div className="sess-lines">
+            {lines.map(line => (
+              <TranscriptRow
+                key={line.id}
+                line={line}
+                speaker={names[line.speaker] || line.speaker}
+                langs={langs}
+                locked={locked}
+                draft={editing}
+                rerunning={rerunning}
+                onDraft={setEditing}
+                onSave={saveLine}
+                onRerun={rerunLine}
+              />
+            ))}
+          </div>
+        </section>
       )}
     </div>
   );
