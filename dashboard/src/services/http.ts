@@ -37,15 +37,3 @@ export async function request<T>(endpoint: string, options: RequestInit = {}): P
 
   return response.json();
 }
-
-/** Like {@link request} but returns the raw response text. */
-export async function requestText(endpoint: string): Promise<string> {
-  const response = await fetch(`${API_BASE_URL}${endpoint}`);
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.message || `HTTP ${response.status}`);
-  }
-
-  return response.text();
-}
