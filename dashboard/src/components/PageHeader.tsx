@@ -13,15 +13,15 @@ interface PageHeaderProps {
  *
  * @example
  * // Simple usage
- * <PageHeader title="Settings" subtitle="Configure application preferences" />
+ * <PageHeader title="Subtitles" subtitle="How subtitles are laid out on the TV." />
  *
  * @example
  * // With badge and actions
  * <PageHeader
- *   title="Dashboard"
+ *   title="Sessions"
  *   badge={<StatusBadge status="connected" />}
- *   subtitle="Overview of your WhatsApp sessions"
- *   actions={<button>Create New</button>}
+ *   subtitle="Transcripts and translations from past meetings."
+ *   actions={<button>Import a recording</button>}
  * />
  */
 export function PageHeader({ title, subtitle, badge, actions }: PageHeaderProps) {
