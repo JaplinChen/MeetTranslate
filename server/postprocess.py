@@ -386,6 +386,13 @@ def rewrite_session(store: Store, session_id: int, wav: Path, cfg: config.Config
         })
         context.append(line)
 
+    # replace_lines deletes the old transcript before inserting the new. An empty result would make
+    # that a bare delete — and a re-transcription that decoded nothing (every utterance came back
+    # empty without raising) must not wipe a transcript that already exists, the same way the
+    # no-utterances case above returns without touching it. A session that never had lines is still
+    # allowed to be created empty, as a silent import is.
+    if not rows and store.lines(session_id):
+        raise ValueError("re-transcription produced no lines; keeping the existing transcript")
     store.replace_lines(session_id, rows)
     return utterances
 
