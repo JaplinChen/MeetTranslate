@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import shutil
@@ -102,6 +103,52 @@ def test_importing_a_recording_makes_it_a_session(client: TestClient) -> None:
     assert again.status_code == 200, again.text
     imports = [s for s in client.get("/api/sessions").json() if s["id"] in (session_id, again.json()["id"])]
     assert len({s["wav_path"] for s in imports}) == 2, imports
+
+
+def test_import_decodes_off_the_event_loop(client: TestClient) -> None:
+    """ffmpeg and the ASR decode are blocking; on the event loop they freeze every other request —
+    a live meeting's subtitle socket included — for the length of the import. They must run in a
+    worker thread. Proven by whether extract_audio sees a running loop in its own thread."""
+    if shutil.which("ffmpeg") is None:
+        print("  (skipped: ffmpeg not installed)")
+        return
+
+    import soundfile as sf
+
+    from . import ingest
+
+    src = config.RECORDINGS_DIR / "loopprobe.m4a"
+    src.parent.mkdir(parents=True, exist_ok=True)
+    tone = np.sin(np.arange(config.SAMPLE_RATE * 2) * 0.05).astype("float32")
+    raw = config.RECORDINGS_DIR / "loopprobe.wav"
+    sf.write(str(raw), tone, config.SAMPLE_RATE)
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(raw), str(src)], check=True)
+
+    real = ingest.extract_audio
+    saw: dict[str, bool] = {}
+
+    def spy(s: Path, d: Path) -> None:
+        try:
+            asyncio.get_running_loop()
+            saw["on_loop"] = True
+        except RuntimeError:
+            saw["on_loop"] = False
+        return real(s, d)
+
+    ingest.extract_audio = spy
+    try:
+        r = client.post("/api/sessions/import?filename=probe.m4a", content=src.read_bytes())
+    finally:
+        ingest.extract_audio = real
+
+    assert r.status_code == 200, r.text
+    assert saw.get("on_loop") is False, "import decode ran on the event loop thread"
+
+    # Shared RECORDINGS_DIR: leave no import-*.wav behind, or the next import test miscounts.
+    imported = next(s for s in client.get("/api/sessions").json() if s["id"] == r.json()["id"])
+    Path(imported["wav_path"]).unlink(missing_ok=True)
+    raw.unlink(missing_ok=True)
+    src.unlink(missing_ok=True)
 
 
 def test_summary_lifecycle_none_then_stored_then_stale(client: TestClient) -> None:

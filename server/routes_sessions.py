@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -301,7 +302,9 @@ async def import_recording(request: Request, filename: str = "upload") -> dict:
         raise HTTPException(400, "empty upload")
 
     try:
-        ingest.extract_audio(source, wav)
+        # ffmpeg is a blocking subprocess; off the event loop or the whole server — every live
+        # meeting's socket included — freezes for the length of the transcode.
+        await asyncio.to_thread(ingest.extract_audio, source, wav)
     except ValueError as exc:
         # ffmpeg creates the output before it discovers it cannot read the input.
         wav.unlink(missing_ok=True)
@@ -315,14 +318,19 @@ async def import_recording(request: Request, filename: str = "upload") -> dict:
     now = time.strftime("%Y-%m-%dT%H:%M:%S")
     session_id = main.store.start_session(now, str(wav))
     main.store.end_session(session_id, now)
-    try:
-        # ponytail: synchronous — a long recording holds the request open. Worth a job queue only
-        # once someone imports something long enough to time out. It still queues for the card, so
-        # an import during a meeting waits rather than loading a second model beside the live one
+    def _decode():
+        # ponytail: synchronous decode — a long recording holds the request open. Worth a job queue
+        # only once someone imports something long enough to time out. It still queues for the card,
+        # so an import during a meeting waits rather than loading a second model beside the live one
         # — but only for the decode, which is the only stage that wants it.
         with jobs.one_pass():
             main.postprocess.rewrite_session(main.store, session_id, wav, main.state["cfg"],
                                              main._make_translator(), gpu=jobs.borrow_gpu)
+
+    try:
+        # In a thread: one_pass() blocks on the GPU gate and the decode is heavy CPU — either one
+        # on the event loop stalls every other request until the import finishes.
+        await asyncio.to_thread(_decode)
     except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(400, str(exc)) from exc
     return {"id": session_id, "lines": len(main.store.lines(session_id))}
