@@ -65,15 +65,38 @@ export interface RecordingStatus {
 /** Where a session's post-meeting pass got to. `idle` means there has not been one this run. */
 export type RefineState = 'idle' | 'refining' | 'refined' | 'failed' | 'cancelled';
 
+/** Which part of the post-meeting pass is running; absent when there has not been one. */
+export type RefineStage = 'rewrite' | 'refine' | 'summarize';
+
 export interface SessionSummary {
   id: number;
   started: string;
   ended: string | null;
   wav_path: string;
   lines: number;
-  refine: { state: RefineState; error: string };
+  refine: { state: RefineState; stage?: RefineStage; error: string };
   /** Whether the recording this session was made from is still on disk. */
   hasRecording: boolean;
+}
+
+/** Where the meeting summary got to. `partial` means some requested languages failed. */
+export type SummaryState = 'none' | 'generating' | 'ok' | 'partial' | 'failed';
+
+export interface MeetingSummaryLang {
+  title: string;
+  summary: string;
+  decisions: string[];
+  /** `speaker` is the diarisation code, not a display name — resolve via the names map. */
+  actions: { text: string; speaker: string }[];
+}
+
+export interface MeetingSummary {
+  session: number;
+  state: SummaryState;
+  /** The transcript has been edited since this summary was generated. */
+  stale: boolean;
+  created?: string;
+  summary: Record<string, MeetingSummaryLang> | null;
 }
 
 /** How a line ended up in the transcript. Distinct from `refined`, which is an LLM revision. */
@@ -155,6 +178,9 @@ export const appApi = {
       `/sessions/${id}/lines/${lineId}/rerun`, { method: 'POST' }),
   // Re-derives the whole transcript from the recording with the largest model. Every line is
   // replaced, so anything corrected by hand since the meeting is overwritten.
+  sessionSummary: (id: number) => request<MeetingSummary>(`/sessions/${id}/summary`),
+  // 409 while a job runs or the meeting is recording; 429 while fresh-and-unchanged.
+  summarizeSession: (id: number) => request<MeetingSummary>(`/sessions/${id}/summarize`, { method: 'POST' }),
   reprocess: (id: number) =>
     request<{ session: number; state: RefineState; error: string }>(`/sessions/${id}/reprocess`, {
       method: 'POST',

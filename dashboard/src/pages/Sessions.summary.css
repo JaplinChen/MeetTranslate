@@ -1,0 +1,166 @@
+/* page-root: .sess-page */
+/* The meeting summary card in the transcript tab. Collapsed by default: the transcript is what the
+   page is for, and a full summary above it pushes the first line a screen down. */
+.sess-page .sess-summary {
+  margin: 0 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-light);
+}
+
+.sess-page .sess-summary-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.sess-page .sess-summary-head:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+  border-radius: var(--radius-sm);
+}
+
+.sess-page .sess-summary-title {
+  font-size: 0.88rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* One line of the summary as a teaser; the chevron is what says there is more. */
+.sess-page .sess-summary-preview {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Low-chroma on purpose: partial and generating are notes about the card, not alarms. */
+.sess-page .sess-summary-badge {
+  flex: 0 0 auto;
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.sess-page .sess-summary-body {
+  padding: 0 var(--space-3) var(--space-3);
+}
+
+.sess-page .sess-summary-langs {
+  display: flex;
+  gap: var(--space-1);
+  margin-bottom: var(--space-2);
+}
+
+.sess-page .sess-summary-lang {
+  padding: 1px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.sess-page .sess-summary-lang.active {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.sess-page .sess-summary-text {
+  margin: 0 0 var(--space-2);
+  font-size: 0.88rem;
+  line-height: 1.6;
+  white-space: pre-line;
+}
+
+.sess-page .sess-summary-heading {
+  margin: var(--space-2) 0 var(--space-1);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.sess-page .sess-summary-list {
+  margin: 0;
+  padding-inline-start: var(--space-4);
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+.sess-page .sess-summary-actor {
+  margin-inline-end: var(--space-2);
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+/* Muted, not red: the summary still stands, it is just older than the transcript under it. */
+.sess-page .sess-summary-stale {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-1) var(--space-2);
+  border-inline-start: 3px solid var(--text-muted);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.sess-page .sess-summary-error {
+  margin: var(--space-2) 0 0;
+  color: var(--error);
+  font-size: 0.82rem;
+}
+
+.sess-page .sess-summary-regen,
+.sess-page .sess-summary-generate {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: var(--space-2);
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.sess-page .sess-summary-regen:hover:not(:disabled),
+.sess-page .sess-summary-generate:hover:not(:disabled) {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.sess-page .sess-summary-regen:disabled,
+.sess-page .sess-summary-generate:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* The card before there is anything to show: a title and one button, not an empty shell. */
+.sess-page .sess-summary-cta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+}
+
+.sess-page .sess-summary-cta .sess-summary-generate,
+.sess-page .sess-summary-cta .sess-summary-error {
+  margin: 0;
+}

@@ -104,6 +104,138 @@ def test_two_passes_over_one_session_do_not_overlap(client: TestClient) -> None:
         jobs.cancel_all(wait=1.0)
 
 
+def test_llm_stages_do_not_hold_the_gpu_gate(client: TestClient) -> None:
+    """The blocker this whole split exists for: a meeting must be able to start while a followup
+    stage is still talking to a language model.
+
+    Held inside the gate, a minutes-long Ollama call keeps `claim_gpu` waiting past its timeout
+    and the room is told it cannot start recording — on account of work that was not using the
+    GPU at all.
+    """
+    import threading
+
+    jobs.reset()
+    session_id = seed_session("llm-stage.wav")
+
+    in_followup = threading.Event()
+    release = threading.Event()
+
+    def followup(cancel, set_stage):
+        set_stage("summarize")
+        in_followup.set()
+        release.wait(10)
+
+    try:
+        assert jobs.schedule(session_id, lambda cancel: None, followup=followup)
+        assert wait_for(in_followup.is_set), "followup never started"
+
+        # The pass is mid-followup and must not be holding the card.
+        assert jobs.state(session_id) == {"state": "refining", "stage": "summarize", "error": ""}
+        assert jobs.claim_gpu(timeout=1.0), "the LLM stage is holding the GPU gate"
+        jobs.release_gpu()
+    finally:
+        release.set()
+        jobs.cancel_all(wait=1.0)
+
+    assert wait_for(lambda: jobs.state(session_id)["state"] in ("refined", "cancelled"))
+
+
+def test_a_failed_followup_keeps_what_the_rewrite_landed(client: TestClient) -> None:
+    """Stages land independently: a summary that fails must not undo a refine that succeeded."""
+    jobs.reset()
+    session_id = seed_session("followup-fail.wav")
+
+    def followup(cancel, set_stage):
+        raise RuntimeError("summary model unreachable")
+
+    assert jobs.schedule(session_id, lambda cancel: None, followup=followup)
+    assert wait_for(lambda: jobs.state(session_id)["state"] == "failed")
+    assert "summary model unreachable" in jobs.state(session_id)["error"]
+    # The transcript the rewrite stage owns is untouched by the followup's failure.
+    assert [l["source"] for l in main.store.lines(session_id)] == ["精修前就在的一行"]
+
+
+def test_legacy_session_table_gains_lines_rev(tmp: Path) -> None:
+    """Same trap as `status`/`end_time`: an old database's session table never gains the column."""
+    import sqlite3
+
+    path = tmp / "legacy-rev.db"
+    old = sqlite3.connect(str(path))
+    old.executescript(
+        """
+        CREATE TABLE session (id INTEGER PRIMARY KEY, started TEXT NOT NULL, ended TEXT,
+                              wav_path TEXT NOT NULL);
+        INSERT INTO session (started, wav_path) VALUES ('2026-01-01T09:00:00', 'old.wav');
+        """
+    )
+    old.commit()
+    old.close()
+
+    st = store_mod.Store(path)
+    try:
+        row = st.session(1)
+        assert row is not None and row["lines_rev"] == 0, row
+        # And the migrated column actually moves when a line changes.
+        st.add_line(1, 0.0, "S1", "zh", "一行", {})
+        line_id = st.lines(1)[0]["id"]
+        st.update_line(line_id, "改過的一行", {})
+        assert st.session(1)["lines_rev"] == 1, st.session(1)
+    finally:
+        st.close()
+
+
+def test_every_edit_path_moves_the_revision(tmp: Path) -> None:
+    """update_line, replace_line and replace_lines each change what the transcript says.
+
+    The revision is what lets the summary admit it describes an older transcript; an edit path
+    that forgets to bump it makes stale look fresh, which is the exact lie this exists to stop.
+    """
+    st = store_mod.Store(tmp / "rev.db")
+    try:
+        sid = st.start_session("2026-01-01T09:00:00", "r.wav")
+        st.add_line(sid, 0.0, "S1", "zh", "原句", {})
+        line_id = st.lines(sid)[0]["id"]
+        assert st.session(sid)["lines_rev"] == 0
+
+        st.update_line(line_id, "人工修正", {})
+        assert st.session(sid)["lines_rev"] == 1
+
+        st.replace_line(line_id, "重跑結果", "zh", {}, "ok")
+        assert st.session(sid)["lines_rev"] == 2
+
+        st.replace_lines(sid, [{"start": 0.0, "speaker": "S1", "lang": "zh",
+                                "source": "精修結果", "translations": {}}])
+        assert st.session(sid)["lines_rev"] == 3
+    finally:
+        st.close()
+
+
+def test_summary_roundtrip_and_cascade_delete(tmp: Path) -> None:
+    st = store_mod.Store(tmp / "summary.db")
+    try:
+        sid = st.start_session("2026-01-01T09:00:00", "s.wav")
+        assert st.summary(sid) is None
+
+        st.set_summary(sid, '{"zh": {"title": "週會"}}', "ok", lines_rev=0,
+                       created="2026-01-01T10:00:00")
+        row = st.summary(sid)
+        assert row["json"] == '{"zh": {"title": "週會"}}' and row["status"] == "ok", row
+
+        # Latest wins: regeneration overwrites in place.
+        st.set_summary(sid, '{"zh": {"title": "週會 v2"}}', "partial", lines_rev=3,
+                       created="2026-01-01T11:00:00")
+        row = st.summary(sid)
+        assert row["lines_rev"] == 3 and row["status"] == "partial", row
+
+        # The summary dies with its session.
+        with st._lock:
+            st._db.execute("DELETE FROM session WHERE id=?", (sid,))
+            st._db.commit()
+        assert st.summary(sid) is None
+    finally:
+        st.close()
+
+
 def test_a_database_made_before_the_columns_existed_gains_them(tmp: Path) -> None:
     """The meeting room's database predates `status` and `end_time`.
 

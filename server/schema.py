@@ -27,7 +27,8 @@ CREATE TABLE IF NOT EXISTS session (
     id        INTEGER PRIMARY KEY,
     started   TEXT NOT NULL,
     ended     TEXT,
-    wav_path  TEXT NOT NULL
+    wav_path  TEXT NOT NULL,
+    lines_rev INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS line (
     id         INTEGER PRIMARY KEY,
@@ -69,6 +70,13 @@ CREATE TABLE IF NOT EXISTS speaker_name (
     name       TEXT NOT NULL,
     PRIMARY KEY (session_id, code)
 );
+CREATE TABLE IF NOT EXISTS summary (
+    session_id INTEGER PRIMARY KEY REFERENCES session(id) ON DELETE CASCADE,
+    json       TEXT NOT NULL,
+    status     TEXT NOT NULL DEFAULT 'ok',
+    lines_rev  INTEGER NOT NULL DEFAULT 0,
+    created    TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS line_session ON line(session_id, start);
 """
 
@@ -85,6 +93,14 @@ LINE_COLUMNS = (
 )
 
 
+# Bumped by every write that changes what a line says, so anything derived from the transcript —
+# today the summary — can tell whether it still describes what is stored. A max-id-plus-count check
+# would miss the most common change of all: an in-place correction, which alters no id and no count.
+SESSION_COLUMNS = (
+    ("lines_rev", "ALTER TABLE session ADD COLUMN lines_rev INTEGER NOT NULL DEFAULT 0"),
+)
+
+
 def apply(db: sqlite3.Connection) -> None:
     """Create what is missing, then add the columns the schema gained since.
 
@@ -93,8 +109,10 @@ def apply(db: sqlite3.Connection) -> None:
     """
     db.executescript(SCHEMA)
     db.commit()
-    have = {r["name"] for r in db.execute("PRAGMA table_info(line)")}
-    added = [ddl for column, ddl in LINE_COLUMNS if column not in have]
+    added = []
+    for table, columns in (("line", LINE_COLUMNS), ("session", SESSION_COLUMNS)):
+        have = {r["name"] for r in db.execute(f"PRAGMA table_info({table})")}
+        added += [ddl for column, ddl in columns if column not in have]
     for ddl in added:
         db.execute(ddl)
     if added:

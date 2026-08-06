@@ -31,6 +31,27 @@ def isolate(tmp: Path) -> None:
     # Stopping a recording now queues the post-meeting pass, and the real one loads a Whisper
     # model. Every lifecycle test would pull one in, so the pass records that it was asked instead.
     main.postprocess = StubPostprocess()
+    # Same for the LLM stages, and more urgently: a developer machine with ANTHROPIC_API_KEY in
+    # the environment would otherwise make real API calls from inside the test suite — the first
+    # run of these checks did exactly that, and failed on the provider's 401 instead of its own
+    # assertion. The stages' real logic is covered by test_summarize and the jobs tests.
+    main.postmeeting = StubPostmeeting()
+
+
+class StubPostmeeting:
+    """Stands in for the LLM stages: records what was asked, writes nothing, calls nothing."""
+
+    def __init__(self) -> None:
+        self.followups: list[int] = []
+        self.summarize_calls: list[int] = []
+
+    def followup(self, store, languages, llm_cfg, api_key, session_id):
+        def run(cancel, set_stage):
+            self.followups.append(session_id)
+        return run
+
+    def _summarize_stage(self, store, session_id, languages, llm_cfg, api_key, cancel):
+        self.summarize_calls.append(session_id)
 
 
 class StubPostprocess:

@@ -135,6 +135,7 @@ class Store(SpeakerStore):
                 [(line_id, k, v) for k, v in translations.items()],
             )
             self._db.execute("UPDATE line SET refined=1 WHERE id=?", (line_id,))
+            self._bump_rev_for_line(line_id)
             self._db.commit()
 
     def line(self, line_id: int) -> dict | None:
@@ -159,10 +160,22 @@ class Store(SpeakerStore):
                     "INSERT INTO line_translation (line_id, lang, text) VALUES (?,?,?)",
                     [(line_id, k, v) for k, v in translations.items()],
                 )
+                self._bump_rev_for_line(line_id)
                 self._db.commit()
             except Exception:
                 self._db.rollback()
                 raise
+
+    def _bump_rev_for_line(self, line_id: int) -> None:
+        """Record that this line's session no longer says what it said. Caller holds the lock.
+
+        The revision is what lets anything derived from the transcript — the summary — admit it
+        is describing an older version. Bumped inside the same transaction as the edit, so a
+        rollback takes the bump with it.
+        """
+        self._db.execute(
+            "UPDATE session SET lines_rev = lines_rev + 1 "
+            "WHERE id = (SELECT session_id FROM line WHERE id=?)", (line_id,))
 
     def replace_lines(self, session_id: int, rows: list[dict]) -> None:
         """Swap a session's whole transcript in one transaction.
@@ -191,6 +204,8 @@ class Store(SpeakerStore):
                         "INSERT INTO line_translation (line_id, lang, text) VALUES (?,?,?)",
                         [(int(cur.lastrowid), k, v) for k, v in row.get("translations", {}).items()],
                     )
+                self._db.execute("UPDATE session SET lines_rev = lines_rev + 1 WHERE id=?",
+                                 (session_id,))
                 self._db.commit()
             except Exception:
                 # Without this the half-finished transaction stays open on a connection every other
@@ -202,6 +217,32 @@ class Store(SpeakerStore):
     def session(self, session_id: int) -> dict | None:
         with self._lock:
             row = self._db.execute("SELECT * FROM session WHERE id=?", (session_id,)).fetchone()
+        return dict(row) if row else None
+
+    # ── summary ─────────────────────────────────────────────────────────
+
+    def set_summary(self, session_id: int, json_text: str, status: str, lines_rev: int,
+                    created: str) -> None:
+        """One summary per session, latest wins.
+
+        `lines_rev` is the session's revision at generation time. A later read that finds the
+        session's current revision has moved on knows the summary describes a transcript that no
+        longer exists — stale is a comparison, not a stored flag, so nothing has to remember to
+        set it.
+        """
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO summary (session_id, json, status, lines_rev, created) "
+                "VALUES (?,?,?,?,?) ON CONFLICT(session_id) DO UPDATE SET "
+                "json=excluded.json, status=excluded.status, lines_rev=excluded.lines_rev, "
+                "created=excluded.created",
+                (session_id, json_text, status, lines_rev, created))
+            self._db.commit()
+
+    def summary(self, session_id: int) -> dict | None:
+        with self._lock:
+            row = self._db.execute("SELECT * FROM summary WHERE session_id=?",
+                                   (session_id,)).fetchone()
         return dict(row) if row else None
 
     def lines(self, session_id: int) -> list[dict]:
