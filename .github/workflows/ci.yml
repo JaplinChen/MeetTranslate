@@ -44,6 +44,14 @@ jobs:
       - name: End-to-end API checks
         run: python -m server.test_e2e
 
+      # Summary and Q&A are model-free — plain functions with a fake chat callable — so they run on
+      # the bare runner like the rest. They shipped in #71/#72 with 32 checks that nothing ran here.
+      - name: Summary pass checks
+        run: python -m server.test_summarize
+
+      - name: Cross-meeting Q&A checks
+        run: python -m server.test_ask
+
   dashboard:
     name: dashboard
     runs-on: ubuntu-latest
