@@ -284,6 +284,31 @@ class Store(SpeakerStore):
                                    (session_id,)).fetchone()
         return dict(row) if row else None
 
+    def lines_with_rev(self, session_id: int) -> tuple[list[dict], int]:
+        """The lines and the session's revision, read under one lock hold.
+
+        The summary pass reads both to decide what to describe and to stamp the result with the
+        revision it observed. Read separately, an edit landing between the two — replace_line takes
+        the lock, changes a line and bumps lines_rev — let the summary be generated from the old
+        text and stamped with the new revision, so it never showed as stale though it was. One
+        acquisition makes the pair consistent.
+        """
+        with self._lock:
+            rev_row = self._db.execute(
+                "SELECT lines_rev FROM session WHERE id=?", (session_id,)
+            ).fetchone()
+            rev = int(rev_row["lines_rev"]) if rev_row else 0
+            rows = self._db.execute(
+                "SELECT * FROM line WHERE session_id=? ORDER BY start", (session_id,)
+            ).fetchall()
+            tr: dict[int, dict[str, str]] = {}
+            for t in self._db.execute(
+                "SELECT lt.* FROM line_translation lt JOIN line l ON l.id=lt.line_id WHERE l.session_id=?",
+                (session_id,),
+            ):
+                tr.setdefault(t["line_id"], {})[t["lang"]] = t["text"]
+        return [{**dict(r), "translations": tr.get(r["id"], {})} for r in rows], rev
+
     def lines(self, session_id: int) -> list[dict]:
         with self._lock:
             rows = self._db.execute(
