@@ -6,6 +6,9 @@ was misidentified -- and the clustering is judged by the speech it groups, not b
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import numpy as np
 
 from . import config, diarize, postprocess
@@ -361,3 +364,55 @@ def test_a_voiceprint_averages_only_a_speakers_longest_few() -> None:
     postprocess._remember_voices(Sink(), 1, said, counter)
 
     assert counter.calls == postprocess.VOICEPRINT_SAMPLES, counter.calls
+
+
+def _wav(path, seconds: float = 2.0, value: float = 0.0):
+    import soundfile as sf
+    sf.write(str(path), np.full(int(seconds * config.SAMPLE_RATE), value, dtype=np.float32),
+             config.SAMPLE_RATE)
+    return path
+
+
+def test_turns_are_cached_against_the_audio_not_its_timestamp(tmp_path=None) -> None:
+    """A stale hit here does not fail loudly — it puts one meeting's speakers on another
+    meeting's audio, and re-running does not help because the miss is deterministic too.
+
+    So the key is the recording's content. Two files of identical size and mtime holding
+    different audio must not share an answer.
+    """
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        a, b = _wav(root / "a.wav", value=0.0), _wav(root / "b.wav", value=0.5)
+        # Same size, and made to share a timestamp: only the samples differ.
+        os.utime(b, ns=(a.stat().st_mtime_ns, a.stat().st_mtime_ns))
+        assert a.stat().st_size == b.stat().st_size
+
+        key_a = diarize._turns_key(a, 0.65)
+        assert diarize._turns_key(a, 0.65) == key_a, "the key must be stable for one file"
+        assert diarize._turns_key(b, 0.65) != key_a, "different audio must not share a key"
+        assert diarize._turns_key(a, 0.70) != key_a, "the threshold is part of the answer"
+
+
+def test_a_cached_answer_is_only_used_when_it_still_applies() -> None:
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        wav = _wav(Path(tmp) / "m.wav", seconds=10.0)
+        key = diarize._turns_key(wav, 0.65)
+        found = [diarize.Turn(0.0, 4.0, 0), diarize.Turn(4.0, 9.0, 1)]
+        diarize._write_turns(wav, key, found, 10.0)
+
+        assert diarize._read_turns(wav, key) == found
+        assert diarize._read_turns(wav, "some-other-key") is None
+
+        # A turn past the end of the audio means whoever wrote it got its offsets wrong.
+        diarize._write_turns(wav, key, [diarize.Turn(0.0, 99.0, 0)], 10.0)
+        assert diarize._read_turns(wav, key) is None
+
+        # Truncation is a miss, not an exception: the answer is always recomputable.
+        diarize._cache_path(wav).write_text('{"key": "x", "turns": [[0', encoding="utf-8")
+        assert diarize._read_turns(wav, key) is None
+        diarize._cache_path(wav).unlink()
+        assert diarize._read_turns(wav, key) is None

@@ -8,6 +8,8 @@ wrong language. Hence the hysteresis before ever changing a speaker's language.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import os
 from dataclasses import dataclass, field
@@ -72,10 +74,23 @@ def turns(wav: Path, threshold: float | None = None) -> list[Turn] | None:
 
     Optional on purpose: the model is a separate 6 MB download, and a machine without it should
     still be able to process a recording.
+
+    The answer is cached beside the recording. It takes eight minutes on a 2h19m meeting and
+    depends on nothing but the audio, the two models and the thresholds — so every reprocess after
+    the first was paying eight minutes for a byte-identical result, and reprocessing is the normal
+    path: it is what someone does after naming the speakers.
     """
     model = config.SPEAKER_SEGMENTATION_MODEL
     if not model.is_file():
+        # Deliberately not cached: installing the model later must take effect at once.
         return None
+
+    resolved = config.SPEAKER_THRESHOLD if threshold is None else threshold
+    key = _turns_key(wav, resolved)
+    cached = _read_turns(wav, key)
+    if cached is not None:
+        log.info("%d turns for %s from cache", len(cached), wav.name)
+        return cached
 
     cfg = sherpa_onnx.OfflineSpeakerDiarizationConfig(
         segmentation=sherpa_onnx.OfflineSpeakerSegmentationModelConfig(
@@ -86,8 +101,7 @@ def turns(wav: Path, threshold: float | None = None) -> list[Turn] | None:
             model=str(config.SPEAKER_MODEL),
             num_threads=max((os.cpu_count() or 4) // 2, 1),
         ),
-        clustering=sherpa_onnx.FastClusteringConfig(
-            threshold=config.SPEAKER_THRESHOLD if threshold is None else threshold),
+        clustering=sherpa_onnx.FastClusteringConfig(threshold=resolved),
         min_duration_on=MIN_TURN_ON,
         min_duration_off=MIN_TURN_OFF,
     )
@@ -102,7 +116,88 @@ def turns(wav: Path, threshold: float | None = None) -> list[Turn] | None:
         audio = audio.mean(axis=1)
 
     result = sherpa_onnx.OfflineSpeakerDiarization(cfg).process(audio).sort_by_start_time()
-    return [Turn(float(s.start), float(s.end), int(s.speaker)) for s in result]
+    found = [Turn(float(s.start), float(s.end), int(s.speaker)) for s in result]
+    _write_turns(wav, key, found, len(audio) / rate)
+    return found
+
+
+# Bumped by hand when the shape of a cached entry changes, so old files miss instead of
+# deserialising into something that no longer means what it meant.
+_CACHE_FORMAT = 1
+
+
+def _stamp(path: Path) -> str:
+    try:
+        st = path.stat()
+        return f"{path}:{st.st_size}:{st.st_mtime_ns}"
+    except OSError:
+        return f"{path}:missing"
+
+
+def _turns_key(wav: Path, threshold: float) -> str:
+    """Everything the answer depends on, hashed.
+
+    The recording is hashed by content, not by size and mtime. A stale hit here does not fail
+    loudly — it attributes one meeting's speakers to another meeting's audio, and re-running does
+    not help because the miss is deterministic too. Half a second of sha256 against an eight
+    minute computation is not a trade worth making.
+    """
+    digest = hashlib.sha256()
+    with wav.open("rb") as fh:
+        for block in iter(lambda: fh.read(1 << 20), b""):
+            digest.update(block)
+    parts = [
+        f"format={_CACHE_FORMAT}",
+        f"audio={digest.hexdigest()}",
+        f"segmentation={_stamp(config.SPEAKER_SEGMENTATION_MODEL)}",
+        f"embedding={_stamp(config.SPEAKER_MODEL)}",
+        f"threshold={threshold!r}",
+        f"on={MIN_TURN_ON!r}",
+        f"off={MIN_TURN_OFF!r}",
+        f"sherpa={getattr(sherpa_onnx, '__version__', 'unknown')}",
+    ]
+    return hashlib.sha256("|".join(parts).encode()).hexdigest()
+
+
+def _cache_path(wav: Path) -> Path:
+    return wav.with_suffix(wav.suffix + ".turns.json")
+
+
+def _read_turns(wav: Path, key: str) -> list[Turn] | None:
+    path = _cache_path(wav)
+    try:
+        blob = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        # A truncated or absent file is a miss, never an error: the answer is recomputable.
+        return None
+    if blob.get("key") != key:
+        return None
+    try:
+        found = [Turn(float(a), float(b), int(c)) for a, b, c in blob["turns"]]
+    except (KeyError, TypeError, ValueError):
+        return None
+    # Turns past the end of the audio mean the file was written by something that got its offsets
+    # wrong. Refusing them here is cheap, and the alternative is a transcript nobody can explain.
+    duration = float(blob.get("duration", 0.0))
+    if any(t.end > duration + 1.0 for t in found):
+        log.warning("ignoring %s: a turn ends past the recording", path.name)
+        return None
+    return found
+
+
+def _write_turns(wav: Path, key: str, found: list[Turn], duration: float) -> None:
+    path = _cache_path(wav)
+    blob = {"key": key, "duration": duration,
+            "turns": [[t.start, t.end, t.speaker] for t in found]}
+    temp = path.with_suffix(path.suffix + ".tmp")
+    try:
+        # Written through a temp file: a half-written json sitting next to a recording would be a
+        # permanently broken session, and this runs at the end of an eight minute computation.
+        temp.write_text(json.dumps(blob), encoding="utf-8")
+        os.replace(temp, path)
+    except OSError:
+        log.warning("could not cache turns for %s", wav.name)
+        temp.unlink(missing_ok=True)
 
 
 class Diarizer:
