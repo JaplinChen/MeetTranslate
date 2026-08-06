@@ -114,7 +114,7 @@ def build_prompt(lines: list[SummaryLine], lang: str, rules: str,
 _JSON = re.compile(r"\{.*\}", re.DOTALL)
 
 
-def parse_response(raw: str) -> dict:
+def parse_response(raw: str, valid_speakers: frozenset[str] = frozenset()) -> dict:
     """Strict schema check: a wrong shape raises so the retry loop can quote the exact problem."""
     match = _JSON.search(raw)
     if not match:
@@ -133,16 +133,25 @@ def parse_response(raw: str) -> dict:
     actions = data.get("actions")
     if not isinstance(actions, list):
         raise ValueError(f"actions must be a list, got {actions!r}")
+    clean_actions = []
     for a in actions:
         if not isinstance(a, dict):
             raise ValueError(f"each action must be an object, got {a!r}")
         if not isinstance(a.get("text"), str) or not a["text"].strip():
             raise ValueError(f"action text must be a non-empty string, got {a.get('text')!r}")
-        if not isinstance(a.get("speaker"), str):
-            raise ValueError(f"action speaker must be a string, got {a.get('speaker')!r}")
+        speaker = a.get("speaker")
+        if not isinstance(speaker, str):
+            raise ValueError(f"action speaker must be a string, got {speaker!r}")
+        # A speaker code the transcript never contained is the model inventing an owner — the same
+        # failure the citation path drops outright. Here the action text is still worth keeping, so
+        # the false attribution is cleared to "" (the page shows "unassigned") rather than the whole
+        # item. When no set is supplied — a test calling parse_response directly — nothing is dropped.
+        if valid_speakers and speaker and speaker not in valid_speakers:
+            speaker = ""
+        clean_actions.append({"text": a["text"], "speaker": speaker})
 
     return {"title": data["title"], "summary": data["summary"],
-            "decisions": decisions, "actions": actions}
+            "decisions": decisions, "actions": clean_actions}
 
 
 def retry_prompt(original: str, bad_reply: str, error: str) -> str:
@@ -168,6 +177,9 @@ def summarize(lines: list[SummaryLine], languages: list[str], chat: Callable[[st
     rules = load_rules()
     total = sum(len(l.text) for l in lines)
     sampled_lines, sampled = sample(lines)
+    # The codes the transcript actually uses. The model is told to use these exactly; this is what
+    # holds it to that when it does not.
+    valid = frozenset(l.speaker for l in lines if l.speaker)
 
     out: dict[str, dict] = {}
     for lang in languages:
@@ -176,10 +188,10 @@ def summarize(lines: list[SummaryLine], languages: list[str], chat: Callable[[st
         prompt = build_prompt(sampled_lines, lang, rules, speakers, sampled, total_chars=total)
         raw = chat(prompt)
         try:
-            out[lang] = parse_response(raw)
+            out[lang] = parse_response(raw, valid)
         except ValueError as first:
             try:
-                out[lang] = parse_response(chat(retry_prompt(prompt, raw, str(first))))
+                out[lang] = parse_response(chat(retry_prompt(prompt, raw, str(first))), valid)
             except ValueError:
                 pass  # recorded as missing; status below says partial/failed
 
