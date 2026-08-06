@@ -159,6 +159,28 @@ def test_speaker_session_count_is_distinct_meetings_not_saves(client: TestClient
     client.delete(f"/api/speakers/known/{quote(NEW)}")
 
 
+def test_forgetting_a_speaker_leaves_no_count_behind(client: TestClient) -> None:
+    """forget_speaker drops the voice from known_speaker but keeps its historical transcript names.
+
+    speaker_sessions is joined to known_speaker so it counts only voices the room still knows —
+    without that join a forgotten voice kept a phantom count, invisible only because get_known_speakers
+    happens to ask about it through known_speakers(). The two now agree at the source.
+    """
+    from urllib.parse import quote
+    name = "審查忘記測試"
+    sid = main.store.start_session("2026-03-01T09:00:00", "f.wav")
+    main.store.save_voiceprint(sid, "S1", np.array([1.0], dtype="float32").tobytes())
+    client.put(f"/api/sessions/{sid}/speakers", json={"S1": name})
+    assert {s["name"]: s["sessions"] for s in client.get("/api/speakers/known").json()}.get(name) == 1
+
+    client.delete(f"/api/speakers/known/{quote(name)}")
+    # Gone from the list, and gone from the count that backs it — no phantom left in either source.
+    assert name not in {s["name"] for s in client.get("/api/speakers/known").json()}
+    assert name not in main.store.speaker_sessions()
+    # The past meeting keeps the name it was given — forget is not a transcript edit.
+    assert main.store.speaker_names(sid).get("S1") == name
+
+
 def test_editing_a_line_teaches_the_correction(client: TestClient) -> None:
     """An edit on the transcript page is the only ground truth this system gets: someone who was
     in the room saying what was actually said. Kept, the same mistake is fixed everywhere next
