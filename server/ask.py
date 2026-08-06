@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from typing import Callable
 
 from . import summarize
@@ -92,7 +93,23 @@ def _extract(raw: str) -> dict | None:
 
 
 def _date(value) -> str | None:
-    return value.strip() if isinstance(value, str) and value.strip() else None
+    """A YYYY-MM-DD date, or None. Anything else — the model ignoring the format, or answering "上週"
+    — is dropped rather than passed on: since/until are string-compared against an ISO timestamp, so
+    a non-date does not raise, it silently mis-filters (a value sorting above every real date, used
+    as `until`, wipes the result). None means no restriction, which is the safe reading of garbage.
+    """
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    # Zero-padded on purpose: started is compared as a string, and "2026-8-1" sorts differently from
+    # the "2026-08-01" the timestamps use, so strptime's tolerance for "2026-8-1" is not enough here.
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        return None
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        return None
+    return value
 
 
 def parse_keywords(raw: str) -> tuple[list[str], str | None, str | None]:

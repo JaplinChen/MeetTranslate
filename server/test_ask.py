@@ -30,6 +30,25 @@ def test_parse_keywords_degrades_to_empty_on_garbage():
     assert A.parse_keywords("{not json at all,,,}") == ([], None, None)
 
 
+def test_parse_keywords_drops_a_date_that_is_not_iso():
+    """since/until go straight into a string comparison against started (an ISO timestamp).
+
+    A non-ISO value — the model ignoring the YYYY-MM-DD instruction, or answering "上週" — is not a
+    date SQLite can compare meaningfully: "上週" sorts above every real timestamp, so as `until` it
+    filters out every meeting and the question comes back empty. A bad date is dropped to None,
+    which means "no restriction" — the safe reading, not a silent wipe.
+    """
+    import json as _json
+    for bad in ("上週", "last week", "2026/08/01", "2026-8-1", "not a date", "2026-13-40"):
+        raw = _json.dumps({"keywords": ["交期"], "since": bad, "until": None})
+        _w, since, _u = A.parse_keywords(raw)
+        assert since is None, (bad, since)
+    # A well-formed date still passes.
+    raw = _json.dumps({"keywords": ["交期"], "since": "2026-01-15", "until": "2026-02-20"})
+    _w, since, until = A.parse_keywords(raw)
+    assert since == "2026-01-15" and until == "2026-02-20"
+
+
 def test_budget_for_ollama_vs_anthropic():
     assert A.budget_for("ollama") == Budget(12_000, 2)
     assert A.budget_for("anthropic") == Budget(120_000, 6)
