@@ -28,6 +28,12 @@ log = logging.getLogger("meettranslate.jobs")
 YIELD_TIMEOUT = 30.0
 
 _gpu = threading.BoundedSemaphore(1)
+# One offline pass at a time, whoever holds the card. Until the GPU gate was narrowed to the
+# decode alone, this was a side effect of that gate: a pass held the card start to finish, so a
+# second one could not begin. Narrowing it left the CPU stages free to overlap, and two of them
+# together is two full recordings in memory and two pools of segmentation workers. Separate from
+# the card because a pass now spends most of its life not holding one.
+_pass = threading.BoundedSemaphore(1)
 
 
 @dataclass
@@ -115,12 +121,12 @@ def schedule(session_id: int, run: Callable[[threading.Event], None],
         return True
 
     def worker() -> None:
-        if needs_gpu:
-            with _gpu:
-                if not _run_gpu_stage():
-                    return
-        else:
-            if not _run_gpu_stage():
+        with _pass:
+            if needs_gpu:
+                with _gpu:
+                    if not _run_gpu_stage():
+                        return
+            elif not _run_gpu_stage():
                 return
         # The card is free (or was never taken). A meeting can start while the followup is still
         # talking to a language model, which is the entire point of the split.
@@ -186,6 +192,22 @@ def borrow_gpu(timeout: float = 900.0):
         yield
     finally:
         release_gpu()
+
+
+@contextmanager
+def one_pass(timeout: float = 900.0):
+    """Hold the offline-pass slot for work that does not go through `schedule`.
+
+    An import calls `rewrite_session` straight from the request. Scheduled passes take this slot
+    in their worker; an import has to take it here, or an import and a reprocess overlap and the
+    machine holds two recordings and two sets of segmentation workers at once.
+    """
+    if not _pass.acquire(timeout=timeout):
+        raise TimeoutError("another recording is still being processed")
+    try:
+        yield
+    finally:
+        _pass.release()
 
 
 def cancel_all(wait: float = 0.0) -> None:

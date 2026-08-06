@@ -7,6 +7,7 @@ checks in `test_e2e_*` can state what they are testing without restating how to 
 
 from __future__ import annotations
 
+import contextlib
 import threading
 import time
 from pathlib import Path
@@ -81,8 +82,13 @@ class StubPostprocess:
         self.block = threading.Event()
         self.block.set()
 
-    def rewrite_session(self, store, session_id, wav, cfg, translator=None, should_stop=None):
+    def rewrite_session(self, store, session_id, wav, cfg, translator=None, should_stop=None,
+                        gpu=contextlib.nullcontext):
         self.calls.append(session_id)
+        # Entered and left the way the real one does, so a caller that also holds the gate shows
+        # up here as a hang rather than passing quietly.
+        with gpu():
+            pass
         while not self.block.is_set():
             if should_stop and should_stop():
                 raise jobs.Cancelled()
