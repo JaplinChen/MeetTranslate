@@ -62,6 +62,7 @@ export function Ask() {
           className="ask-input"
           value={question}
           disabled={busy}
+          aria-label={t('ask.title')}
           placeholder={t('ask.placeholder')}
           onChange={e => setQuestion(e.target.value)}
           onKeyDown={e => {
@@ -87,7 +88,7 @@ export function Ask() {
 
       {result && (
         <section className="ask-panel ask-result">
-          {!result.verified && <p className="ask-notice ask-unverified">{t('ask.unverified')}</p>}
+          {!result.verified && <p className="ask-notice ask-unverified" role="alert">{t('ask.unverified')}</p>}
 
           <h3 className="ask-heading">{t('ask.answerHeading')}</h3>
           {result.answer.trim() ? (
