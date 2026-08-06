@@ -1,10 +1,12 @@
-"""Post-meeting summary: one LLM call per language, schema-checked, retried once.
+"""Post-meeting summary: one LLM call per language, structure-checked, retried once.
 
 The transcript is the input everyone already has; what a meeting produces is the part nobody wrote
 down — what was decided and who left owning what. A model asked for that in free prose invents
-structure on some days and skips it on others, so the reply is pinned to a JSON schema and a bad
-reply is sent back once with the parser's complaint attached. Three languages in one call was
-tried and truncates the JSON inside a 4000-token budget, hence one language per call.
+structure on some days and skips it on others, so the reply is held to four labelled sections
+(TITLE/SUMMARY/DECISIONS/ACTIONS) and a bad reply is sent back once with the parser's complaint
+attached. JSON was tried first, but a long detailed summary leaves newlines and 「」 unescaped
+inside the string and no longer parses; labelled sections carry multi-line prose verbatim. Three
+languages in one call truncated the reply inside the token budget, hence one language per call.
 
 Pure orchestration: the chat callable comes from the caller (refine.anthropic_chat or ollama_chat,
 so the privacy choice made there carries over) and nothing here touches the store.
@@ -12,7 +14,6 @@ so the privacy choice made there carries over) and nothing here touches the stor
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
 from typing import Callable
@@ -42,8 +43,12 @@ class SummaryLine:
 
 
 def target_chars(total_chars: int) -> int:
-    """Summary length scales with the transcript, within reason either way."""
-    return max(200, min(2000, total_chars // 12))
+    """Summary length scales with the transcript, within reason either way.
+
+    The detailed-record rules want a rich narrative that keeps quotes, the interaction chain and a
+    per-participant rundown, so the ceiling is generous — a long meeting earns a long summary.
+    """
+    return max(400, min(8000, total_chars // 6))
 
 
 def load_rules() -> str:
@@ -100,57 +105,76 @@ def build_prompt(lines: list[SummaryLine], lang: str, rules: str,
     parts += ["", "Transcript:"]
     parts += [f"{l.speaker}({l.lang}): {l.text}" for l in lines]
 
+    # A long detailed summary does not survive being wrapped in a JSON string — local models leave
+    # the newlines and 「」 quotes inside it unescaped and the JSON no longer parses. Labelled
+    # sections carry multi-line prose verbatim, and this side reassembles the object.
     parts += [
         "",
-        "Reply with JSON only, no code fence and no commentary:",
-        json.dumps({"title": "one sentence", "summary": "...", "decisions": ["..."],
-                    "actions": [{"text": "...", "speaker": "speaker code"}]}, ensure_ascii=False),
-        "Use the speaker codes exactly as they appear in the transcript; \"\" when unclear.",
-        "decisions and actions may be empty arrays — do not invent items to fill them.",
+        "Reply in exactly these four labelled sections, nothing before or after:",
+        "TITLE: <one sentence>",
+        "SUMMARY:",
+        "<the summary; may span many lines>",
+        "DECISIONS:",
+        "- <one decision per line, or leave this section empty>",
+        "ACTIONS:",
+        "- <what to do> || <speaker code, or blank>",
+        "",
+        "Use the speaker codes exactly as they appear in the transcript; leave blank when unclear.",
+        "DECISIONS and ACTIONS may be empty — do not invent items to fill them.",
     ]
     return "\n".join(parts)
 
 
-_JSON = re.compile(r"\{.*\}", re.DOTALL)
+_SECTION = re.compile(r"^\s*(TITLE|SUMMARY|DECISIONS|ACTIONS)\s*:\s*(.*)$", re.IGNORECASE)
+
+
+def _bullets(block: str) -> list[str]:
+    out = []
+    for line in block.splitlines():
+        line = line.strip()
+        if line.startswith(("-", "•", "*")):
+            line = line[1:].strip()
+        if line:
+            out.append(line)
+    return out
 
 
 def parse_response(raw: str, valid_speakers: frozenset[str] = frozenset()) -> dict:
-    """Strict schema check: a wrong shape raises so the retry loop can quote the exact problem."""
-    match = _JSON.search(raw)
-    if not match:
-        raise ValueError(f"no JSON object in response: {raw[:200]!r}")
-    data = json.loads(match.group(0))
+    """Split the labelled sections; a missing title or summary raises so the retry loop can say so."""
+    sections: dict[str, list[str]] = {}
+    current: str | None = None
+    for line in raw.splitlines():
+        m = _SECTION.match(line)
+        if m:
+            current = m.group(1).upper()
+            sections[current] = [m.group(2)] if m.group(2).strip() else []
+        elif current is not None:
+            sections[current].append(line)
 
-    for key in ("title", "summary"):
-        value = data.get(key)
-        if not isinstance(value, str) or not value.strip():
-            raise ValueError(f"{key} must be a non-empty string, got {value!r}")
+    title = "\n".join(sections.get("TITLE", [])).strip()
+    summary = "\n".join(sections.get("SUMMARY", [])).strip()
+    if not title:
+        raise ValueError(f"missing TITLE section: {raw[:200]!r}")
+    if not summary:
+        raise ValueError(f"missing SUMMARY section: {raw[:200]!r}")
 
-    decisions = data.get("decisions")
-    if not isinstance(decisions, list) or not all(isinstance(d, str) for d in decisions):
-        raise ValueError(f"decisions must be a list of strings, got {decisions!r}")
+    decisions = _bullets("\n".join(sections.get("DECISIONS", [])))
 
-    actions = data.get("actions")
-    if not isinstance(actions, list):
-        raise ValueError(f"actions must be a list, got {actions!r}")
     clean_actions = []
-    for a in actions:
-        if not isinstance(a, dict):
-            raise ValueError(f"each action must be an object, got {a!r}")
-        if not isinstance(a.get("text"), str) or not a["text"].strip():
-            raise ValueError(f"action text must be a non-empty string, got {a.get('text')!r}")
-        speaker = a.get("speaker")
-        if not isinstance(speaker, str):
-            raise ValueError(f"action speaker must be a string, got {speaker!r}")
+    for item in _bullets("\n".join(sections.get("ACTIONS", []))):
+        text, _, speaker = item.partition("||")
+        text, speaker = text.strip(), speaker.strip()
+        if not text:
+            continue
         # A speaker code the transcript never contained is the model inventing an owner — the same
         # failure the citation path drops outright. Here the action text is still worth keeping, so
         # the false attribution is cleared to "" (the page shows "unassigned") rather than the whole
         # item. When no set is supplied — a test calling parse_response directly — nothing is dropped.
         if valid_speakers and speaker and speaker not in valid_speakers:
             speaker = ""
-        clean_actions.append({"text": a["text"], "speaker": speaker})
+        clean_actions.append({"text": text, "speaker": speaker})
 
-    return {"title": data["title"], "summary": data["summary"],
+    return {"title": title, "summary": summary,
             "decisions": decisions, "actions": clean_actions}
 
 
@@ -161,7 +185,7 @@ def retry_prompt(original: str, bad_reply: str, error: str) -> str:
         "Your previous reply was rejected:",
         f"  error: {error}",
         f"  reply: {bad_reply[:500]}",
-        "Answer again with ONLY valid JSON matching the schema above. No other text.",
+        "Answer again using ONLY the four labelled sections above. No other text.",
     ])
 
 
