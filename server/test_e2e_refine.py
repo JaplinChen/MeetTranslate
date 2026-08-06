@@ -210,6 +210,77 @@ def test_every_edit_path_moves_the_revision(tmp: Path) -> None:
         st.close()
 
 
+def test_lines_with_rev_pairs_content_and_revision_from_one_read(tmp: Path) -> None:
+    """The content and the revision come back consistent, so the summary cannot be built from one
+    version of the transcript and stamped with another's revision.
+
+    Reading store.lines() then store.session() separately let an edit land between them —
+    replace_line takes the lock, changes a line and bumps the revision — so the summary was
+    generated from old text yet stamped current, and never showed as stale. This pair is read under
+    a single lock hold; the check is that the rev it returns matches the session's own count and the
+    content is the content at that revision.
+    """
+    st = store_mod.Store(tmp / "atomic.db")
+    try:
+        sid = st.start_session("2026-01-01T09:00:00", "a.wav")
+        st.add_line(sid, 0.0, "S1", "zh", "第一版", {})
+        line_id = st.lines(sid)[0]["id"]
+
+        rows, rev = st.lines_with_rev(sid)
+        assert rev == st.session(sid)["lines_rev"] == 0
+        assert [r["source"] for r in rows] == ["第一版"]
+
+        # After an edit, a fresh read reflects both the new text and the new revision together —
+        # never the old text with the new number, which was the stale-summary bug.
+        st.replace_line(line_id, "第二版", "zh", {}, "ok")
+        rows2, rev2 = st.lines_with_rev(sid)
+        assert rev2 == 1
+        assert [r["source"] for r in rows2] == ["第二版"]
+    finally:
+        st.close()
+
+
+def test_lines_with_rev_is_atomic_under_concurrent_edits(tmp: Path) -> None:
+    """Text and revision agree, hammered with edits from another thread.
+
+    Each write sets the line's text to the revision it produces, so text and revision are locked
+    together: after the Nth edit the line reads "v{N}" and lines_rev is N. A reader that took the
+    old two-call form — store.lines() then store.session() — could observe "v5" with rev 6, because
+    a write landed between the two calls. Under lines_with_rev the two come from one lock hold, so
+    every snapshot must satisfy source == "v{rev}". One torn read fails the test.
+    """
+    import threading
+
+    st = store_mod.Store(tmp / "race.db")
+    try:
+        sid = st.start_session("2026-01-01T09:00:00", "race.wav")
+        st.add_line(sid, 0.0, "S1", "zh", "v0", {})
+        line_id = st.lines(sid)[0]["id"]
+
+        stop = threading.Event()
+        errors: list[str] = []
+
+        def writer():
+            while not stop.is_set():
+                # rev is about to become one higher than it is now; write that number as the text.
+                nxt = int(st.session(sid)["lines_rev"]) + 1
+                st.replace_line(line_id, f"v{nxt}", "zh", {}, "ok")
+
+        t = threading.Thread(target=writer, daemon=True)
+        t.start()
+        try:
+            for _ in range(3000):
+                rows, rev = st.lines_with_rev(sid)
+                if rows and rows[0]["source"] != f"v{rev}":
+                    errors.append(f"torn read: source={rows[0]['source']!r} rev={rev}")
+                    break
+        finally:
+            stop.set()
+            t.join(timeout=5)
+        assert not errors, errors[0]
+    finally:
+        st.close()
+
 def test_summary_roundtrip_and_cascade_delete(tmp: Path) -> None:
     st = store_mod.Store(tmp / "summary.db")
     try:

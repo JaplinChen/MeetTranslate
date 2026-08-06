@@ -75,13 +75,12 @@ def _refine_stage(store: Store, session_id: int, chat: Callable[[str], str]) -> 
 
 def _summarize_stage(store: Store, session_id: int, languages: list[str],
                      llm_cfg: llm.LlmConfig, api_key: str, cancel: threading.Event) -> None:
-    # Read after the refine stage so the summary describes the transcript the reader will see,
-    # and capture the revision the same read observed: stale is a comparison against this number.
-    rows = store.lines(session_id)
+    # Read after the refine stage so the summary describes the transcript the reader will see, and
+    # capture the revision the SAME read observed — one lock hold, so an edit cannot slip between
+    # the content and the number and leave a stale summary stamped current.
+    rows, rev = store.lines_with_rev(session_id)
     if not rows:
         return
-    session = store.session(session_id)
-    rev = int(session["lines_rev"]) if session else 0
 
     lines = [summarize.SummaryLine(r["speaker"], r["lang"], r["source"]) for r in rows]
     target = summarize.target_chars(sum(len(l.text) for l in lines))
