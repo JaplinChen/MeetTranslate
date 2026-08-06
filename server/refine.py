@@ -173,6 +173,13 @@ def ollama_chat(model: str, endpoint: str = "http://127.0.0.1:11434", timeout: f
     import json
     import urllib.request
 
+    from .llm_probe import base_url
+
+    # The settings page stores Ollama's endpoint as a chat URL (…/api/chat) because that is what
+    # Ollama's own docs show, and the test button normalises it the same way. Without this, a saved
+    # …/api/chat became …/api/chat/api/generate here and every refine and summary call 404'd.
+    root = base_url(endpoint)
+
     def chat(prompt: str) -> str:
         body = json.dumps({
             "model": model,
@@ -185,7 +192,7 @@ def ollama_chat(model: str, endpoint: str = "http://127.0.0.1:11434", timeout: f
             # Deterministic: the same transcript should not correct differently on a re-run.
             "options": {"temperature": 0, "num_ctx": num_ctx},
         }).encode()
-        req = urllib.request.Request(f"{endpoint}/api/generate", data=body,
+        req = urllib.request.Request(f"{root}/api/generate", data=body,
                                      headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=timeout) as r:
             text = json.load(r).get("response", "")

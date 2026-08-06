@@ -100,6 +100,7 @@
     "summaryGenerating": "Generating summary…",
     "summarizing": "Summarizing",
     "summaryFailed": "The summary could not be generated.",
+    "summaryNoLlm": "No language model is configured — set an API key (or an Ollama endpoint) on the Settings page, then generate the summary.",
     "summaryRetry": "Retry",
     "summaryRegenerate": "Regenerate",
     "summaryRegenerating": "Regenerating…",

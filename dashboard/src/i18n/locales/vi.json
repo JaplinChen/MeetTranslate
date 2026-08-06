@@ -100,6 +100,7 @@
     "summaryGenerating": "Đang tạo tóm tắt…",
     "summarizing": "Đang tóm tắt",
     "summaryFailed": "Không tạo được tóm tắt.",
+    "summaryNoLlm": "Chưa cấu hình mô hình ngôn ngữ — hãy đặt API key (hoặc endpoint Ollama) ở trang Cài đặt, rồi tạo tóm tắt.",
     "summaryRetry": "Thử lại",
     "summaryRegenerate": "Tạo lại",
     "summaryRegenerating": "Đang tạo lại…",
