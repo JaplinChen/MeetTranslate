@@ -99,3 +99,62 @@ def test_ask_rejects_an_empty_or_oversized_question(client: TestClient) -> None:
         assert client.post("/api/ask", json={"question": "字" * 501}).status_code == 400
     finally:
         main.postmeeting.replies = None
+
+
+def test_a_failed_answer_still_starts_the_cooldown(client: TestClient) -> None:
+    """A question the model cannot answer spent two calls; retrying it at once must be refused.
+
+    The cooldown used to advance only after a success, so a persistently-failing question was an
+    unlimited way to spend model calls — exactly what the gate exists to stop.
+    """
+    jobs.reset()
+    _reset_ask_gate()
+    _seed_two_meetings()
+    # Keyword reply is fine; the answer reply is unparseable twice, so ask() raises ValueError.
+    main.postmeeting.replies = [
+        json.dumps({"keywords": ["交期"], "since": None, "until": None}),
+        json.dumps({"sessions": []}),
+        "not json", "still not json",
+    ]
+    try:
+        first = client.post("/api/ask", json={"question": "上週誰說要改交期？"})
+        assert first.status_code == 502, first.text
+
+        # Immediately again: blocked by the cooldown the failure started, not let through.
+        main.postmeeting.replies = [
+            json.dumps({"keywords": ["交期"], "since": None, "until": None}),
+            json.dumps({"sessions": []}), "not json", "still not json",
+        ]
+        second = client.post("/api/ask", json={"question": "再問一次"})
+        assert second.status_code == 429, second.text
+        assert "try again" in second.json()["detail"]
+    finally:
+        main.postmeeting.replies = None
+
+
+def test_a_cooldown_bounce_does_not_extend_the_cooldown(client: TestClient) -> None:
+    """A 429 costs nothing, so being bounced must not push the window further out."""
+    import time as _time
+
+    from . import routes_ask
+    jobs.reset()
+    _reset_ask_gate()
+    a, _b, _ = _seed_two_meetings()
+    # Land one successful answer to arm the cooldown, then read the timestamp it set.
+    line = next(l for l in main.store.lines(a) if "交貨" in l["source"])
+    main.postmeeting.replies = [
+        json.dumps({"keywords": ["交期"], "since": None, "until": None}),
+        json.dumps({"sessions": [a]}),
+        json.dumps({"answer": "答案", "citations": [{"session_id": a, "line_id": line["id"]}]}),
+    ]
+    try:
+        assert client.post("/api/ask", json={"question": "誰改交期？"}).status_code == 200
+        armed_at = routes_ask._last_answered
+        assert armed_at > 0
+
+        # A bounced request during the cooldown must leave the timestamp untouched.
+        bounced = client.post("/api/ask", json={"question": "馬上再問"})
+        assert bounced.status_code == 429
+        assert routes_ask._last_answered == armed_at, "a bounce moved the cooldown window"
+    finally:
+        main.postmeeting.replies = None
