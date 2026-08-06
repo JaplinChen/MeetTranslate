@@ -114,7 +114,9 @@ def test_stop_does_not_hang_when_a_consumer_died_with_a_full_queue() -> None:
     try:
         tap = q.Queue(maxsize=2)
         tap.put(object()); tap.put(object())  # full, and nothing consuming it
-        rec = audio.Recorder(tap=tap)
+        # device_format queries PortAudio, which the CI runner has no device for.
+        with patch.object(audio, "device_format", return_value=(config.SAMPLE_RATE, 1)):
+            rec = audio.Recorder(tap=tap)
         rec._queue = q.Queue(maxsize=2)
         rec._queue.put(object()); rec._queue.put(object())  # writer queue full, writer dead
         rec._writer = None
