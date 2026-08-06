@@ -158,3 +158,36 @@ def test_a_cooldown_bounce_does_not_extend_the_cooldown(client: TestClient) -> N
         assert routes_ask._last_answered == armed_at, "a bounce moved the cooldown window"
     finally:
         main.postmeeting.replies = None
+
+
+def test_search_lines_treats_wildcards_as_literal_text(client: TestClient) -> None:
+    """% and _ in a keyword must match themselves, not act as LIKE wildcards.
+
+    Unescaped, searching "50%" returned every line containing "50", and "Q_3" every line with a "Q"
+    followed by any character — recall silently wrong, the kind of bug that never raises. Keywords
+    come from an LLM expanding a question and may hold either character.
+    """
+    from . import store as store_mod
+    import tempfile
+    from pathlib import Path
+
+    st = store_mod.Store(Path(tempfile.mkdtemp()) / "wild.db")
+    try:
+        sid = st.start_session("2026-01-01T09:00:00", "w.wav")
+        st.add_line(sid, 0.0, "S1", "zh", "完成度 50%", {})
+        st.add_line(sid, 1.0, "S1", "zh", "50 個項目", {})       # no percent
+        st.add_line(sid, 2.0, "S1", "zh", "報告 Q_3 章節", {})
+        st.add_line(sid, 3.0, "S1", "zh", "QA3 測試", {})         # Q then A, not Q then underscore
+
+        # "50%" matches only the line with an actual percent sign.
+        hits = st.search_lines(["50%"])
+        assert [h["source"] for h in hits] == ["完成度 50%"], hits
+
+        # "Q_3" matches only the underscore line, not "QA3".
+        hits = st.search_lines(["Q_3"])
+        assert [h["source"] for h in hits] == ["報告 Q_3 章節"], hits
+
+        # A plain keyword still works.
+        assert len(st.search_lines(["50"])) == 2   # both "50%" and "50 個項目"
+    finally:
+        st.close()

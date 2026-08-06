@@ -237,8 +237,15 @@ class Store(SpeakerStore):
         terms = [k.strip() for k in keywords if k and len(k.strip()) >= 2]
         if not terms:
             return []
-        where = " OR ".join(["l.source LIKE ?"] * len(terms))
-        params: list = [f"%{t}%" for t in terms]
+        # % and _ are LIKE wildcards, and a keyword may contain either — "50%" would otherwise match
+        # any line with "50", "Q_3" any line with "Q" then any character. Escaped with a backslash,
+        # declared by ESCAPE, so a keyword matches itself literally. The backslash itself is escaped
+        # first, or a keyword ending in one would escape the closing %.
+        def _like(term: str) -> str:
+            escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            return f"%{escaped}%"
+        where = " OR ".join(["l.source LIKE ? ESCAPE '\\'"] * len(terms))
+        params: list = [_like(t) for t in terms]
         if since:
             where, params = f"({where}) AND s.started >= ?", params + [since]
         if until:
