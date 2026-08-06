@@ -150,14 +150,15 @@ def get_summary(session_id: int) -> dict:
 @router.post("/api/sessions/{session_id}/summarize")
 def summarize_session(session_id: int) -> dict:
     """Regenerate the summary alone — no ASR, no GPU, just the LLM stages over stored lines."""
-    session = main.store.session(session_id)
-    if not session:
+    if not main.store.session(session_id):
         raise HTTPException(404, "no such session")
     if main.state["session"] == session_id:
         raise HTTPException(409, "session is still recording")
 
-    existing = main.store.summary(session_id)
-    if existing and int(session["lines_rev"]) == int(existing["lines_rev"]):
+    # One read for the summary and the revision: apart, an edit between them can move the revision
+    # under this comparison and make an unchanged verdict against a transcript that already differs.
+    existing, rev = main.store.summary_and_rev(session_id)
+    if existing and rev == int(existing["lines_rev"]):
         age = time.time() - time.mktime(time.strptime(existing["created"], "%Y-%m-%dT%H:%M:%S"))
         if existing["status"] == "ok" and age < SUMMARY_COOLDOWN_MINUTES * 60:
             raise HTTPException(
@@ -169,9 +170,10 @@ def summarize_session(session_id: int) -> dict:
         main.postmeeting._summarize_stage(main.store, session_id, main.state["cfg"].languages,
                                           main.state["llm"], main._api_key(), cancel)
 
-    # Through the job registry even though no GPU is involved: it is the dedup that stops two
-    # generations racing over one session, and the page already knows how to read its states.
-    if not jobs.schedule(session_id, lambda cancel: None, followup=stages):
+    # Through the job registry for its dedup — two generations must not race over one session — but
+    # needs_gpu=False: this is the LLM alone over stored lines, and entering the GPU gate would make
+    # it wait behind a meeting recording on another session, for work that never touches the card.
+    if not jobs.schedule(session_id, lambda cancel: None, followup=stages, needs_gpu=False):
         raise HTTPException(409, "already refining this session")
     return _summary_body(session_id)
 
