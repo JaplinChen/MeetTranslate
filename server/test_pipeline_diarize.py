@@ -416,3 +416,46 @@ def test_a_cached_answer_is_only_used_when_it_still_applies() -> None:
         assert diarize._read_turns(wav, key) is None
         diarize._cache_path(wav).unlink()
         assert diarize._read_turns(wav, key) is None
+
+
+def test_chunks_tile_the_recording_exactly() -> None:
+    """Cores must cover every second once. A gap is speech nobody segments; an overlap is one
+    turn claimed by two chunks and decoded twice into the transcript."""
+    for duration in (100.0, 600.0, 8343.0):
+        spans = diarize._chunk_spans(duration)
+        cores = [(c, d) for _, _, c, d in spans]
+        assert cores[0][0] == 0.0 and cores[-1][1] == duration, (duration, cores[0], cores[-1])
+        for (_, end), (start, _) in zip(cores, cores[1:]):
+            assert start == end, f"cores must meet, got {end} then {start}"
+        # The padded read never leaves the recording.
+        for read_from, read_to, core_from, core_to in spans:
+            assert 0.0 <= read_from <= core_from < core_to <= read_to <= duration
+
+
+def test_an_overlap_smaller_than_the_models_window_is_refused() -> None:
+    """The segmentation model decides from about ten seconds. Cutting with less padding than that
+    means the audio around every cut is judged with one side missing — silently worse."""
+    diarize._chunk_spans(600.0, overlap=10.0)
+    for bad in (0.0, 5.0, 9.9):
+        try:
+            diarize._chunk_spans(600.0, overlap=bad)
+        except ValueError:
+            continue
+        raise AssertionError(f"overlap {bad} was accepted")
+
+
+def test_a_speaker_talking_across_a_cut_comes_back_as_one_turn() -> None:
+    """Both chunks decode their own side of the cut, so the same person arrives as two turns that
+    meet in the middle. After global clustering they carry one label and there is no real gap."""
+    split = [diarize.Turn(10.0, 180.0, 3), diarize.Turn(180.0, 240.0, 3)]
+    assert diarize._heal(split) == [diarize.Turn(10.0, 240.0, 3)]
+
+    # A real pause is still a boundary, and so is a different speaker.
+    kept = [diarize.Turn(0.0, 10.0, 1), diarize.Turn(11.0, 20.0, 1), diarize.Turn(20.0, 30.0, 2)]
+    assert diarize._heal(kept) == kept
+
+
+def test_healing_does_not_shorten_a_turn_it_absorbs() -> None:
+    """An overlapping pair must end at the later end, or the tail of the sentence is dropped."""
+    overlapping = [diarize.Turn(0.0, 20.0, 5), diarize.Turn(19.8, 19.9, 5)]
+    assert diarize._heal(overlapping) == [diarize.Turn(0.0, 20.0, 5)]
