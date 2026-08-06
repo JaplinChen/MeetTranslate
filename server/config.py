@@ -27,6 +27,10 @@ BLOCK_SIZE = 1600
 
 VAD_MODEL = MODELS_DIR / "silero_vad.onnx"
 SPEAKER_MODEL = MODELS_DIR / "speaker_embedding.onnx"
+# Finds where one person stops and the next starts, which the VAD cannot: it hears speech against
+# silence, so two people talking without a pause between them arrive as one utterance. Optional —
+# without it the offline pass falls back to clustering whole VAD utterances.
+SPEAKER_SEGMENTATION_MODEL = MODELS_DIR / "sherpa-onnx-pyannote-segmentation-3-0" / "model.onnx"
 
 # Whisper model directories, smallest first. The realtime tier is picked from `whisper_model`;
 # postprocess always uses the largest available.

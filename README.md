@@ -51,9 +51,16 @@ curl -L -o silero_vad.onnx https://github.com/k2-fsa/sherpa-onnx/releases/downlo
 curl -L -o speaker_embedding.onnx https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx
 curl -L -o whisper-small.tar.bz2 https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-small.tar.bz2
 tar -xjf whisper-small.tar.bz2 && rm whisper-small.tar.bz2
+curl -L -o segmentation.tar.bz2 https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2
+tar -xjf segmentation.tar.bz2 && rm segmentation.tar.bz2
 ```
 
-`models/` 最終應包含 `silero_vad.onnx`、`speaker_embedding.onnx`、`sherpa-onnx-whisper-small/`。
+`models/` 最終應包含 `silero_vad.onnx`、`speaker_embedding.onnx`、`sherpa-onnx-whisper-small/`、
+`sherpa-onnx-pyannote-segmentation-3-0/`。
+
+分段模型（6 MB）負責找出「換人講話」的時間點。少了它程式仍可運作，但會退回以整句聲紋分群：
+一句話中途換人時整句只會得到一個混合的聲紋。實測一場 2 小時 19 分的會議，859 句裡有 72 句
+（8.4%）不只一個人在講。
 
 需要更高準確度可另外下載 `sherpa-onnx-whisper-medium` 或 `large-v3`，程式會自動偵測；會後處理一律使用磁碟上最大的那個。
 

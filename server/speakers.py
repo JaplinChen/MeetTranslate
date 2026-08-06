@@ -16,6 +16,16 @@ import sqlite3
 import threading
 
 
+def _sample(row: sqlite3.Row | None) -> tuple[str, float, float | None] | None:
+    """A sample row as (recording, start, seconds), with seconds unknown on transcripts written
+    before end_time was recorded."""
+    if row is None:
+        return None
+    end = row["end_time"]
+    span = float(end) - float(row["start"]) if end is not None else None
+    return (row["wav"], row["start"], span if span and span > 0 else None)
+
+
 class SpeakerStore:
     """Speaker tables. Mixed into `Store`, which opens the connection and owns the lock."""
 
@@ -78,23 +88,24 @@ class SpeakerStore:
             return {r["name"]: r["sessions"] for r in
                     self._db.execute("SELECT name, sessions FROM known_speaker")}
 
-    def speaker_sample(self, name: str) -> tuple[str, float] | None:
-        """Where to hear this voice: the newest line anyone attributed to that name.
+    def speaker_sample(self, name: str) -> tuple[str, float, float | None] | None:
+        """Where to hear this voice, and how long that utterance lasts.
 
         Derived rather than stored — a name is only ever attached on the transcript page, so the
         transcript already knows which recording and which second to play.
         """
         with self._lock:
             row = self._db.execute(
-                "SELECT s.wav_path AS wav, l.start AS start FROM speaker_name sn "
+                "SELECT s.wav_path AS wav, l.start AS start, l.end_time AS end_time "
+                "FROM speaker_name sn "
                 "JOIN line l ON l.session_id=sn.session_id AND l.speaker=sn.code "
                 "JOIN session s ON s.id=sn.session_id "
                 "WHERE sn.name=? ORDER BY sn.session_id DESC, l.start LIMIT 1",
                 (name,),
             ).fetchone()
-        return (row["wav"], row["start"]) if row else None
+        return _sample(row)
 
-    def session_speaker_sample(self, session_id: int, code: str) -> tuple[str, float] | None:
+    def session_speaker_sample(self, session_id: int, code: str) -> tuple[str, float, float | None] | None:
         """Where to hear S3 in this meeting, before anyone has said who S3 is.
 
         speaker_sample() goes through speaker_name, so it can only find a voice that already has a
@@ -106,13 +117,13 @@ class SpeakerStore:
         """
         with self._lock:
             row = self._db.execute(
-                "SELECT s.wav_path AS wav, l.start AS start FROM line l "
+                "SELECT s.wav_path AS wav, l.start AS start, l.end_time AS end_time FROM line l "
                 "JOIN session s ON s.id = l.session_id "
                 "WHERE l.session_id=? AND l.speaker=? "
                 "ORDER BY COALESCE(l.end_time - l.start, 0) DESC, LENGTH(l.source) DESC LIMIT 1",
                 (session_id, code),
             ).fetchone()
-        return (row["wav"], row["start"]) if row else None
+        return _sample(row)
 
     def rename_speaker(self, old: str, new: str) -> None:
         """Rename a learned voice everywhere it is used, transcripts included.

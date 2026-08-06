@@ -8,12 +8,18 @@ wrong language. Hence the hysteresis before ever changing a speaker's language.
 
 from __future__ import annotations
 
+import logging
+import os
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 import sherpa_onnx
+import soundfile as sf
 
 from . import config
+
+log = logging.getLogger("meettranslate.diarize")
 
 
 def cosine(a: np.ndarray, b: np.ndarray) -> float:
@@ -21,17 +27,14 @@ def cosine(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.dot(a, b) / denom) if denom else 0.0
 
 
-def _similarities(rows: np.ndarray, other: np.ndarray | None = None) -> np.ndarray:
-    """Cosine of every row against `other`, or against every other row — same rule as `cosine`,
-    including the zero vector scoring zero rather than dividing by nothing."""
+def _similarities(rows: np.ndarray) -> np.ndarray:
+    """Cosine of every row against every other — same rule as `cosine`, including the zero vector
+    scoring zero rather than dividing by nothing."""
     norms = np.linalg.norm(rows, axis=1)
     safe = np.where(norms == 0, 1.0, norms)
     unit = rows / safe[:, None]
     unit[norms == 0] = 0.0
-    if other is None:
-        return (unit @ unit.T).astype(np.float32)
-    scale = float(np.linalg.norm(other))
-    return (unit @ (other / scale if scale else other * 0.0)).astype(np.float32)
+    return (unit @ unit.T).astype(np.float32)
 
 
 @dataclass
@@ -42,6 +45,64 @@ class Speaker:
     language: str = ""  # established language; '' until the first transcription lands
     counts: dict[str, int] = field(default_factory=dict)
     _pending: tuple[str, int] = ("", 0)
+
+
+@dataclass(frozen=True)
+class Turn:
+    """One stretch of one person talking, as the segmentation model heard it."""
+
+    start: float
+    end: float
+    speaker: int
+
+
+# Speech shorter than this is not a turn, and a gap shorter than this does not end one. Both are
+# sherpa's own defaults for meeting audio; loosening either turns a breath into a speaker change.
+MIN_TURN_ON = 0.3
+MIN_TURN_OFF = 0.5
+
+
+def turns(wav: Path, threshold: float | None = None) -> list[Turn] | None:
+    """Where the speaker changes across a whole recording, or None if the model is not installed.
+
+    The VAD cannot answer this. It hears speech against silence, so two people talking without a
+    pause between them arrive as one utterance and get one embedding — an average of both, which
+    then clusters as if it were a third person. Measured on a 2h19m meeting: 72 of 859 utterances
+    (8.4%, ten minutes of speech) held more than one voice, one of them four.
+
+    Optional on purpose: the model is a separate 6 MB download, and a machine without it should
+    still be able to process a recording.
+    """
+    model = config.SPEAKER_SEGMENTATION_MODEL
+    if not model.is_file():
+        return None
+
+    cfg = sherpa_onnx.OfflineSpeakerDiarizationConfig(
+        segmentation=sherpa_onnx.OfflineSpeakerSegmentationModelConfig(
+            pyannote=sherpa_onnx.OfflineSpeakerSegmentationPyannoteModelConfig(model=str(model)),
+            num_threads=max((os.cpu_count() or 4) // 2, 1),
+        ),
+        embedding=sherpa_onnx.SpeakerEmbeddingExtractorConfig(
+            model=str(config.SPEAKER_MODEL),
+            num_threads=max((os.cpu_count() or 4) // 2, 1),
+        ),
+        clustering=sherpa_onnx.FastClusteringConfig(
+            threshold=config.SPEAKER_THRESHOLD if threshold is None else threshold),
+        min_duration_on=MIN_TURN_ON,
+        min_duration_off=MIN_TURN_OFF,
+    )
+    if not cfg.validate():
+        log.warning("speaker segmentation config rejected; falling back to clustering utterances")
+        return None
+
+    audio, rate = sf.read(str(wav), dtype="float32")
+    if rate != config.SAMPLE_RATE:
+        raise ValueError(f"{wav} is {rate} Hz, expected {config.SAMPLE_RATE}")
+    if audio.ndim > 1:
+        audio = audio.mean(axis=1)
+
+    result = sherpa_onnx.OfflineSpeakerDiarization(cfg).process(audio).sort_by_start_time()
+    return [Turn(float(s.start), float(s.end), int(s.speaker)) for s in result]
 
 
 class Diarizer:
@@ -167,10 +228,29 @@ def load_known(store) -> list[tuple[str, np.ndarray]]:
 
 
 def cluster_offline(embeddings: list[np.ndarray], threshold: float | None = None) -> list[int]:
-    """Agglomerative clustering over every segment of a finished meeting.
+    """Agglomerative clustering over every segment of a finished meeting, on complete linkage.
 
     Seeing all segments at once fixes the online pass's mistakes: two clusters that online kept
     apart because the speaker's first few seconds were atypical get merged here.
+
+    Two clusters join only when their *worst* cross-pair still clears the threshold. Averaging
+    them into a centroid instead — which this did — produces a mean voice that resembles everyone
+    a little, so the biggest cluster keeps absorbing and one speaker ends up holding the meeting.
+    On a 2h19m morning meeting, 859 segments:
+
+        linkage    thr    clusters   biggest   different speakers kept apart
+        centroid   0.65        35     93.2%     0 of 33
+        centroid   0.80       176     31.1%    33 of 33
+        complete   0.65       134     14.1%    33 of 33
+
+    Ten utterances there were attributable by content — the chair, a sales report, a production
+    report — and at 0.65 every one of the 33 pairs from different people had been merged. That is
+    the transcript naming almost every line after whoever S1 turned out to be.
+
+    The threshold stays where two earlier interviews put it. Complete linkage splits one speaker
+    across more codes than centroid merging did, which is the trade taken deliberately: naming the
+    same person into several boxes is tedious but possible, while a cluster holding four people
+    cannot be separated by anything the person reading the transcript can do.
     """
     if not embeddings:
         return []
@@ -178,7 +258,6 @@ def cluster_offline(embeddings: list[np.ndarray], threshold: float | None = None
     thr = config.SPEAKER_THRESHOLD if threshold is None else threshold
     n = len(embeddings)
     members: list[list[int]] = [[i] for i in range(n)]
-    centroids = np.asarray(embeddings, dtype=np.float32).copy()
 
     # Every pair's similarity, computed once and then repaired in place. Rescanning all pairs in
     # Python each round is O(n^3), and a two-hour meeting segments into the thousands: that spent
@@ -186,7 +265,7 @@ def cluster_offline(embeddings: list[np.ndarray], threshold: float | None = None
     #
     # A merged cluster is masked rather than deleted — deleting means copying the whole matrix
     # every round, which is the same cubic cost again with a smaller constant.
-    sims = _similarities(centroids)
+    sims = _similarities(np.asarray(embeddings, dtype=np.float32))
     np.fill_diagonal(sims, -np.inf)
     alive = np.ones(n, dtype=bool)
 
@@ -202,34 +281,29 @@ def cluster_offline(embeddings: list[np.ndarray], threshold: float | None = None
         if i > j:
             i, j = j, i
 
-        # Weighted merge so a large cluster is not dragged by a single outlying segment.
-        ni, nj = len(members[i]), len(members[j])
-        centroids[i] = (centroids[i] * ni + centroids[j] * nj) / (ni + nj)
+        # Complete linkage: the merged cluster sits as far from every other as its worse half did.
+        row = np.minimum(sims[i], sims[j])
         members[i] += members[j]
         members[j] = []
         alive[j] = False
-        sims[j, :] = -np.inf
-        sims[:, j] = -np.inf
-        best[j] = -np.inf
 
-        row = np.where(alive, _similarities(centroids, centroids[i]), -np.inf)
+        row[j] = -np.inf
         row[i] = -np.inf
         sims[i, :] = row
         sims[:, i] = row
+        sims[j, :] = -np.inf
+        sims[:, j] = -np.inf
+        best[j] = -np.inf
         best_at[i] = int(np.argmax(row))
         best[i] = row[best_at[i]]
 
-        # Two ways another row's best can now be wrong: it pointed at one of the merged clusters
-        # and may have fallen, or the merged centroid is closer to it than whatever it held.
+        # Similarities only ever fall here, so a row's cached best can only be stale downwards —
+        # and only if it pointed at one of the two clusters that just became one.
         stale = alive & ((best_at == i) | (best_at == j))
         stale[i] = False
         for r in np.flatnonzero(stale):
             best_at[r] = int(np.argmax(sims[r]))
             best[r] = sims[r, best_at[r]]
-        closer = alive & (row > best)
-        closer[i] = False
-        best[closer] = row[closer]
-        best_at[closer] = i
 
     labels = [0] * n
     for label, group in enumerate([m for m in members if m]):

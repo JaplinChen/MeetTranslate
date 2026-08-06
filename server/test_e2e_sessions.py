@@ -255,11 +255,42 @@ def test_unnamed_speaker_can_be_heard_before_naming(client: TestClient) -> None:
 
     # Which line it picked cannot be heard — the fixture is silence — so assert it directly:
     # the 8-second utterance at 12.0s, not the 0.4-second "謝謝" that comes first.
-    assert main.store.session_speaker_sample(session, "S1") == (str(wav), 12.0)
+    assert main.store.session_speaker_sample(session, "S1") == (str(wav), 12.0, 8.0)
 
     assert client.get(f"/api/sessions/{session}/speakers/S2/clip").status_code == 200
     assert client.get(f"/api/sessions/{session}/speakers/S9/clip").status_code == 404
     assert client.get(f"/api/sessions/999999/speakers/S1/clip").status_code == 404
+
+
+def test_a_sample_never_runs_past_the_utterance_it_came_from(client: TestClient) -> None:
+    """A speaker whose longest utterance is short must not be sampled over the next person.
+
+    Four seconds from the start of a two-second answer is two seconds of whoever spoke next, and a
+    sample holding two voices cannot answer the only question the naming screen asks. Measured on a
+    real meeting before this: 5 of 14 sampled speakers had someone else starting inside the clip.
+    """
+    import soundfile as sf
+
+    wav = config.RECORDINGS_DIR / "short-turn.wav"
+    wav.parent.mkdir(parents=True, exist_ok=True)
+    sf.write(str(wav), np.zeros(config.SAMPLE_RATE * 30, dtype="float32"), config.SAMPLE_RATE)
+
+    session = main.store.start_session("now", str(wav))
+    main.store.add_line(session, 2.0, "S1", "zh", "好 沒問題", {}, end_time=4.0)
+    main.store.add_line(session, 4.1, "S2", "zh", "接下來換我報告這一段", {}, end_time=12.0)
+
+    heard, rate = sf.read(io.BytesIO(client.get(f"/api/sessions/{session}/speakers/S1/clip").content))
+    assert len(heard) == 2.0 * rate, f"{len(heard)/rate}s played of a 2s utterance"
+
+    # The long one is still capped at CLIP_SECONDS: the question is whose voice, not what was said.
+    heard, rate = sf.read(io.BytesIO(client.get(f"/api/sessions/{session}/speakers/S2/clip").content))
+    assert len(heard) == main.CLIP_SECONDS * rate
+
+    # A transcript written before end_time existed has nothing to bound the clip with, and still
+    # has to play something.
+    main.store.add_line(session, 20.0, "S3", "zh", "沒有結束時間的舊資料", {})
+    heard, rate = sf.read(io.BytesIO(client.get(f"/api/sessions/{session}/speakers/S3/clip").content))
+    assert len(heard) == main.CLIP_SECONDS * rate
 
 
 def test_a_learned_correction_can_be_fixed_in_place(client: TestClient) -> None:

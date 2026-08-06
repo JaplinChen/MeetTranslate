@@ -35,22 +35,27 @@ def get_known_speakers() -> list[dict]:
     return [{"name": name, "sessions": counts.get(name, 0)} for name, _ in main.store.known_speakers()]
 
 
-def _clip(sample: tuple[str, float] | None, seconds: float | None = None) -> Response:
+def _clip(sample: tuple[str, float, float | None] | None, seconds: float | None = None) -> Response:
     """A slice of a recording as a WAV, from wherever the sample points at.
 
-    `seconds` defaults to CLIP_SECONDS, which is the right length for "is this the same voice".
-    A transcript line passes its own duration instead: the question there is whether the text
-    matches what was said, and a sentence cut off at four seconds cannot answer it.
+    `seconds` defaults to CLIP_SECONDS, which is the right length for "is this the same voice",
+    but never runs past the utterance the sample points at: four seconds from the start of a
+    one-second answer is three seconds of whoever spoke next, and a sample holding two voices
+    cannot tell you whose voice it is. A transcript line passes its own duration instead — the
+    question there is whether the text matches what was said, and a sentence cut off at four
+    seconds cannot answer it.
     """
     if sample is None:
         raise HTTPException(404, "no recording for this voice")
-    wav_path, start = sample
+    wav_path, start, span = sample
+    if seconds is None:
+        seconds = min(main.CLIP_SECONDS, span) if span else main.CLIP_SECONDS
     if not Path(wav_path).is_file():
         raise HTTPException(404, f"recording not found: {wav_path}")
 
     with sf.SoundFile(wav_path) as f:
         f.seek(min(int(start * f.samplerate), max(len(f) - 1, 0)))
-        block = f.read(int((seconds or main.CLIP_SECONDS) * f.samplerate), dtype="int16")
+        block = f.read(int(seconds * f.samplerate), dtype="int16")
         rate = f.samplerate
     buf = io.BytesIO()
     sf.write(buf, block, rate, format="WAV", subtype="PCM_16")
@@ -90,7 +95,7 @@ def get_line_clip(session_id: int, line_id: int) -> Response:
 
     end = line["end_time"]
     span = max(float(end) - float(line["start"]), 0.0) if end is not None else 0.0
-    return _clip((session["wav_path"], line["start"]), min(span, MAX_LINE_SECONDS) or None)
+    return _clip((session["wav_path"], line["start"], span or None), min(span, MAX_LINE_SECONDS) or None)
 
 
 @router.put("/api/speakers/known/{name}")

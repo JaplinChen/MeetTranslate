@@ -159,6 +159,29 @@ def test_offline_clustering_groups_similar_embeddings() -> None:
     assert labels[0] != labels[3]
 
 
+def test_no_cluster_holds_two_segments_that_are_not_alike() -> None:
+    """A cluster is only as tight as its worst pair — which is what stops it holding four people.
+
+    Real embeddings arrive as a continuum, not as tidy blobs: on a 2h19m meeting the pairwise
+    cosines ran smoothly from 0.22 to 0.97 with no gap to cut at. Averaging two clusters into a
+    centroid produces a mean voice that resembles everyone a little, so under that rule the biggest
+    cluster kept absorbing until it held 93% of the meeting and every one of 33 pairs from
+    different people had been merged. The fixture below is that continuum in miniature; under
+    centroid merging it puts segments 0.05 apart in one cluster.
+    """
+    angles = np.sort(np.random.default_rng(0).uniform(0, np.pi, 70))
+    points = [np.array([np.cos(t), np.sin(t)], dtype=np.float32) for t in angles]
+
+    labels = np.array(diarize.cluster_offline(points, threshold=0.65))
+    for group in set(labels.tolist()):
+        members = np.flatnonzero(labels == group)
+        for a in range(len(members)):
+            for b in range(a + 1, len(members)):
+                score = diarize.cosine(points[members[a]], points[members[b]])
+                assert score >= 0.65, f"cluster {group} holds a pair at {score:.3f}"
+    assert len(set(labels.tolist())) > 1, "the fixture must not collapse into one cluster"
+
+
 def test_offline_clustering_edge_cases() -> None:
     assert diarize.cluster_offline([]) == []
     single = [np.array([1.0, 0.0], dtype=np.float32)]
@@ -189,3 +212,152 @@ def test_offline_clustering_scales_to_a_long_meeting() -> None:
 
     assert len(set(labels)) == 5, len(set(labels))
     assert elapsed < 20, f"clustering 1500 segments took {elapsed:.1f}s"
+
+
+def _utterance(start: float, seconds: float) -> postprocess.Utterance:
+    """Silence of the right length: these checks are about boundaries, not about audio."""
+    return postprocess.Utterance(start, np.zeros(int(seconds * config.SAMPLE_RATE), dtype=np.float32))
+
+
+def test_an_utterance_is_cut_where_the_speaker_changes() -> None:
+    """A VAD utterance is speech between silences, which is not one person talking.
+
+    Measured on a 2h19m meeting: 72 of 859 utterances held more than one voice, one of them four
+    people over twelve seconds — decoded as a single line reading as nonsense and embedded as a
+    single voice belonging to nobody.
+    """
+    turns = [diarize.Turn(0.0, 4.0, 0), diarize.Turn(4.0, 10.0, 1)]
+    pieces = postprocess.split_on_turns([_utterance(0.0, 10.0)], turns)
+
+    assert [p.speaker for p in pieces] == ["S1", "S2"], [p.speaker for p in pieces]
+    assert pieces[0].start == 0.0 and pieces[1].start == 4.0
+    # The audio follows the cut, or the second piece would be transcribed as the first one's words.
+    assert len(pieces[0].samples) == 4 * config.SAMPLE_RATE
+    assert len(pieces[1].samples) == 6 * config.SAMPLE_RATE
+
+
+def test_an_utterance_with_one_voice_is_left_whole() -> None:
+    turns = [diarize.Turn(0.0, 9.0, 3), diarize.Turn(20.0, 30.0, 1)]
+    pieces = postprocess.split_on_turns([_utterance(0.5, 8.0)], turns)
+
+    assert len(pieces) == 1
+    assert pieces[0].speaker == "S4"
+    assert len(pieces[0].samples) == 8 * config.SAMPLE_RATE
+
+
+def test_a_brief_interjection_does_not_cost_a_line() -> None:
+    """Half a second of someone agreeing mid-sentence is not a turn worth splitting a line for."""
+    turns = [diarize.Turn(0.0, 5.0, 0), diarize.Turn(2.0, 2.2, 1), diarize.Turn(5.0, 8.0, 0)]
+    pieces = postprocess.split_on_turns([_utterance(0.0, 8.0)], turns)
+
+    assert len(pieces) == 1, [(p.start, p.speaker) for p in pieces]
+    assert pieces[0].speaker == "S1"
+
+
+def test_splitting_covers_the_utterance_it_was_given() -> None:
+    """Every second of audio has to land in exactly one piece: a gap is speech dropped from the
+    transcript, an overlap is speech transcribed twice."""
+    turns = [diarize.Turn(0.0, 3.0, 0), diarize.Turn(3.0, 7.0, 1), diarize.Turn(7.0, 12.0, 2)]
+    pieces = postprocess.split_on_turns([_utterance(0.0, 12.0)], turns)
+
+    assert len(pieces) == 3
+    total = sum(len(p.samples) for p in pieces)
+    assert total == 12 * config.SAMPLE_RATE, total
+    for earlier, later in zip(pieces, pieces[1:]):
+        assert earlier.start + len(earlier.samples) / config.SAMPLE_RATE == later.start
+
+
+def test_no_turns_leaves_every_utterance_alone() -> None:
+    """The machine without the segmentation model still has to process a recording."""
+    given = [_utterance(0.0, 3.0), _utterance(4.0, 3.0)]
+    assert postprocess.split_on_turns(given, []) is given
+
+
+def test_a_gap_the_segmenter_heard_nobody_in_still_gets_a_speaker() -> None:
+    """The VAD calls it speech, the segmentation model calls it nobody, and the transcript would
+    show a line with a blank where the speaker goes. Five of 1040 pieces on a real meeting."""
+    turns = [diarize.Turn(0.0, 3.0, 0), diarize.Turn(30.0, 40.0, 1)]
+    # The middle utterance sits in the segmenter's blind spot.
+    given = [_utterance(0.0, 3.0), _utterance(10.0, 0.6), _utterance(30.0, 5.0)]
+    pieces = postprocess.split_on_turns(given, turns)
+
+    assert [p.speaker for p in pieces] == ["S1", "S1", "S2"], [p.speaker for p in pieces]
+
+
+def test_an_opening_blind_spot_borrows_from_what_follows() -> None:
+    """Nothing precedes the first utterance, so inheriting backwards is the only option left."""
+    turns = [diarize.Turn(20.0, 30.0, 4)]
+    pieces = postprocess.split_on_turns([_utterance(0.0, 0.6), _utterance(20.0, 5.0)], turns)
+
+    assert [p.speaker for p in pieces] == ["S5", "S5"], [p.speaker for p in pieces]
+
+
+def test_out_of_order_turns_do_not_duplicate_audio() -> None:
+    """Pieces are cut by walking forward; a turn list out of order would hand two of them the same
+    seconds, which reaches the transcript as the same sentence twice."""
+    turns = [diarize.Turn(6.0, 10.0, 1), diarize.Turn(0.0, 6.0, 0)]
+    pieces = postprocess.split_on_turns([_utterance(0.0, 10.0)], turns)
+
+    assert [p.speaker for p in pieces] == ["S1", "S2"]
+    assert sum(len(p.samples) for p in pieces) == 10 * config.SAMPLE_RATE
+    for earlier, later in zip(pieces, pieces[1:]):
+        assert earlier.start + len(earlier.samples) / config.SAMPLE_RATE == later.start
+
+
+def test_an_imported_recording_leaves_a_voiceprint_behind() -> None:
+    """Naming a speaker is how the room learns a voice, and it reads what this wrote.
+
+    Only the live pipeline stored voiceprints, so a session that arrived as a file never wrote one:
+    naming S3 afterwards looked one up, found nothing, and skipped promoting it without saying so.
+    """
+    class FakeStore:
+        def __init__(self) -> None:
+            self.saved: dict[str, bytes] = {}
+
+        def save_voiceprint(self, session_id: int, code: str, centroid: bytes) -> None:
+            self.saved[code] = centroid
+
+    class FakeEmbedder:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def embed(self, samples: np.ndarray) -> np.ndarray:
+            self.calls += 1
+            # Length stands in for identity, so the averaged centroid is checkable.
+            return np.full(4, len(samples) / config.SAMPLE_RATE, dtype=np.float32)
+
+    said = [postprocess.Utterance(0.0, np.zeros(config.SAMPLE_RATE * 4, dtype=np.float32), "S1"),
+            postprocess.Utterance(5.0, np.zeros(config.SAMPLE_RATE * 2, dtype=np.float32), "S1"),
+            postprocess.Utterance(9.0, np.zeros(config.SAMPLE_RATE * 6, dtype=np.float32), "S2"),
+            # Too short to embed reliably: it must not drag a speaker's centroid.
+            postprocess.Utterance(20.0, np.zeros(int(config.SAMPLE_RATE * 0.4), dtype=np.float32), "S2")]
+
+    store, embedder = FakeStore(), FakeEmbedder()
+    postprocess._remember_voices(store, 7, said, embedder)
+
+    assert sorted(store.saved) == ["S1", "S2"]
+    assert np.frombuffer(store.saved["S1"], dtype=np.float32).tolist() == [3.0] * 4
+    assert np.frombuffer(store.saved["S2"], dtype=np.float32).tolist() == [6.0] * 4
+    assert embedder.calls == 3, "the sub-second clip must not have been embedded"
+
+
+def test_a_voiceprint_averages_only_a_speakers_longest_few() -> None:
+    """A two-hour meeting has hundreds of utterances per speaker; a centroid needs a handful."""
+    class Counter:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def embed(self, samples: np.ndarray) -> np.ndarray:
+            self.calls += 1
+            return np.ones(4, dtype=np.float32)
+
+    class Sink:
+        def save_voiceprint(self, session_id: int, code: str, centroid: bytes) -> None:
+            pass
+
+    said = [postprocess.Utterance(float(i), np.zeros(config.SAMPLE_RATE * 2, dtype=np.float32), "S1")
+            for i in range(40)]
+    counter = Counter()
+    postprocess._remember_voices(Sink(), 1, said, counter)
+
+    assert counter.calls == postprocess.VOICEPRINT_SAMPLES, counter.calls
