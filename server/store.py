@@ -284,6 +284,23 @@ class Store(SpeakerStore):
                                    (session_id,)).fetchone()
         return dict(row) if row else None
 
+    def summary_and_rev(self, session_id: int) -> tuple[dict | None, int]:
+        """The stored summary and the session's current revision, from one lock hold.
+
+        The regenerate endpoint compares the two to decide whether the transcript has changed since
+        the summary was made. Read apart — session() then summary() — an edit landing between them
+        moves the revision under the comparison, so it can conclude "unchanged" against a version
+        that already differs and refuse a regeneration that should have run. One acquisition makes
+        the pair consistent, the same reason lines_with_rev exists.
+        """
+        with self._lock:
+            summ = self._db.execute("SELECT * FROM summary WHERE session_id=?",
+                                    (session_id,)).fetchone()
+            sess = self._db.execute("SELECT lines_rev FROM session WHERE id=?",
+                                    (session_id,)).fetchone()
+        rev = int(sess["lines_rev"]) if sess else 0
+        return (dict(summ) if summ else None), rev
+
     def lines_with_rev(self, session_id: int) -> tuple[list[dict], int]:
         """The lines and the session's revision, read under one lock hold.
 

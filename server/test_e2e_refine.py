@@ -140,6 +140,58 @@ def test_llm_stages_do_not_hold_the_gpu_gate(client: TestClient) -> None:
     assert wait_for(lambda: jobs.state(session_id)["state"] in ("refined", "cancelled"))
 
 
+def test_a_summarize_only_job_does_not_wait_for_the_gpu(client: TestClient) -> None:
+    """Regenerating a summary must not queue behind a meeting recording on another session.
+
+    A summarize-only job is the LLM alone over stored lines — it never touches the card. Scheduled
+    with needs_gpu=True it entered the GPU gate anyway and, with the card held by a live recording,
+    sat there for the length of that meeting. needs_gpu=False runs it straight to the followup.
+    """
+    import threading
+
+    jobs.reset()
+    session_id = seed_session("summarize-only.wav")
+
+    ran = threading.Event()
+
+    def followup(cancel, set_stage):
+        set_stage("summarize")
+        ran.set()
+
+    # Hold the card as if a meeting on another session were recording.
+    assert jobs.claim_gpu(timeout=1.0)
+    try:
+        # needs_gpu=True would block here; needs_gpu=False must reach the followup regardless.
+        assert jobs.schedule(session_id, lambda cancel: None, followup=followup, needs_gpu=False)
+        assert wait_for(ran.is_set, 2.0), "the summarize-only job waited for the GPU gate"
+    finally:
+        jobs.release_gpu()
+        jobs.cancel_all(wait=1.0)
+
+    assert wait_for(lambda: jobs.state(session_id)["state"] in ("refined", "cancelled"))
+
+
+def test_a_gpu_job_still_waits_for_the_card(client: TestClient) -> None:
+    """The default path is unchanged: a job that needs the card queues behind whoever holds it."""
+    import threading
+
+    jobs.reset()
+    session_id = seed_session("gpu-job.wav")
+
+    started = threading.Event()
+
+    assert jobs.claim_gpu(timeout=1.0)
+    try:
+        assert jobs.schedule(session_id, lambda cancel: started.set())  # needs_gpu defaults True
+        # It must NOT run while the card is held.
+        assert not wait_for(started.is_set, 0.8), "a GPU job ran without the card"
+    finally:
+        jobs.release_gpu()
+    # Once the card is free it proceeds.
+    assert wait_for(started.is_set, 2.0), "the GPU job never ran after release"
+    jobs.cancel_all(wait=1.0)
+
+
 def test_a_failed_followup_keeps_what_the_rewrite_landed(client: TestClient) -> None:
     """Stages land independently: a summary that fails must not undo a refine that succeeded."""
     jobs.reset()
@@ -236,6 +288,35 @@ def test_lines_with_rev_pairs_content_and_revision_from_one_read(tmp: Path) -> N
         rows2, rev2 = st.lines_with_rev(sid)
         assert rev2 == 1
         assert [r["source"] for r in rows2] == ["第二版"]
+    finally:
+        st.close()
+
+
+def test_summary_and_rev_pairs_the_stored_summary_with_the_current_revision(tmp: Path) -> None:
+    """The regenerate endpoint's freshness check reads both from one lock hold.
+
+    Read apart — session() then summary() — an edit between them moves the revision under the
+    comparison, so a summary made at rev N could be judged current against a transcript already at
+    N+1 and a legitimate regeneration refused. The pair here is consistent by construction.
+    """
+    st = store_mod.Store(tmp / "sumrev.db")
+    try:
+        sid = st.start_session("2026-01-01T09:00:00", "sr.wav")
+        st.add_line(sid, 0.0, "S1", "zh", "一行", {})
+        line_id = st.lines(sid)[0]["id"]
+
+        # No summary yet: None, and the live revision.
+        summ, rev = st.summary_and_rev(sid)
+        assert summ is None and rev == 0
+
+        st.set_summary(sid, '{"zh": {"title": "T"}}', "ok", lines_rev=0, created="2026-01-01T10:00:00")
+        summ, rev = st.summary_and_rev(sid)
+        assert summ["lines_rev"] == 0 and rev == 0   # matches → fresh
+
+        # An edit moves the session revision; the stored summary's stamp stays behind.
+        st.update_line(line_id, "改過", {})
+        summ, rev = st.summary_and_rev(sid)
+        assert summ["lines_rev"] == 0 and rev == 1   # differs → the endpoint would allow regeneration
     finally:
         st.close()
 

@@ -62,7 +62,7 @@ def states() -> dict[int, dict]:
 
 def schedule(session_id: int, run: Callable[[threading.Event], None],
              followup: Callable[[threading.Event, Callable[[str], None]], None] | None = None,
-             ) -> bool:
+             needs_gpu: bool = True) -> bool:
     """Run `run` on a worker once the GPU is free. False when this session already has a pass.
 
     `run` is handed the cancel event and is expected to check it; a pass that ignores it simply
@@ -90,24 +90,40 @@ def schedule(session_id: int, run: Callable[[threading.Event], None],
         with _lock:
             job.stage = stage
 
+    def _run_gpu_stage() -> bool:
+        """The card-bound stage. Returns False if the job ended inside it (cancelled or failed).
+
+        Held under the GPU gate only when `needs_gpu`. A summarize-only regeneration passes a no-op
+        run and needs_gpu=False: entering the gate for it would make a pure-LLM job wait behind a
+        meeting's recording, which is the exact block the followup split exists to avoid — and this
+        endpoint is one someone clicks while another meeting may be underway.
+        """
+        if job.cancel.is_set():
+            _finish(job, "cancelled")
+            return False
+        try:
+            run(job.cancel)
+        except Cancelled:
+            _finish(job, "cancelled")
+            return False
+        except Exception as exc:
+            # A failed pass is a visible state, not a log line nobody reads. The transcript it
+            # was rewriting is still whole, so this is recoverable by re-running.
+            log.exception("post-meeting pass failed for session %d", session_id)
+            _finish(job, "failed", f"{type(exc).__name__}: {exc}")
+            return False
+        return True
+
     def worker() -> None:
-        with _gpu:
-            if job.cancel.is_set():
-                _finish(job, "cancelled")
+        if needs_gpu:
+            with _gpu:
+                if not _run_gpu_stage():
+                    return
+        else:
+            if not _run_gpu_stage():
                 return
-            try:
-                run(job.cancel)
-            except Cancelled:
-                _finish(job, "cancelled")
-                return
-            except Exception as exc:
-                # A failed pass is a visible state, not a log line nobody reads. The transcript it
-                # was rewriting is still whole, so this is recoverable by re-running.
-                log.exception("post-meeting pass failed for session %d", session_id)
-                _finish(job, "failed", f"{type(exc).__name__}: {exc}")
-                return
-        # The card is free from here on. A meeting can start while the followup is still talking
-        # to a language model, which is the entire point of the split.
+        # The card is free (or was never taken). A meeting can start while the followup is still
+        # talking to a language model, which is the entire point of the split.
         if followup:
             try:
                 followup(job.cancel, set_stage)
