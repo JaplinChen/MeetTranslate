@@ -146,6 +146,21 @@ def gpu_model(languages: list[str] | None = None) -> str:
     return os.environ.get("MEETTRANSLATE_GPU_MODEL", "large-v3")
 
 
+def gpu_index() -> int:
+    """Which CUDA device the recogniser runs on. Zero unless told otherwise.
+
+    This box has two cards. Whisper takes one; the other is free for a local LLM — the summary and
+    correction stages can run on Ollama, and Ollama landing on the same card as live decoding is
+    the one thing that makes the recogniser run short of memory mid-meeting. Ollama's card is set
+    where its daemon starts (CUDA_VISIBLE_DEVICES); this sets Whisper's, so the two can be kept
+    apart. A machine with one card ignores this and shares it, as it did before.
+    """
+    try:
+        return int(os.environ.get("MEETTRANSLATE_GPU_INDEX", "0"))
+    except ValueError:
+        return 0
+
+
 def available_whisper_models() -> list[str]:
     """Model tiers actually present on disk, smallest first."""
     return [name for name, path in WHISPER_DIRS.items() if path.is_dir()]

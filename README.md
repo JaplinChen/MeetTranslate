@@ -141,7 +141,13 @@ macOS 用 `./start.command`。腳本會清掉佔用 port 的舊程序、建立�
 | `recordings/` | 原始錄音 |
 | `transcripts/` | `bench_wav` 產出的逐字稿 |
 
-環境變數可覆寫：`ANTHROPIC_API_KEY`、`MEETTRANSLATE_INPUT_DEVICE`、`MEETTRANSLATE_LANGUAGES`、`MEETTRANSLATE_WHISPER_MODEL`。
+環境變數可覆寫：`ANTHROPIC_API_KEY`、`MEETTRANSLATE_INPUT_DEVICE`、`MEETTRANSLATE_LANGUAGES`、`MEETTRANSLATE_WHISPER_MODEL`、`MEETTRANSLATE_GPU_INDEX`。
+
+### 兩張顯卡：讓辨識與本地 LLM 各佔一張
+
+`MEETTRANSLATE_GPU_INDEX`（預設 `0`）指定辨識器用哪張 CUDA 卡。單張卡不必理會。
+
+會後的摘要與辨識校正若走本地 Ollama（不出機，適合客戶訪談），Ollama 預設也搶第 0 張卡，會與正在錄音的辨識器搶記憶體。兩張卡時把它們分開：辨識器留 `MEETTRANSLATE_GPU_INDEX=0`，Ollama daemon 以 `CUDA_VISIBLE_DEVICES=1 ollama serve` 啟動，落在另一張。走雲端（Anthropic）則沒有這個問題，摘要不碰 GPU。
 
 ## 開發
 
