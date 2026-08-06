@@ -72,13 +72,15 @@ def _refine(session_id: int, wav: Path) -> None:
     """
     def run(cancel: threading.Event) -> None:
         postprocess.rewrite_session(store, session_id, wav, state["cfg"], _make_translator(),
-                                    should_stop=cancel.is_set)
+                                    should_stop=cancel.is_set, gpu=jobs.borrow_gpu)
 
     # The LLM stages ride as a followup so the GPU gate is already released while they run —
     # a meeting can start recording while this session is still being corrected and summarized.
     llm_stages = postmeeting.followup(store, state["cfg"].languages, state["llm"], _api_key(),
                                       session_id)
-    if not jobs.schedule(session_id, run, followup=llm_stages):
+    # needs_gpu=False for the same reason as /reprocess: `run` takes the card around its decode,
+    # and holding it here too would be a second acquire of a one-slot semaphore.
+    if not jobs.schedule(session_id, run, followup=llm_stages, needs_gpu=False):
         log.info("session %d is already being refined", session_id)
 
 

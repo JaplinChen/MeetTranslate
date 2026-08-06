@@ -467,3 +467,97 @@ def test_a_failed_rewrite_leaves_the_old_transcript_alone(tmp: Path) -> None:
         assert len(st.lines(session_id)) == 2
     finally:
         st.close()
+
+
+def test_the_cpu_stages_of_a_pass_do_not_hold_the_card(client: TestClient) -> None:
+    """Pressing record must not wait behind work that never touches the GPU.
+
+    A pass spends most of its wall clock on the CPU: the VAD, the speaker segmentation (eight
+    minutes on a 2h19m recording) and a translation round trip per line. Holding the card across
+    all of it meant `claim_gpu` gave up after its thirty seconds and recording would not start.
+    The gate now wraps the decode alone, so the card is free everywhere else.
+    """
+    import threading
+
+    jobs.reset()
+    session_id = seed_session("cpu-stages.wav")
+
+    in_cpu_stage, release = threading.Event(), threading.Event()
+
+    def run(cancel):
+        # Stands in for everything before the decode.
+        in_cpu_stage.set()
+        release.wait(5.0)
+
+    try:
+        assert jobs.schedule(session_id, run, needs_gpu=False)
+        assert wait_for(in_cpu_stage.is_set), "the pass never started"
+        assert jobs.claim_gpu(timeout=1.0), "a CPU stage is holding the GPU gate"
+        jobs.release_gpu()
+    finally:
+        release.set()
+        jobs.cancel_all(wait=1.0)
+
+
+def test_a_pass_can_take_the_card_while_its_caller_already_scheduled_it(client: TestClient) -> None:
+    """The regression guard for the gate having two owners.
+
+    `rewrite_session` takes the card around its decode. Three callers reach it — the import, the
+    reprocess endpoint, and the automatic pass after a meeting stops — and if any of them also
+    held the gate, the second acquire would block on a semaphore of one. The scheduled path waits
+    without a timeout, so that shape hangs the worker forever and every later `claim_gpu` then
+    fails: recording never starts again.
+
+    This test would hang before the callers stopped taking the gate on the pass's behalf.
+    """
+    import threading
+
+    jobs.reset()
+    session_id = seed_session("gate-owner.wav")
+
+    finished = threading.Event()
+
+    def run(cancel):
+        # What rewrite_session now does for its decode.
+        with jobs.borrow_gpu(timeout=2.0):
+            pass
+        finished.set()
+
+    try:
+        assert jobs.schedule(session_id, run, needs_gpu=False)
+        assert wait_for(finished.is_set, 4.0), "the pass could not take the card its caller left free"
+    finally:
+        jobs.cancel_all(wait=1.0)
+
+
+def test_two_offline_passes_do_not_run_at_once(client: TestClient) -> None:
+    """Narrowing the GPU gate removed the serialization it used to provide as a side effect.
+
+    A pass used to hold the card start to finish, so a second could not begin. With the gate down
+    to the decode, two of them would otherwise overlap — two recordings in memory and two sets of
+    segmentation workers on the same box.
+    """
+    import threading
+
+    jobs.reset()
+    first, second = seed_session("pass-one.wav"), seed_session("pass-two.wav")
+    running, release = threading.Event(), threading.Event()
+    both = threading.Event()
+
+    def hold(cancel):
+        running.set()
+        release.wait(5.0)
+
+    def other(cancel):
+        both.set()
+
+    try:
+        assert jobs.schedule(first, hold, needs_gpu=False)
+        assert wait_for(running.is_set), "the first pass never started"
+        assert jobs.schedule(second, other, needs_gpu=False)
+        assert not wait_for(both.is_set, 0.8), "a second offline pass ran alongside the first"
+        release.set()
+        assert wait_for(both.is_set, 3.0), "the second pass never ran after the first let go"
+    finally:
+        release.set()
+        jobs.cancel_all(wait=1.0)

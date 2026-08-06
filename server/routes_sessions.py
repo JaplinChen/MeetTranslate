@@ -106,13 +106,18 @@ def reprocess(session_id: int) -> dict:
     if not wav.is_file():
         raise HTTPException(404, f"recording not found: {wav}")
 
+    # needs_gpu=False because the pass takes the card itself, around the decode alone. Scheduling
+    # it under the gate instead would hold the card through the VAD, the speaker segmentation and
+    # every translation round trip — eight minutes of it on a long recording — and taking the gate
+    # in both places at once is a deadlock, not a double-guard.
     if not jobs.schedule(
             session_id,
             lambda cancel: main.postprocess.rewrite_session(
                 main.store, session_id, wav, main.state["cfg"], main._make_translator(),
-                should_stop=cancel.is_set),
+                should_stop=cancel.is_set, gpu=jobs.borrow_gpu),
             followup=main.postmeeting.followup(main.store, main.state["cfg"].languages,
-                                               main.state["llm"], main._api_key(), session_id)):
+                                               main.state["llm"], main._api_key(), session_id),
+            needs_gpu=False):
         raise HTTPException(409, "already refining this session")
     return {"session": session_id, **(jobs.state(session_id) or {})}
 
@@ -313,10 +318,11 @@ async def import_recording(request: Request, filename: str = "upload") -> dict:
     try:
         # ponytail: synchronous — a long recording holds the request open. Worth a job queue only
         # once someone imports something long enough to time out. It still queues for the card, so
-        # an import during a meeting waits rather than loading a second model beside the live one.
-        with jobs.borrow_gpu():
+        # an import during a meeting waits rather than loading a second model beside the live one
+        # — but only for the decode, which is the only stage that wants it.
+        with jobs.one_pass():
             main.postprocess.rewrite_session(main.store, session_id, wav, main.state["cfg"],
-                                             main._make_translator())
+                                             main._make_translator(), gpu=jobs.borrow_gpu)
     except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(400, str(exc)) from exc
     return {"id": session_id, "lines": len(main.store.lines(session_id))}

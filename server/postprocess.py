@@ -8,9 +8,11 @@ every segment at once, then rewrites the stored transcript.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -289,13 +291,27 @@ def transcribe_all(utterances: list[Utterance], transcriber: asr.Transcriber,
 
 def rewrite_session(store: Store, session_id: int, wav: Path, cfg: config.Config,
                     translator: translate.Translator | None = None,
-                    should_stop: Callable[[], bool] | None = None) -> list[Utterance]:
+                    should_stop: Callable[[], bool] | None = None,
+                    gpu: Callable[[], AbstractContextManager] = contextlib.nullcontext,
+                    ) -> list[Utterance]:
     """Re-derive the transcript and replace the stored lines for this session.
 
     `should_stop` lets a meeting starting in the room take the GPU back. It is polled between
     decode batches and between translations, and acting on it costs nothing: the stored transcript
     is untouched until `replace_lines` at the very end, so an abandoned pass leaves the session
     exactly as it found it.
+
+    `gpu` guards the one stage that uses the card. Only decoding does: the VAD, the speaker
+    segmentation and the per-line translation round trips all run on the CPU or the network, and
+    they are most of the wall clock — on a 2h19m recording the segmentation alone is eight
+    minutes. Holding the card across them means someone pressing record waits for all of it, and
+    `claim_gpu` gives up after thirty seconds.
+
+    The caller passes the guard rather than this function taking one, because the two callers need
+    different behaviour and neither can be inferred from here: an import queues for the card
+    (`borrow_gpu`), while the pass scheduled after a meeting must yield to the next one. Taking a
+    gate here as well as in the caller would deadlock — `jobs.py`'s gate is a semaphore of one and
+    the scheduled path waits on it without a timeout.
     """
     stop = should_stop or (lambda: False)
     # GPU first. The CPU fallback keeps float32 weights and every core: this runs after the
@@ -327,7 +343,8 @@ def rewrite_session(store: Store, session_id: int, wav: Path, cfg: config.Config
         if stop():
             raise jobs.Cancelled()
 
-    transcribe_all(utterances, transcriber, progress=watch)
+    with gpu():
+        transcribe_all(utterances, transcriber, progress=watch)
 
     # The stored transcript is not touched until every line is translated. Replacing it line by
     # line as they came in meant a failure halfway through left the session holding half a
