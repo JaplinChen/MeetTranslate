@@ -77,8 +77,11 @@ def ask_question(body: dict) -> dict:
         raise HTTPException(429, "another question is being answered — try again in a moment")
     try:
         global _last_answered
+        reached_model = False
         wait = ask_mod.ASK_COOLDOWN_SECONDS - (time.time() - _last_answered)
         if wait > 0:
+            # Not counted against the cooldown: a request bounced before it spends a model call
+            # has cost nothing, so bouncing it must not push the window further out.
             raise HTTPException(429, f"try again in {wait:.0f}s")
 
         def search(keywords, since, until):
@@ -98,6 +101,8 @@ def ask_question(body: dict) -> dict:
         for session in main.store.sessions():
             names.update(main.store.speaker_names(session["id"]))
 
+        # From here the model is called; before this nothing has cost anything.
+        reached_model = True
         try:
             result = ask_mod.ask(question, chat, search, _index_rows(), load_lines, names, provider)
         except ValueError as exc:
@@ -105,8 +110,13 @@ def ask_question(body: dict) -> dict:
             # not a 500 that says nothing about which half of the pipeline gave up.
             log.exception("could not answer %r", question[:80])
             raise HTTPException(502, f"the model did not answer usefully: {exc}") from exc
-        _last_answered = time.time()
         return {**result, "budget": {"provider": provider, "chars": budget.input_chars,
                                      "sessions": budget.max_sessions}}
     finally:
+        # Start the cooldown for anything that reached the model, success or failure. A question the
+        # model could not answer still spent two calls, and its failure is often a rate limit that
+        # retrying at once makes worse — so it must not be a way around the floor. The early 429s
+        # above return before the acquire's try body sets this in motion, so they do not extend it.
+        if reached_model:
+            _last_answered = time.time()
         _gate.release()
