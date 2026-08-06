@@ -32,7 +32,7 @@ function Row({ line, speaker, langs, locked, draftText, isRerunning, rerunBlocke
   const editing = draftText === null ? null : { id: line.id, text: draftText };
 
   return (
-    <article className={`sess-line${line.status === 'ok' ? '' : ' sess-line-failed'}`}>
+    <article data-line-id={line.id} className={`sess-line${line.status === 'ok' ? '' : ' sess-line-failed'}`}>
       <div className="sess-time">
         {/* One button per line, but one <audio> for the whole transcript — 943 media elements is
             not a price worth paying for a control that plays one thing at a time. */}

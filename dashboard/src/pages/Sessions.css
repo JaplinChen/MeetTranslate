@@ -391,3 +391,14 @@
   font-size: 0.85rem;
   overflow-wrap: anywhere;
 }
+
+/* A cited line, arrived at from a Q&A answer: flash it so the eye lands on the utterance the
+   citation pointed at, then fade — a persistent mark would linger long after it was useful. */
+.sess-page .sess-line-cited {
+  animation: sess-cite-flash 2.4s ease-out;
+}
+
+@keyframes sess-cite-flash {
+  0%, 30% { background: var(--primary-soft); }
+  100% { background: transparent; }
+}
