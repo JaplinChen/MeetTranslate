@@ -262,6 +262,53 @@ def test_every_edit_path_moves_the_revision(tmp: Path) -> None:
         st.close()
 
 
+def test_an_empty_retranscription_does_not_wipe_the_existing_transcript(tmp: Path) -> None:
+    """A re-transcription that decodes nothing must leave the old transcript standing.
+
+    replace_lines deletes before it inserts, so an empty result is a bare delete. A pass whose
+    utterances all came back empty (a near-silent segment, a decode that returned "" without
+    raising) would otherwise erase a transcript that was already there — the same data loss the
+    no-utterances early return already guards against. Here the utterance survives segmentation but
+    transcribes to nothing; the stored line must still be there afterward.
+    """
+    import numpy as np
+
+    from . import config
+    from . import postprocess as pp
+
+    st = store_mod.Store(tmp / "wipe.db")
+    try:
+        sid = st.start_session("2026-01-01T09:00:00", "w.wav")
+        st.add_line(sid, 0.0, "S1", "zh", "會議記錄不能被空結果抹掉", {})
+
+        saved = {n: getattr(pp, n) for n in ("segment", "assign_speakers",
+                                             "_remember_voices", "transcribe_all")}
+        pp.segment = lambda wav: [pp.Utterance(start=0.0, samples=np.zeros(16000, dtype=np.float32))]
+        pp.assign_speakers = lambda *a, **k: None
+        pp._remember_voices = lambda *a, **k: None
+        pp.transcribe_all = lambda *a, **k: None  # leaves every utterance's text ""
+        maybe, diarizer = pp.asr_gpu.maybe, pp.diarize.Diarizer
+        turns = pp.diarize.turns
+        pp.asr_gpu.maybe = lambda *a, **k: object()
+        pp.diarize.Diarizer = lambda *a, **k: object()
+        pp.diarize.turns = lambda wav: []
+        try:
+            raised = False
+            try:
+                pp.rewrite_session(st, sid, Path("w.wav"), config.Config())
+            except ValueError:
+                raised = True
+        finally:
+            for n, fn in saved.items():
+                setattr(pp, n, fn)
+            pp.asr_gpu.maybe, pp.diarize.Diarizer, pp.diarize.turns = maybe, diarizer, turns
+
+        assert raised, "an empty re-transcription should have refused rather than wiped"
+        assert [l["source"] for l in st.lines(sid)] == ["會議記錄不能被空結果抹掉"]
+    finally:
+        st.close()
+
+
 def test_lines_with_rev_pairs_content_and_revision_from_one_read(tmp: Path) -> None:
     """The content and the revision come back consistent, so the summary cannot be built from one
     version of the transcript and stamped with another's revision.
