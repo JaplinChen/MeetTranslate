@@ -118,6 +118,34 @@ def test_parse_response_rejects_action_without_text():
         assert "text" in str(e)
 
 
+def test_parse_response_clears_a_speaker_the_transcript_never_had():
+    # A code outside the valid set is the model inventing an owner; the action text stays, the
+    # false attribution is cleared to "" so the page shows it unassigned.
+    raw = _valid(actions=[{"text": "send the report", "speaker": "S9"},
+                          {"text": "book the room", "speaker": "S1"}])
+    got = S.parse_response(raw, valid_speakers=frozenset({"S1", "S2"}))
+    assert got["actions"] == [{"text": "send the report", "speaker": ""},
+                              {"text": "book the room", "speaker": "S1"}]
+
+
+def test_parse_response_keeps_all_speakers_when_no_set_is_given():
+    # Called without a set (a test, or a caller that does not have one), nothing is second-guessed.
+    raw = _valid(actions=[{"text": "x", "speaker": "S9"}])
+    assert S.parse_response(raw)["actions"] == [{"text": "x", "speaker": "S9"}]
+
+
+def test_summarize_clears_invented_owners_end_to_end():
+    # The set is derived from the lines summarize was given, not passed in — a fabricated code in
+    # the reply is cleared without the caller doing anything.
+    lines = [S.SummaryLine("S1", "zh", "先講進度"), S.SummaryLine("S2", "zh", "我負責報告")]
+    reply = _valid(title="會議", summary="兩人討論進度",
+                   actions=[{"text": "交報告", "speaker": "S7"}, {"text": "訂會議室", "speaker": "S2"}])
+    out, status = S.summarize(lines, ["zh"], lambda _p: reply)
+    assert status == "ok"
+    assert out["zh"]["actions"] == [{"text": "交報告", "speaker": ""},
+                                    {"text": "訂會議室", "speaker": "S2"}]
+
+
 def test_retry_prompt_carries_error_and_truncates_bad_reply():
     prompt = S.retry_prompt("ORIGINAL", "y" * 900, "the error")
     assert "ORIGINAL" in prompt
