@@ -79,14 +79,36 @@ class SpeakerStore:
             self._db.commit()
 
     def known_speakers(self) -> list[tuple[str, bytes]]:
+        """Every voice the room can name on sight, with the centroid to recognise it by.
+
+        The names come from speaker_name — the live mapping — not from known_speaker's own name
+        column, which remember_speaker only ever inserts into: renaming a speaker updated
+        speaker_name in place but left the old name behind in known_speaker, so the same voice
+        showed up twice on the Learned page. Joining on the current name drops the orphan; the
+        centroid still comes from known_speaker, keyed by whatever name is stored there for it.
+        Ordered by how many meetings named the voice, most-confirmed first.
+        """
         with self._lock:
-            return [(r["name"], r["centroid"]) for r in
-                    self._db.execute("SELECT name, centroid FROM known_speaker ORDER BY sessions DESC")]
+            return [(r["name"], r["centroid"]) for r in self._db.execute(
+                "SELECT DISTINCT sn.name, ks.centroid "
+                "FROM speaker_name sn JOIN known_speaker ks ON ks.name = sn.name "
+                "WHERE sn.name != '' "
+                "GROUP BY sn.name "
+                "ORDER BY COUNT(DISTINCT sn.session_id) DESC")]
 
     def speaker_sessions(self) -> dict[str, int]:
+        """How many distinct meetings each known voice was named in, counted from the source.
+
+        Not read off known_speaker.sessions, which remember_speaker increments on every save: naming
+        a voice, then fixing a typo in that name, both save — so a within-meeting rename inflated the
+        count, and it read as more meetings than the voice was ever in. speaker_name holds one row
+        per (session, code), so counting distinct sessions per name is the true figure regardless of
+        how many times it was saved.
+        """
         with self._lock:
-            return {r["name"]: r["sessions"] for r in
-                    self._db.execute("SELECT name, sessions FROM known_speaker")}
+            return {r["name"]: r["n"] for r in self._db.execute(
+                "SELECT name, COUNT(DISTINCT session_id) AS n FROM speaker_name "
+                "WHERE name != '' GROUP BY name")}
 
     def speaker_sample(self, name: str) -> tuple[str, float, float | None] | None:
         """Where to hear this voice, and how long that utterance lasts.
