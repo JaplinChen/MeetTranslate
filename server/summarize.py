@@ -79,8 +79,20 @@ def sample(lines: list[SummaryLine], budget_chars: int = INPUT_BUDGET) -> tuple[
         n = max(1, round(len(indices) * ratio))
         step = len(indices) / n
         kept += [indices[int(k * step)] for k in range(n)]
+    kept.sort()
 
-    return [lines[i] for i in sorted(kept)], True
+    # The per-speaker floor of one line each keeps a quiet voice in, but with many speakers those
+    # floors add up: a meeting with more speakers than the budget has room for came back over
+    # budget — 100 speakers of one long line each returned all of them, defeating the cap the whole
+    # function exists to enforce. Cap the result with a second even pass, chronological so the
+    # thinning is spread across the meeting rather than taken off one end.
+    kept_chars = sum(len(lines[i].text) for i in kept)
+    if kept_chars > budget_chars and len(kept) > 1:
+        keep_n = max(1, round(len(kept) * budget_chars / kept_chars))
+        step = len(kept) / keep_n
+        kept = [kept[int(k * step)] for k in range(keep_n)]
+
+    return [lines[i] for i in kept], True
 
 
 def build_prompt(lines: list[SummaryLine], lang: str, rules: str,

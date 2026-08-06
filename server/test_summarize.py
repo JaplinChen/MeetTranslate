@@ -82,6 +82,32 @@ def test_sample_proportional_and_ordered_over_budget():
     assert positions == sorted(positions)
 
 
+def test_sample_caps_the_result_when_per_speaker_floors_overshoot():
+    """More speakers than the budget has room for must still come back within the cap.
+
+    Each speaker keeps at least one line so a quiet voice is not sampled out, but with many speakers
+    those floors add up: 100 speakers of one long line each used to return all 100, blowing the
+    budget the function exists to enforce. A second even pass caps the result. Text is made unique so
+    order can be checked without list.index collapsing identical lines.
+    """
+    lines = [S.SummaryLine(f"S{i}", "zh", f"{i:03d}-" + "x" * 50) for i in range(100)]
+    out, sampled = S.sample(lines, budget_chars=200)
+    assert sampled is True
+    kept_chars = sum(len(l.text) for l in out)
+    # Within a small tolerance of the cap — the even step lands on line boundaries, not exact chars.
+    assert kept_chars <= 200 * 1.5, kept_chars
+    # Still chronological after the second pass.
+    idx = [int(l.text[:3]) for l in out]
+    assert idx == sorted(idx), idx
+
+
+def test_sample_keeps_a_quiet_speaker_against_a_talkative_one():
+    """The per-speaker floor is what the cap must not undo: one long line from S1, fifty from S2."""
+    lines = [S.SummaryLine("S1", "zh", "a" * 100)] + [S.SummaryLine("S2", "zh", "b") for _ in range(50)]
+    out, _ = S.sample(lines, budget_chars=80)
+    assert "S1" in {l.speaker for l in out}
+
+
 def _valid(title="T", summary="S", decisions=None, actions=None) -> str:
     parts = [f"TITLE: {title}", "SUMMARY:", summary, "DECISIONS:"]
     parts += [f"- {d}" for d in (decisions or [])]
