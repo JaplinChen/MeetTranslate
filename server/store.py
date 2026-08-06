@@ -219,6 +219,45 @@ class Store(SpeakerStore):
             row = self._db.execute("SELECT * FROM session WHERE id=?", (session_id,)).fetchone()
         return dict(row) if row else None
 
+    # ── cross-meeting search ────────────────────────────────────────────
+
+    def search_lines(self, keywords: list[str], since: str = "", until: str = "",
+                     limit: int = 400) -> list[dict]:
+        """Lines from any meeting containing any of these keywords, newest sessions first.
+
+        A plain LIKE scan, deliberately. A year of meetings is about 190,000 lines and 2.5 MB, and
+        scanning all of it takes 14 ms — an index would be machinery to keep in step with every
+        correction for no measurable gain. FTS5 was the other candidate and is worse here: its
+        trigram tokenizer needs three characters, so it returns nothing at all for 交期, 產能 or
+        交貨, which is most of what anyone searches for.
+
+        One query rather than one per keyword: each is a full scan taking this store's only lock,
+        and the capture thread needs that lock for every utterance of a meeting in progress.
+        """
+        terms = [k.strip() for k in keywords if k and len(k.strip()) >= 2]
+        if not terms:
+            return []
+        where = " OR ".join(["l.source LIKE ?"] * len(terms))
+        params: list = [f"%{t}%" for t in terms]
+        if since:
+            where, params = f"({where}) AND s.started >= ?", params + [since]
+        if until:
+            where, params = f"{where} AND s.started <= ?", params + [until + "T23:59:59"]
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT l.id, l.session_id, l.start, l.speaker, l.source "
+                "FROM line l JOIN session s ON s.id = l.session_id "
+                f"WHERE {where} ORDER BY l.session_id DESC, l.start LIMIT ?",
+                (*params, limit),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def summaries(self) -> dict[int, dict]:
+        """Every stored summary, keyed by session. The retrieval index for cross-meeting questions."""
+        with self._lock:
+            rows = self._db.execute("SELECT * FROM summary").fetchall()
+        return {r["session_id"]: dict(r) for r in rows}
+
     # ── summary ─────────────────────────────────────────────────────────
 
     def set_summary(self, session_id: int, json_text: str, status: str, lines_rev: int,

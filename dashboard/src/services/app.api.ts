@@ -99,6 +99,27 @@ export interface MeetingSummary {
   summary: Record<string, MeetingSummaryLang> | null;
 }
 
+/** One utterance the answer rests on, verified against the stored transcript before being returned. */
+export interface AskCitation {
+  session_id: number;
+  line_id: number;
+  start: number;
+  speaker: string;
+  text: string;
+}
+
+export interface AskResult {
+  answer: string;
+  citations: AskCitation[];
+  sessions: number[];
+  /** Sessions read only in part because the transcript did not fit the model's context. */
+  truncated: number[];
+  dropped_citations: number;
+  /** False when the model returned citations but none matched a real line — treat the answer warily. */
+  verified: boolean;
+  budget: { provider: string; chars: number; sessions: number };
+}
+
 /** How a line ended up in the transcript. Distinct from `refined`, which is an LLM revision. */
 export type LineStatus = 'ok' | 'asr_failed' | 'translate_failed';
 
@@ -172,6 +193,10 @@ export const appApi = {
   setLineSource: (id: number, lineId: number, source: string) =>
     request<{ lines: TranscriptLine[]; speakers: Record<string, string> }>(
       `/sessions/${id}/lines/${lineId}`, { method: 'PUT', body: JSON.stringify({ source }) }),
+  // Cross-meeting question. The answer carries citations the server verified against stored lines,
+  // so a click can jump to the exact utterance rather than a place the model claimed one was.
+  ask: (question: string) =>
+    request<AskResult>('/ask', { method: 'POST', body: JSON.stringify({ question }) }),
   // The line is named, never a path or an offset: the server reads the span from its own record.
   rerunLine: (id: number, lineId: number) =>
     request<{ lines: TranscriptLine[]; speakers: Record<string, string>; status: LineStatus }>(

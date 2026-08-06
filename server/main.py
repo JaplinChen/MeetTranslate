@@ -129,11 +129,12 @@ app.add_middleware(
 # Imported here, not at the top: each router reads `main.store` and friends, so they have to exist
 # before the modules are loaded.
 from . import (  # noqa: E402
-    routes_capture, routes_core, routes_glossary, routes_llm, routes_sessions, routes_speakers,
+    routes_ask, routes_capture, routes_core, routes_glossary, routes_llm, routes_sessions,
+    routes_speakers,
 )
 
 for _r in (routes_core, routes_glossary, routes_llm, routes_sessions, routes_speakers,
-           routes_capture):
+           routes_capture, routes_ask):
     app.include_router(_r.router)
 
 # The e2e suite checks this shape directly rather than through an endpoint, because the two rerun

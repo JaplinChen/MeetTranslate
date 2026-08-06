@@ -13,6 +13,7 @@
   "nav": {
     "capture": "收音",
     "sessions": "會議紀錄",
+    "ask": "提問",
     "glossary": "詞彙表",
     "settings": "設定",
     "display": "字幕顯示",
@@ -261,5 +262,20 @@
     "edit": "編輯這條修正",
     "editWrong": "辨識成什麼",
     "editRight": "實際說什麼"
+  },
+  "ask": {
+    "title": "提問",
+    "subtitle": "對所有會議一次提問，並取得標註到確切逐字稿句子的答案。",
+    "placeholder": "輸入關於這些會議的問題…",
+    "submit": "提問",
+    "submitting": "查詢中…",
+    "hint": "可對所有已記錄的會議一次提問。",
+    "hintExample": "例如：「上線日期我們最後決定了什麼？」",
+    "unverified": "模型提供了引用，但沒有一句對得上真實的逐字稿。這個答案請保留判斷。",
+    "truncated": "有 {{count}} 場會議只讀取了部分內容。",
+    "dropped": "有 {{count}} 條引用無法驗證，已略去。",
+    "noAnswer": "在這些會議中找不到答案。",
+    "answerHeading": "答案",
+    "citationsHeading": "引用"
   }
 }

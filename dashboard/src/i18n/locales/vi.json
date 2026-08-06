@@ -13,6 +13,7 @@
   "nav": {
     "capture": "Thu âm",
     "sessions": "Biên bản",
+    "ask": "Hỏi",
     "glossary": "Thuật ngữ",
     "settings": "Cài đặt",
     "display": "Phụ đề",
@@ -261,5 +262,20 @@
     "edit": "Sửa chỉnh sửa này",
     "editWrong": "Nghe nhầm thành",
     "editRight": "Thực tế đã nói"
+  },
+  "ask": {
+    "title": "Hỏi",
+    "subtitle": "Đặt một câu hỏi trên toàn bộ các cuộc họp và nhận câu trả lời kèm trích dẫn đến đúng dòng.",
+    "placeholder": "Đặt câu hỏi về các cuộc họp của bạn…",
+    "submit": "Hỏi",
+    "submitting": "Đang hỏi…",
+    "hint": "Hỏi trên tất cả các cuộc họp đã ghi cùng một lúc.",
+    "hintExample": "Ví dụ: “Chúng ta đã quyết định gì về ngày ra mắt?”",
+    "unverified": "Mô hình có đưa trích dẫn nhưng không dòng nào khớp thực tế. Hãy thận trọng với câu trả lời này.",
+    "truncated": "Một số cuộc họp chỉ được đọc một phần: {{count}}.",
+    "dropped": "{{count}} trích dẫn đã bị bỏ vì không xác minh được.",
+    "noAnswer": "Không tìm thấy câu trả lời nào trong các cuộc họp.",
+    "answerHeading": "Câu trả lời",
+    "citationsHeading": "Trích dẫn"
   }
 }

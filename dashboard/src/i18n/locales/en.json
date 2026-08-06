@@ -13,6 +13,7 @@
   "nav": {
     "capture": "Capture",
     "sessions": "Sessions",
+    "ask": "Ask",
     "glossary": "Glossary",
     "settings": "Settings",
     "display": "Subtitles",
@@ -261,5 +262,20 @@
     "edit": "Edit this correction",
     "editWrong": "What it was misheard as",
     "editRight": "What was actually said"
+  },
+  "ask": {
+    "title": "Ask",
+    "subtitle": "Ask a question across every meeting and get an answer with citations to the exact lines.",
+    "placeholder": "Ask a question about your meetings…",
+    "submit": "Ask",
+    "submitting": "Asking…",
+    "hint": "Ask across all your recorded meetings at once.",
+    "hintExample": "For example: “What did we decide about the launch date?”",
+    "unverified": "The model gave citations but none matched a real line. Treat this answer with caution.",
+    "truncated": "Some meetings were read only in part: {{count}}.",
+    "dropped": "{{count}} citations were dropped as unverifiable.",
+    "noAnswer": "No answer was found across your meetings.",
+    "answerHeading": "Answer",
+    "citationsHeading": "Citations"
   }
 }
