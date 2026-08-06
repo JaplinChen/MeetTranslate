@@ -25,6 +25,18 @@ class DeviceNotFound(Exception):
     pass
 
 
+# How long stop() waits to hand a consumer its end-of-stream sentinel before giving up. A live
+# consumer frees a slot well within this; a dead one would otherwise block stop() forever.
+SENTINEL_TIMEOUT = 5.0
+
+
+def _signal_end(q: "queue.Queue") -> None:
+    try:
+        q.put(None, timeout=SENTINEL_TIMEOUT)
+    except queue.Full:
+        pass
+
+
 def list_input_devices() -> list[dict]:
     """Every device that can be recorded from, in PortAudio index order."""
     return [
@@ -227,12 +239,20 @@ class Recorder:
         self._stream.close()
         self._stream = None
 
-        self._queue.put(None)
+        # End-of-stream to both consumers, but never on a blocking put. The pipeline is designed to
+        # crash and let recording continue (Pipeline._run swallows and returns) — which is exactly
+        # when its tap sits full at capacity with nothing draining it. A bare put(None) there would
+        # hang stop() forever, and stop() runs before release_gpu(), so the card would stay claimed
+        # and no later recording could start. Bounded: a live-but-backlogged consumer still gets the
+        # sentinel within the wait; a dead one no longer wedges the stop.
+        # ponytail: SENTINEL_TIMEOUT ceiling — a consumer that cannot free one slot in that window
+        # loses the sentinel and its daemon thread lingers until process exit, which is harmless.
+        _signal_end(self._queue)
         if self._writer:
             self._writer.join(timeout=10)
             self._writer = None
         if self._tap is not None:
-            self._tap.put(None)
+            _signal_end(self._tap)
 
         return self._path
 

@@ -101,6 +101,45 @@ def test_config_save_roundtrip() -> None:
             assert reloaded.input_device == "立體聲混音"  # non-ASCII must survive the round trip
 
 
+def test_stop_does_not_hang_when_a_consumer_died_with_a_full_queue() -> None:
+    """The pipeline is built to crash and let recording go on, which leaves its tap full with
+    nothing draining it. A blocking put(None) there would hang stop() forever — and stop() runs
+    before the GPU is released, so the card would stay claimed and no later recording could start.
+    Both the writer queue and the tap are signalled the same bounded way; neither may wedge stop."""
+    import queue as q
+    import threading
+
+    original = audio.SENTINEL_TIMEOUT
+    audio.SENTINEL_TIMEOUT = 0.1  # no dead consumer should cost the test a real 5 s
+    try:
+        tap = q.Queue(maxsize=2)
+        tap.put(object()); tap.put(object())  # full, and nothing consuming it
+        rec = audio.Recorder(tap=tap)
+        rec._queue = q.Queue(maxsize=2)
+        rec._queue.put(object()); rec._queue.put(object())  # writer queue full, writer dead
+        rec._writer = None
+        rec._path = Path("recording.wav")
+
+        class _DeadStream:
+            def stop(self): pass
+            def close(self): pass
+
+        rec._stream = _DeadStream()
+
+        done = threading.Event()
+        result: list = []
+
+        def run():
+            result.append(rec.stop())
+            done.set()
+
+        threading.Thread(target=run, daemon=True).start()
+        assert done.wait(3.0), "stop() hung on a full queue with no consumer"
+        assert result == [Path("recording.wav")]
+    finally:
+        audio.SENTINEL_TIMEOUT = original
+
+
 def main() -> None:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in tests:
