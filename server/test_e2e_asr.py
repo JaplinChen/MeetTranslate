@@ -85,3 +85,96 @@ def test_long_utterance_is_not_truncated(tmp: Path) -> None:
 
     assert short, "baseline transcription is empty"
     assert len(long_text) > len(short) * 1.5, (len(short), len(long_text))
+
+
+class _FakeBatched:
+    """A batched pipeline that runs out of memory until the batch is small enough.
+
+    Stands in for faster_whisper's BatchedInferencePipeline so the shrink-on-OOM retry can be
+    tested without a GPU or a model: real OOM cannot be provoked on the build machine, and the
+    logic — wait once, then halve — is what has to be right.
+    """
+
+    def __init__(self, ok_at: int) -> None:
+        self._ok_at = ok_at  # succeeds once batch_size <= this
+        self.batches: list[int] = []
+
+    def transcribe(self, audio, batch_size, **kw):
+        self.batches.append(batch_size)
+        if batch_size > self._ok_at:
+            raise RuntimeError("CUDA failed with error out of memory")
+
+        class _Info:
+            language = "zh"
+
+        return [], _Info()
+
+
+def _fake_transcriber(fake: _FakeBatched) -> asr_gpu.Transcriber:
+    tr = asr_gpu.Transcriber.__new__(asr_gpu.Transcriber)
+    tr._languages, tr._hotwords, tr._batched = ["zh"], "", fake
+    return tr
+
+
+def test_is_oom_recognises_the_failure_but_not_ordinary_errors(tmp: Path) -> None:
+    assert asr_gpu._is_oom(RuntimeError("CUDA failed with error out of memory"))
+    assert asr_gpu._is_oom(RuntimeError("CUBLAS_STATUS_ALLOC_FAILED"))
+    assert not asr_gpu._is_oom(RuntimeError("clip_timestamps out of range"))
+    assert not asr_gpu._is_oom(ValueError("out of memory"))  # wrong type, not a decode OOM
+
+
+def test_a_contended_card_waits_then_shrinks_the_batch(tmp: Path) -> None:
+    """OOM at full batch: wait once at 32, then halve until it fits."""
+    fake = _FakeBatched(ok_at=8)
+    tr = _fake_transcriber(fake)
+    import server.asr_gpu as m
+    original = m.OOM_WAIT_SECONDS
+    m.OOM_WAIT_SECONDS = 0.0  # no real sleep in the test
+    try:
+        out = tr.transcribe_many([np.zeros(16000, dtype=np.float32)], "zh")
+    finally:
+        m.OOM_WAIT_SECONDS = original
+
+    # 32 twice (the initial try and the post-wait retry), then 16, then 8 which succeeds.
+    assert fake.batches == [32, 32, 16, 8], fake.batches
+    assert out == [("", "zh")]  # empty fake result, judged and returned
+
+
+def test_a_card_too_full_for_one_utterance_gives_up(tmp: Path) -> None:
+    """Batch one still OOMing is not batch greed — the weights do not fit. Re-raise."""
+    fake = _FakeBatched(ok_at=0)  # never succeeds
+    tr = _fake_transcriber(fake)
+    import server.asr_gpu as m
+    original = m.OOM_WAIT_SECONDS
+    m.OOM_WAIT_SECONDS = 0.0
+    try:
+        raised = False
+        try:
+            tr.transcribe_many([np.zeros(16000, dtype=np.float32)], "zh")
+        except RuntimeError as exc:
+            raised = True
+            assert "out of memory" in str(exc).lower()
+    finally:
+        m.OOM_WAIT_SECONDS = original
+
+    assert raised, "a card that cannot decode one utterance must fail, not loop"
+    # It went all the way down to the floor before giving up.
+    assert fake.batches[-1] == asr_gpu.MIN_BATCH, fake.batches
+
+
+def test_a_non_cuda_error_is_not_retried(tmp: Path) -> None:
+    """A bug in our own batching must surface, not be mistaken for memory pressure."""
+    class _Broken:
+        def __init__(self): self.calls = 0
+        def transcribe(self, *a, **k):
+            self.calls += 1
+            raise RuntimeError("clip_timestamps out of range")
+
+    broken = _Broken()
+    tr = _fake_transcriber(broken)
+    raised = False
+    try:
+        tr.transcribe_many([np.zeros(16000, dtype=np.float32)], "zh")
+    except RuntimeError:
+        raised = True
+    assert raised and broken.calls == 1, "a non-CUDA error must not be retried"

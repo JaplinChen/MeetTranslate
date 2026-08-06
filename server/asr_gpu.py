@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -24,6 +25,27 @@ log = logging.getLogger("meettranslate.asr_gpu")
 
 # Utterances decoded together. Thirty-two fits in 16 GB beside a large-v3 in float16.
 BATCH_SIZE = 32
+# Smallest batch the shrink-on-OOM retry will fall to before giving up. One utterance at a time is
+# the floor: below it there is nothing left to shrink, and the failure is no longer about batch.
+MIN_BATCH = 1
+# Seconds to wait before the first retry, still at full batch. A contended card is usually the
+# other consumer spiking for a moment — waiting it out keeps the wide batch, which shrinking spends.
+OOM_WAIT_SECONDS = 1.0
+
+
+def _is_oom(exc: Exception) -> bool:
+    """Whether a decode failure is the GPU running short of memory rather than something else.
+
+    Matched on the message because ctranslate2 surfaces a CUDA allocation failure as a plain
+    RuntimeError with no type to catch. The strings are what it and cuBLAS actually print; the
+    match is loose because the exact wording is not contractual and a missed OOM would fail the
+    whole pass instead of shrinking.
+    """
+    if not isinstance(exc, RuntimeError):
+        return False
+    text = str(exc).lower()
+    return ("out of memory" in text or "oom" in text
+            or "cublas_status_alloc_failed" in text)
 # Silence inserted between utterances when they are laid end to end for batching. Every gap is
 # real audio through the encoder, so it stays as short as the boundaries tolerate.
 BATCH_GAP_SECONDS = 0.2
@@ -76,9 +98,11 @@ class Transcriber:
         self._languages = list(languages or [])
         self._hotwords = hotwords
         name = str(model or config.gpu_model(self._languages))
-        self._model = WhisperModel(name, device=device, compute_type=compute_type)
+        index = config.gpu_index() if device == "cuda" else 0
+        self._model = WhisperModel(name, device=device, device_index=index,
+                                   compute_type=compute_type)
         self._batched = None
-        log.info("ct2 model %s on %s/%s", name, device, compute_type)
+        log.info("ct2 model %s on %s:%d/%s", name, device, index, compute_type)
 
     def set_hotwords(self, hotwords: str) -> None:
         """Re-bias without reloading the model.
@@ -117,11 +141,7 @@ class Transcriber:
 
         if self._batched is None:
             self._batched = BatchedInferencePipeline(model=self._model)
-        segments, info = self._batched.transcribe(
-            np.concatenate(parts), language=language or None, beam_size=BEAM_SIZE,
-            batch_size=BATCH_SIZE, vad_filter=False, clip_timestamps=spans,
-            hotwords=self._hotwords or None, condition_on_previous_text=False,
-        )
+        segments, info = self._decode_batched(np.concatenate(parts), language, spans)
 
         # Each segment is placed by its midpoint, so a decode that runs slightly over its clip
         # still lands on the utterance it came from.
@@ -135,6 +155,49 @@ class Transcriber:
 
         detected = (info.language or language or "").strip()
         return [self._judge(text, detected) for text in texts]
+
+    def _decode_batched(self, audio: np.ndarray, language: str, spans: list[dict]):
+        """Run the batched decode, giving the card room when it is short of memory.
+
+        The pressure this handles is a second consumer on the same GPU — a local LLM running the
+        summary or correction stage while a recording is being reprocessed. Two moves, cheapest
+        first: wait once at full batch, because contention is usually a passing spike; then halve
+        the batch and try again, down to one utterance. Shrinking cuts the activation memory the
+        batch needs, which is the part we control — it does nothing for the resident weights, so a
+        card too full to hold the model at all still fails at batch one, and that failure says the
+        real problem is elsewhere (the other consumer, or a context left unusable by the OOM).
+        """
+        batch = BATCH_SIZE
+        waited = False
+        while True:
+            try:
+                return self._batched.transcribe(
+                    audio, language=language or None, beam_size=BEAM_SIZE,
+                    batch_size=batch, vad_filter=False, clip_timestamps=spans,
+                    hotwords=self._hotwords or None, condition_on_previous_text=False,
+                )
+            except RuntimeError as exc:
+                # Any CUDA-flavoured error triggers a step back, not only a recognised OOM string:
+                # once the card is contended the wording is not guaranteed, and stepping back is
+                # the right response to all of them.
+                if not (_is_oom(exc) or "cuda" in str(exc).lower()):
+                    raise
+                if not waited:
+                    waited = True
+                    log.warning("GPU short of memory, waiting %.0fs and retrying at batch %d",
+                                OOM_WAIT_SECONDS, batch)
+                    time.sleep(OOM_WAIT_SECONDS)
+                    continue
+                if batch > MIN_BATCH:
+                    batch = max(MIN_BATCH, batch // 2)
+                    log.warning("GPU still short, decoding at batch %d", batch)
+                    continue
+                # Nothing left to give up. This is not batch 32 being greedy — at batch one the
+                # weights alone do not fit, so another process holds the memory or the context is
+                # spent. Re-raised for the caller (the post-meeting pass) to fail visibly.
+                log.error("GPU cannot decode even one utterance; another process likely holds the "
+                          "card, or its context is unusable — a restart may be needed")
+                raise
 
     def _judge(self, text: str, detected: str) -> tuple[str, str]:
         if (asr.is_noise(text) or asr.is_hallucination(text) or asr.is_degenerate(text)
