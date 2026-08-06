@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import { Download, FileText, RefreshCw, Search, Upload } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { PageSkeleton } from '../components/PageSkeleton';
@@ -74,16 +75,41 @@ export function Sessions() {
       .catch(fail);
   }, []);
 
+  const [params, setParams] = useSearchParams();
+  const wantedLine = useRef<number | null>(null);
+  const sessionsLoaded = useRef(false);
+
   useEffect(() => {
     appApi
       .sessions()
       .then(list => {
         setSessions(list);
-        if (list.length) setSelected(list[0].id);
+        sessionsLoaded.current = true;
+        // Default selection only when a citation is not steering it; the effect below handles that.
+        if (list.length && !params.get('session')) setSelected(list[0].id);
       })
       .catch(fail)
       .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ?session= / ?line= arrive when a Q&A citation is followed here — open that meeting and jump to
+  // that line. Reactive to the params (a citation from /ask remounts nothing on some navigations),
+  // but self-clearing: once consumed the query is stripped, so a later manual pick is never pulled
+  // back to a stale citation, and a refresh does not re-fire it.
+  useEffect(() => {
+    const wantSession = Number(params.get('session')) || null;
+    if (!wantSession) return;
+    const consume = () => {
+      if (sessions.some(s => s.id === wantSession)) setSelected(wantSession);
+      setTab('transcript');
+      wantedLine.current = Number(params.get('line')) || null;
+      setParams({}, { replace: true });
+    };
+    if (sessionsLoaded.current) consume();
+    // If the list has not arrived yet, the sessions effect will; re-running on `sessions` catches it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params, sessions]);
 
   const loadSummary = useCallback((id: number) => {
     appApi.sessionSummary(id).then(setSummary).catch(() => setSummary(null));
@@ -92,6 +118,25 @@ export function Sessions() {
   useEffect(() => {
     if (selected !== null) loadLines(selected);
   }, [selected, loadLines]);
+
+  // Once the lines for a cited session are on screen, scroll the cited one into view and flash it,
+  // so following a citation lands on the exact utterance rather than the top of a 943-line list.
+  // The effect runs after React has committed the rows to the DOM, so the row exists now; a short
+  // timeout gives layout a beat to settle before scrolling, without depending on requestAnimationFrame
+  // (which does not fire when the tab is backgrounded, and would strand the highlight there).
+  useEffect(() => {
+    const lineId = wantedLine.current;
+    if (lineId === null || tab !== 'transcript' || !lines.some(l => l.id === lineId)) return;
+    wantedLine.current = null;
+    const timer = window.setTimeout(() => {
+      const row = document.querySelector<HTMLElement>(`[data-line-id="${lineId}"]`);
+      if (!row) return;
+      row.scrollIntoView({ block: 'center' });
+      row.classList.add('sess-line-cited');
+      window.setTimeout(() => row.classList.remove('sess-line-cited'), 2400);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [lines, tab]);
 
   useEffect(() => {
     setSummary(null);
