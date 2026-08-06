@@ -160,10 +160,15 @@ def anthropic_chat(api_key: str, model: str, max_tokens: int = 4000):
 
 
 def ollama_chat(model: str, endpoint: str = "http://127.0.0.1:11434", timeout: float = 900,
-                think: bool = False):
+                think: bool = False, num_ctx: int = 8192):
     """Local models over Ollama's HTTP API — no key, and the transcript never leaves the machine.
 
     That second point is the reason to prefer it here: these are client interview recordings.
+
+    `num_ctx` is a parameter rather than a constant because Ollama does not complain when a prompt
+    exceeds it — it drops the oldest tokens, which are the instructions, and answers whatever is
+    left. Callers that send more than a chunk of transcript have to raise it or cut their input to
+    fit; both need to know the number.
     """
     import json
     import urllib.request
@@ -178,7 +183,7 @@ def ollama_chat(model: str, endpoint: str = "http://127.0.0.1:11434", timeout: f
             # mode ignore the field.
             "think": think,
             # Deterministic: the same transcript should not correct differently on a re-run.
-            "options": {"temperature": 0, "num_ctx": 8192},
+            "options": {"temperature": 0, "num_ctx": num_ctx},
         }).encode()
         req = urllib.request.Request(f"{endpoint}/api/generate", data=body,
                                      headers={"Content-Type": "application/json"})

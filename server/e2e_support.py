@@ -39,11 +39,18 @@ def isolate(tmp: Path) -> None:
 
 
 class StubPostmeeting:
-    """Stands in for the LLM stages: records what was asked, writes nothing, calls nothing."""
+    """Stands in for the LLM stages: records what was asked, writes nothing, calls nothing.
+
+    `chat_for` is here too because the ask endpoint reaches the model through it — a real key in
+    the environment would otherwise send the question to Anthropic from inside the test. Tests that
+    exercise /api/ask set `replies` to the JSON they want the model to return, in order.
+    """
 
     def __init__(self) -> None:
         self.followups: list[int] = []
         self.summarize_calls: list[int] = []
+        self.replies: list[str] | None = None
+        self.prompts: list[str] = []
 
     def followup(self, store, languages, llm_cfg, api_key, session_id):
         def run(cancel, set_stage):
@@ -52,6 +59,17 @@ class StubPostmeeting:
 
     def _summarize_stage(self, store, session_id, languages, llm_cfg, api_key, cancel):
         self.summarize_calls.append(session_id)
+
+    def chat_for(self, llm_cfg, api_key, max_tokens):
+        # None means "no model configured", the 503 path. A list means "answer with these".
+        if self.replies is None:
+            return None
+        queue = list(self.replies)
+
+        def chat(prompt: str) -> str:
+            self.prompts.append(prompt)
+            return queue.pop(0) if queue else "{}"
+        return chat
 
 
 class StubPostprocess:

@@ -22,11 +22,11 @@ from typing import Callable
 from fastapi.testclient import TestClient
 
 from . import main
-from . import test_e2e_api, test_e2e_asr, test_e2e_pipeline, test_e2e_refine
+from . import test_e2e_api, test_e2e_ask, test_e2e_asr, test_e2e_pipeline, test_e2e_refine
 from . import test_e2e_retry, test_e2e_sessions
 from .e2e_support import isolate
 
-MODULES = (test_e2e_api, test_e2e_asr, test_e2e_pipeline, test_e2e_refine,
+MODULES = (test_e2e_api, test_e2e_ask, test_e2e_asr, test_e2e_pipeline, test_e2e_refine,
            test_e2e_retry, test_e2e_sessions)
 
 

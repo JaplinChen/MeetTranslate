@@ -18,6 +18,7 @@ import './components/etable/controls.css';
 const Capture = lazy('Capture', () => import('./pages/Capture').then(m => ({ default: m.Capture })));
 const Sessions = lazy('Sessions', () => import('./pages/Sessions').then(m => ({ default: m.Sessions })));
 const Glossary = lazy('Glossary', () => import('./pages/Glossary').then(m => ({ default: m.Glossary })));
+const Ask = lazy('Ask', () => import('./pages/Ask').then(m => ({ default: m.Ask })));
 const Learned = lazy('Learned', () => import('./pages/Learned').then(m => ({ default: m.Learned })));
 const Live = lazy('Live', () => import('./pages/Live').then(m => ({ default: m.Live })));
 const Display = lazy('Display', () => import('./pages/Display').then(m => ({ default: m.Display })));
@@ -44,6 +45,7 @@ function App() {
                 <Route index element={<Navigate to="/capture" replace />} />
                 <Route path="capture" element={<Capture />} />
                 <Route path="sessions" element={<Sessions />} />
+                <Route path="ask" element={<Ask />} />
                 <Route path="glossary" element={<Glossary />} />
                 <Route path="learned" element={<Learned />} />
                 <Route path="settings" element={<Settings />}>
