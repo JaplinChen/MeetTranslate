@@ -12,6 +12,8 @@ import hashlib
 import json
 import logging
 import os
+from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -63,6 +65,128 @@ class Turn:
 MIN_TURN_ON = 0.3
 MIN_TURN_OFF = 0.5
 
+# How the recording is cut up for the workers. The cost of segmentation is exactly linear in audio
+# length — four quarters take the same total as the whole — so the only way to spend less wall
+# clock on it is to run pieces at the same time. Measured on 15 minutes of meeting audio: 47.7s in
+# one process, 10.6s across eight.
+CHUNK_SECONDS = 180.0
+# Every chunk carries this much of its neighbour on each side. The segmentation model decides from
+# a window about ten seconds wide, so audio within ten seconds of a cut is judged with one side
+# missing. Overlapping by twice that means every instant is seen once with both sides intact, at
+# the cost of ~11% redundant work.
+CHUNK_OVERLAP_SECONDS = 20.0
+# The threshold for grouping turns into speakers once the chunks are back. Not SPEAKER_THRESHOLD:
+# that one is sherpa's FastClustering over whole VAD utterances, and this is complete linkage over
+# one embedding per turn — a different rule over shorter clips, so the number that suits one does
+# not suit the other. Swept against the whole-file result on a 2h19m meeting:
+#
+#     threshold   speakers   biggest speaker   agreement with whole-file
+#          0.30         32               57%                      87.3%
+#          0.40         56               57%                      89.2%
+#          0.65        227               28%                      60.5%
+#
+# At 0.65 the chair alone came back as dozens of people. 0.40 puts the biggest speaker at 57%
+# against the whole file's 56%, and scores identically on the ten utterances that can be
+# attributed by what is being said: 33 of 33 pairs from different people kept apart.
+TURN_CLUSTER_THRESHOLD = 0.40
+# Workers, whatever the core count. Each one holds both models and its slice of audio — call it
+# 300 MB — so a twenty-core box would otherwise start eighteen of them and want five gigabytes for
+# a background task. Eight already took 15 minutes of audio from 47.7s to 10.6s; past that the
+# curve flattens and only the memory keeps growing.
+MAX_WORKERS = 8
+
+
+def _chunk_spans(duration: float, chunk: float = CHUNK_SECONDS,
+                 overlap: float = CHUNK_OVERLAP_SECONDS) -> list[tuple[float, float, float, float]]:
+    """`(read_from, read_to, core_from, core_to)` per chunk.
+
+    A chunk is decoded over its padded span but only owns its core. The cores tile the recording
+    exactly — no gap, no double coverage — so a turn belongs to exactly one chunk and reconciling
+    them afterwards is a question of where a turn sits, not of how similar two turns look.
+    """
+    if overlap < 10.0:
+        raise ValueError("overlap must cover the model's window; below 10s a cut has no context")
+    if duration <= chunk:
+        return [(0.0, duration, 0.0, duration)]
+
+    spans, at = [], 0.0
+    while at < duration:
+        core_to = min(at + chunk, duration)
+        spans.append((max(at - overlap, 0.0), min(core_to + overlap, duration), at, core_to))
+        at = core_to
+    return spans
+
+
+def _segment_chunk(job: tuple[str, float, float, float, float, float]) -> tuple[list[tuple[float, float]], list[list[float]]]:
+    """One chunk, in a worker process: boundaries and one embedding per turn.
+
+    Runs in a spawned process, so it takes a path and two times rather than audio — pickling the
+    samples would send the recording through the parent for every chunk. Returns absolute times:
+    sherpa answers relative to what it was handed, and forgetting the offset does not raise, it
+    silently stacks the whole meeting at the front.
+
+    The speaker ids sherpa assigns are per-chunk and meaningless across chunks, so they are
+    dropped and the embeddings come back instead, to be clustered once over the whole recording.
+    """
+    wav, read_from, read_to, core_from, core_to, threshold = job
+    import sherpa_onnx as so
+
+    from . import config as cfg_mod
+
+    with sf.SoundFile(wav) as fh:
+        rate = fh.samplerate
+        fh.seek(int(read_from * rate))
+        audio = fh.read(int((read_to - read_from) * rate), dtype="float32")
+    if audio.ndim > 1:
+        audio = audio.mean(axis=1)
+
+    # One thread each: the pool already uses every core, and two layers of parallelism fight.
+    cfg = so.OfflineSpeakerDiarizationConfig(
+        segmentation=so.OfflineSpeakerSegmentationModelConfig(
+            pyannote=so.OfflineSpeakerSegmentationPyannoteModelConfig(
+                model=str(cfg_mod.SPEAKER_SEGMENTATION_MODEL)), num_threads=1),
+        embedding=so.SpeakerEmbeddingExtractorConfig(model=str(cfg_mod.SPEAKER_MODEL),
+                                                     num_threads=1),
+        clustering=so.FastClusteringConfig(threshold=threshold),
+        min_duration_on=MIN_TURN_ON, min_duration_off=MIN_TURN_OFF)
+    result = so.OfflineSpeakerDiarization(cfg).process(audio).sort_by_start_time()
+
+    extractor = so.SpeakerEmbeddingExtractor(
+        so.SpeakerEmbeddingExtractorConfig(model=str(cfg_mod.SPEAKER_MODEL), num_threads=1))
+    kept, vectors = [], []
+    for s in result:
+        start, end = float(s.start) + read_from, float(s.end) + read_from
+        # Owned by whichever chunk its middle falls in. Positional, so a turn crossing a cut is
+        # taken once rather than by both neighbours or by neither.
+        middle = (start + end) / 2
+        if not (core_from <= middle < core_to or (core_to >= read_to and middle >= core_from)):
+            continue
+        clip = audio[int((start - read_from) * rate):int((end - read_from) * rate)]
+        if len(clip) == 0:
+            continue
+        stream = extractor.create_stream()
+        stream.accept_waveform(rate, clip)
+        stream.input_finished()
+        kept.append((start, end))
+        vectors.append([float(v) for v in extractor.compute(stream)])
+    return kept, vectors
+
+
+def _heal(found: list[Turn]) -> list[Turn]:
+    """Join neighbouring turns that ended up on the same speaker with no real gap between them.
+
+    Two chunks each decode their own side of a cut, so one person talking across it comes back as
+    two turns that meet in the middle. After global clustering they carry the same label, and a
+    gap shorter than the one that ends a turn is not a turn boundary.
+    """
+    healed: list[Turn] = []
+    for turn in found:
+        if healed and healed[-1].speaker == turn.speaker and turn.start - healed[-1].end < MIN_TURN_OFF:
+            healed[-1] = Turn(healed[-1].start, max(healed[-1].end, turn.end), turn.speaker)
+        else:
+            healed.append(turn)
+    return healed
+
 
 def turns(wav: Path, threshold: float | None = None) -> list[Turn] | None:
     """Where the speaker changes across a whole recording, or None if the model is not installed.
@@ -92,38 +216,59 @@ def turns(wav: Path, threshold: float | None = None) -> list[Turn] | None:
         log.info("%d turns for %s from cache", len(cached), wav.name)
         return cached
 
-    cfg = sherpa_onnx.OfflineSpeakerDiarizationConfig(
-        segmentation=sherpa_onnx.OfflineSpeakerSegmentationModelConfig(
-            pyannote=sherpa_onnx.OfflineSpeakerSegmentationPyannoteModelConfig(model=str(model)),
-            num_threads=max((os.cpu_count() or 4) // 2, 1),
-        ),
-        embedding=sherpa_onnx.SpeakerEmbeddingExtractorConfig(
-            model=str(config.SPEAKER_MODEL),
-            num_threads=max((os.cpu_count() or 4) // 2, 1),
-        ),
-        clustering=sherpa_onnx.FastClusteringConfig(threshold=resolved),
-        min_duration_on=MIN_TURN_ON,
-        min_duration_off=MIN_TURN_OFF,
-    )
-    if not cfg.validate():
-        log.warning("speaker segmentation config rejected; falling back to clustering utterances")
-        return None
+    info = sf.info(str(wav))
+    if info.samplerate != config.SAMPLE_RATE:
+        raise ValueError(f"{wav} is {info.samplerate} Hz, expected {config.SAMPLE_RATE}")
+    duration = float(info.duration)
 
-    audio, rate = sf.read(str(wav), dtype="float32")
-    if rate != config.SAMPLE_RATE:
-        raise ValueError(f"{wav} is {rate} Hz, expected {config.SAMPLE_RATE}")
-    if audio.ndim > 1:
-        audio = audio.mean(axis=1)
+    spans = _chunk_spans(duration)
+    jobs = [(str(wav), a, b, c, d, resolved) for a, b, c, d in spans]
+    workers = min(len(jobs), MAX_WORKERS, max((os.cpu_count() or 4) - 2, 1))
+    log.info("segmenting %s in %d chunks across %d workers", wav.name, len(jobs), workers)
 
-    result = sherpa_onnx.OfflineSpeakerDiarization(cfg).process(audio).sort_by_start_time()
-    found = [Turn(float(s.start), float(s.end), int(s.speaker)) for s in result]
-    _write_turns(wav, key, found, len(audio) / rate)
+    boundaries: list[tuple[float, float]] = []
+    vectors: list[np.ndarray] = []
+    if workers == 1:
+        pieces = [_segment_chunk(job) for job in jobs]
+    else:
+        try:
+            # spawn on Windows, so the worker imports `server.diarize` fresh. It must never reach
+            # `server.main`, which builds a Store and reads config at import.
+            with ProcessPoolExecutor(max_workers=workers) as pool:
+                pieces = list(pool.map(_segment_chunk, jobs))
+        except (BrokenProcessPool, OSError):
+            # A pool that will not start is a slower import, not a failed one. Spawn re-imports
+            # the parent's `__main__`, so an embedder whose entry point lacks the usual guard
+            # takes this path rather than losing the recording.
+            log.warning("segmentation pool unavailable; falling back to one process", exc_info=True)
+            pieces = [_segment_chunk(job) for job in jobs]
+    for kept, embedded in pieces:
+        boundaries.extend(kept)
+        vectors.extend(np.asarray(v, dtype=np.float32) for v in embedded)
+
+    if not boundaries:
+        _write_turns(wav, key, [], duration)
+        return []
+
+    order = sorted(range(len(boundaries)), key=lambda i: boundaries[i][0])
+    # One clustering pass over the whole meeting. Each chunk numbered its own speakers and those
+    # numbers mean nothing to each other, so the labels have to be decided here or a person who
+    # spoke in two chunks arrives as two people.
+    labels = cluster_offline([vectors[i] for i in order], threshold=TURN_CLUSTER_THRESHOLD)
+    found = _heal([Turn(boundaries[i][0], boundaries[i][1], label)
+                   for i, label in zip(order, labels)])
+
+    # An offset lost in a worker does not raise, it silently moves speech to the wrong minute.
+    if found and found[-1].end > duration + 1.0:
+        raise ValueError(f"a turn ends past {wav.name}: {found[-1].end:.1f}s of {duration:.1f}s")
+
+    _write_turns(wav, key, found, duration)
     return found
 
 
 # Bumped by hand when the shape of a cached entry changes, so old files miss instead of
 # deserialising into something that no longer means what it meant.
-_CACHE_FORMAT = 1
+_CACHE_FORMAT = 2
 
 
 def _stamp(path: Path) -> str:
@@ -152,8 +297,10 @@ def _turns_key(wav: Path, threshold: float) -> str:
         f"segmentation={_stamp(config.SPEAKER_SEGMENTATION_MODEL)}",
         f"embedding={_stamp(config.SPEAKER_MODEL)}",
         f"threshold={threshold!r}",
+        f"cluster={TURN_CLUSTER_THRESHOLD!r}",
         f"on={MIN_TURN_ON!r}",
         f"off={MIN_TURN_OFF!r}",
+        f"chunk={CHUNK_SECONDS!r}/{CHUNK_OVERLAP_SECONDS!r}",
         f"sherpa={getattr(sherpa_onnx, '__version__', 'unknown')}",
     ]
     return hashlib.sha256("|".join(parts).encode()).hexdigest()
