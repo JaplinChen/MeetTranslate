@@ -1,10 +1,12 @@
-"""Post-meeting summary: one LLM call per language, schema-checked, retried once.
+"""Post-meeting summary: one LLM call per language, structure-checked, retried once.
 
 The transcript is the input everyone already has; what a meeting produces is the part nobody wrote
 down — what was decided and who left owning what. A model asked for that in free prose invents
-structure on some days and skips it on others, so the reply is pinned to a JSON schema and a bad
-reply is sent back once with the parser's complaint attached. Three languages in one call was
-tried and truncates the JSON inside a 4000-token budget, hence one language per call.
+structure on some days and skips it on others, so the reply is held to four labelled sections
+(TITLE/SUMMARY/DECISIONS/ACTIONS) and a bad reply is sent back once with the parser's complaint
+attached. JSON was tried first, but a long detailed summary leaves newlines and 「」 unescaped
+inside the string and no longer parses; labelled sections carry multi-line prose verbatim. Three
+languages in one call truncated the reply inside the token budget, hence one language per call.
 
 Pure orchestration: the chat callable comes from the caller (refine.anthropic_chat or ollama_chat,
 so the privacy choice made there carries over) and nothing here touches the store.
