@@ -128,6 +128,37 @@ def test_naming_a_speaker_teaches_the_room_their_voice(client: TestClient) -> No
     assert client.delete("/api/speakers/known/Vincent").json() == []
 
 
+def test_speaker_session_count_is_distinct_meetings_not_saves(client: TestClient) -> None:
+    """The "N meetings" figure counts meetings the voice was named in, not times it was saved.
+
+    Naming a speaker then fixing a typo in the name both save, and remember_speaker used to +1 on
+    each — so a within-meeting rename read as an extra meeting. Counted from speaker_name, the
+    figure is the number of distinct sessions regardless of how many saves produced it.
+    """
+    a = main.store.start_session("2026-01-01T09:00:00", "a.wav")
+    main.store.save_voiceprint(a, "S1", np.array([1.0], dtype="float32").tobytes())
+
+    # Names unique to this check, so a shared-store predecessor cannot seed them.
+    OLD, NEW = "審查臨時甲", "審查臨時乙"
+    # Name, then correct the name — same meeting, two saves.
+    client.put(f"/api/sessions/{a}/speakers", json={"S1": OLD})
+    client.put(f"/api/sessions/{a}/speakers", json={"S1": NEW})
+    known = {s["name"]: s["sessions"] for s in client.get("/api/speakers/known").json()}
+    assert OLD not in known, known  # the old name is gone — no orphan on the Learned page
+    assert known.get(NEW) == 1, known  # one meeting, not two saves
+
+    # The same person named in a second meeting is two distinct meetings.
+    b = main.store.start_session("2026-01-02T09:00:00", "b.wav")
+    main.store.save_voiceprint(b, "S1", np.array([1.0], dtype="float32").tobytes())
+    client.put(f"/api/sessions/{b}/speakers", json={"S1": NEW})
+    known = {s["name"]: s["sessions"] for s in client.get("/api/speakers/known").json()}
+    assert known.get(NEW) == 2, known
+
+    # Shared store: leave the table as it was found.
+    from urllib.parse import quote
+    client.delete(f"/api/speakers/known/{quote(NEW)}")
+
+
 def test_editing_a_line_teaches_the_correction(client: TestClient) -> None:
     """An edit on the transcript page is the only ground truth this system gets: someone who was
     in the room saying what was actually said. Kept, the same mistake is fixed everywhere next
