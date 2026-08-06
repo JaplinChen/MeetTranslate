@@ -28,6 +28,12 @@ MIN_LANGUAGE_EVIDENCE = 4
 # Utterances handed to the recogniser at once. Long enough to amortise the encoder, short enough
 # that an interrupted run has reported most of what it did.
 BATCH_UTTERANCES = 64
+# The shortest piece a speaker change is allowed to carve out of an utterance. Below this it is
+# someone agreeing mid-sentence, and cutting there costs a transcript line to gain nothing.
+MIN_PIECE_SECONDS = 0.5
+# Utterances averaged into a speaker's stored voiceprint. Their longest few: enough for a stable
+# centroid, and a fixed cost per speaker rather than one embedding per utterance in the meeting.
+VOICEPRINT_SAMPLES = 5
 
 
 @dataclass
@@ -63,8 +69,128 @@ def segment(wav: Path) -> list[Utterance]:
     return out
 
 
+def split_on_turns(utterances: list[Utterance], turns: list[diarize.Turn]) -> list[Utterance]:
+    """Cut every utterance where the speaker changes inside it, and label each piece.
+
+    A VAD utterance is speech between silences, which is not the same thing as one person talking:
+    on a 2h19m meeting 72 of 859 held more than one voice, one of them four people over twelve
+    seconds. Those became a single averaged embedding and a single transcript line reading as
+    nonsense, because it was four people's sentences run together.
+
+    Pieces below MIN_PIECE_SECONDS are folded into the neighbour they touch rather than kept: a
+    half-second of someone agreeing in the middle of a sentence is not a turn worth a line.
+    """
+    if not turns:
+        return utterances
+
+    out: list[Utterance] = []
+    for u in utterances:
+        seconds = len(u.samples) / config.SAMPLE_RATE
+        cuts = _cut_points(u.start, u.start + seconds, turns)
+        if len(cuts) < 2:
+            u.speaker = _speaker_code(_dominant(u.start, u.start + seconds, turns))
+            out.append(u)
+            continue
+        for begin, end, who in cuts:
+            head = int(round((begin - u.start) * config.SAMPLE_RATE))
+            tail = int(round((end - u.start) * config.SAMPLE_RATE))
+            out.append(Utterance(begin, u.samples[head:tail], speaker=_speaker_code(who)))
+
+    _inherit_missing(out)
+    return out
+
+
+def _inherit_missing(utterances: list[Utterance]) -> None:
+    """Give the segmenter's blind spots to whoever was talking around them.
+
+    A half-second the VAD called speech and the segmentation model called nobody would otherwise
+    reach the transcript with a blank where the speaker goes. Five of 1040 pieces on a real
+    meeting, all under a second. Same rule the clustering path applies to a clip too short to
+    embed: it belongs to the person already speaking.
+    """
+    previous = ""
+    for u in utterances:
+        if u.speaker:
+            previous = u.speaker
+        else:
+            u.speaker = previous
+    # Anything before the first labelled piece has nothing behind it to inherit from.
+    following = ""
+    for u in reversed(utterances):
+        if u.speaker:
+            following = u.speaker
+        else:
+            u.speaker = following
+
+
+def _cut_points(start: float, end: float, turns: list[diarize.Turn]) -> list[tuple[float, float, int]]:
+    """The utterance split into (start, end, speaker), or one span when nobody else speaks in it."""
+    # Sorted here rather than assumed: out-of-order turns would walk `at` backwards and hand two
+    # pieces the same audio, which is a duplicated transcript line rather than a crash.
+    inside = sorted((t for t in turns if min(t.end, end) - max(t.start, start) >= MIN_PIECE_SECONDS),
+                    key=lambda t: t.start)
+    if len({t.speaker for t in inside}) < 2:
+        return [(start, end, _dominant(start, end, turns))]
+
+    pieces: list[tuple[float, float, int]] = []
+    at = start
+    for turn in inside:
+        edge = min(turn.end, end)
+        if edge - at >= MIN_PIECE_SECONDS:
+            pieces.append((at, edge, turn.speaker))
+            at = edge
+    if not pieces:
+        return [(start, end, _dominant(start, end, turns))]
+    # Whatever is left belongs to whoever held the last piece: trailing audio after the final turn
+    # is the same person tailing off, not a new one.
+    last_start, _, last_who = pieces[-1]
+    pieces[-1] = (last_start, end, last_who)
+    return pieces
+
+
+def _dominant(start: float, end: float, turns: list[diarize.Turn]) -> int:
+    """Whoever holds most of this span. -1 when the segmenter heard nobody in it."""
+    best, best_overlap = -1, 0.0
+    for turn in turns:
+        overlap = min(turn.end, end) - max(turn.start, start)
+        if overlap > best_overlap:
+            best, best_overlap = turn.speaker, overlap
+    return best
+
+
+def _speaker_code(speaker: int) -> str:
+    """Segmenter ids are arbitrary integers; the transcript shows S1, S2, ... in that order."""
+    return f"S{speaker + 1}" if speaker >= 0 else ""
+
+
+def _remember_voices(store: Store, session_id: int, utterances: list[Utterance],
+                     diarizer: diarize.Diarizer) -> None:
+    """Store one voiceprint per speaker, so naming them afterwards teaches the room their voice.
+
+    Only the live pipeline did this, which meant an imported recording never taught anything:
+    naming S3 on the transcript page looked up a voiceprint that had never been written, found
+    nothing, and quietly skipped promoting it. The whole point of the naming screen is that the
+    next meeting recognises the voice.
+    """
+    groups: dict[str, list[Utterance]] = {}
+    for u in utterances:
+        if u.speaker and len(u.samples) / config.SAMPLE_RATE >= config.MIN_EMBED_SECONDS:
+            groups.setdefault(u.speaker, []).append(u)
+
+    for code, said in groups.items():
+        # Their longest few, not everything they said: a centroid is an average, and averaging the
+        # clearest samples costs a fixed handful of embeddings per speaker instead of one per
+        # utterance in the meeting.
+        best = sorted(said, key=lambda u: -len(u.samples))[:VOICEPRINT_SAMPLES]
+        centroid = np.mean([diarizer.embed(u.samples) for u in best], axis=0)
+        store.save_voiceprint(session_id, code, centroid.astype(np.float32).tobytes())
+
+
 def assign_speakers(utterances: list[Utterance], diarizer: diarize.Diarizer) -> None:
     """Cluster over the whole meeting at once.
+
+    The fallback for a machine without the segmentation model. Clusters whole VAD utterances, so
+    an utterance holding two people is one embedding averaging both.
 
     This is what the online pass could not do: a speaker whose first few seconds were atypical
     gets merged with their later segments instead of living on as a phantom second participant.
@@ -185,7 +311,17 @@ def rewrite_session(store: Store, session_id: int, wav: Path, cfg: config.Config
     if not utterances:
         return []
 
-    assign_speakers(utterances, diarizer)
+    # Speaker turns where the model for them is installed, clustered whole utterances where it is
+    # not. The first also decides the transcript's line boundaries, because a line that runs across
+    # a speaker change belongs to neither of them.
+    speaker_turns = diarize.turns(wav)
+    if speaker_turns:
+        before = len(utterances)
+        utterances = split_on_turns(utterances, speaker_turns)
+        log.info("%d turns split %d utterances into %d", len(speaker_turns), before, len(utterances))
+    else:
+        assign_speakers(utterances, diarizer)
+    _remember_voices(store, session_id, utterances, diarizer)
 
     def watch(_u: Utterance, _done: int, _total: int) -> None:
         if stop():
