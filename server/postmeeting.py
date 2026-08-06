@@ -31,16 +31,26 @@ from .store import Store
 log = logging.getLogger("meettranslate.postmeeting")
 
 
-def chat_for(llm_cfg: llm.LlmConfig, api_key: str, max_tokens: int) -> Callable[[str], str] | None:
+def chat_for(llm_cfg: llm.LlmConfig, api_key: str, max_tokens: int,
+             num_ctx: int = 8192, num_predict: int | None = None,
+             temperature: float = 0.0, repeat_penalty: float | None = None,
+             ) -> Callable[[str], str] | None:
     """The chat callable the configured provider implies. None means no LLM stage can run.
 
     Follows the provider chosen on the LLM settings page rather than hard-coding Anthropic:
     `refine.ollama_chat` exists precisely because these transcripts may not be allowed to leave
     the machine, and a summary that quietly bypassed that choice would undo it.
+
+    `num_ctx`/`num_predict`/`temperature`/`repeat_penalty` only reach Ollama: the summary stage
+    sends a large transcript excerpt AND wants a long detailed reply, so it raises the window, caps
+    the reply, and lifts the temperature with a repetition penalty — greedy decoding on a long CJK
+    summary loops on one sentence. Anthropic sizes its own context and takes `max_tokens` directly.
     """
     if llm_cfg.provider == "ollama":
         return refine.ollama_chat(llm_cfg.model,
-                                  llm_cfg.endpoint or llm.DEFAULT_ENDPOINTS["ollama"])
+                                  llm_cfg.endpoint or llm.DEFAULT_ENDPOINTS["ollama"],
+                                  num_ctx=num_ctx, num_predict=num_predict,
+                                  temperature=temperature, repeat_penalty=repeat_penalty)
     if not api_key:
         return None
     return refine.anthropic_chat(api_key, llm_cfg.model, max_tokens=max_tokens)
@@ -84,7 +94,12 @@ def _summarize_stage(store: Store, session_id: int, languages: list[str],
 
     lines = [summarize.SummaryLine(r["speaker"], r["lang"], r["source"]) for r in rows]
     target = summarize.target_chars(sum(len(l.text) for l in lines))
-    chat = chat_for(llm_cfg, api_key, max_tokens=summarize.max_tokens_for(target))
+    # Room for the transcript excerpt (INPUT_BUDGET chars) plus a long detailed reply; the default
+    # 8192 leaves no output budget and Ollama answers with a single terse line. num_predict caps
+    # the reply so it stops instead of generating until the window fills.
+    mt = summarize.max_tokens_for(target)
+    chat = chat_for(llm_cfg, api_key, max_tokens=mt, num_ctx=16384, num_predict=mt,
+                    temperature=0.5, repeat_penalty=1.2)
     if chat is None:
         # No LLM configured. Record it rather than returning silently: the card otherwise shows
         # "no summary yet" forever, indistinguishable from never-clicked, hiding that the fix is a

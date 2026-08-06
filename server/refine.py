@@ -160,7 +160,8 @@ def anthropic_chat(api_key: str, model: str, max_tokens: int = 4000):
 
 
 def ollama_chat(model: str, endpoint: str = "http://127.0.0.1:11434", timeout: float = 900,
-                think: bool = False, num_ctx: int = 8192):
+                think: bool = False, num_ctx: int = 8192, num_predict: int | None = None,
+                temperature: float = 0.0, repeat_penalty: float | None = None):
     """Local models over Ollama's HTTP API — no key, and the transcript never leaves the machine.
 
     That second point is the reason to prefer it here: these are client interview recordings.
@@ -169,6 +170,15 @@ def ollama_chat(model: str, endpoint: str = "http://127.0.0.1:11434", timeout: f
     exceeds it — it drops the oldest tokens, which are the instructions, and answers whatever is
     left. Callers that send more than a chunk of transcript have to raise it or cut their input to
     fit; both need to know the number.
+
+    `num_predict` caps the reply. Left unset Ollama generates until an end token or the whole
+    window fills — on a long-form prompt that means minutes of rambling that overruns the timeout,
+    so the summary caller bounds it to what it actually asked for.
+
+    `temperature`/`repeat_penalty` default to greedy-and-unpenalised, which is right for refine —
+    the same transcript should correct identically on a re-run. But greedy decoding on a long CJK
+    summary collapses into repeating one sentence until the token budget runs out, so the summary
+    caller lifts the temperature a little and penalises repetition to break the loop.
     """
     import json
     import urllib.request
@@ -180,6 +190,12 @@ def ollama_chat(model: str, endpoint: str = "http://127.0.0.1:11434", timeout: f
     # …/api/chat became …/api/chat/api/generate here and every refine and summary call 404'd.
     root = base_url(endpoint)
 
+    options = {"temperature": temperature, "num_ctx": num_ctx}
+    if num_predict is not None:
+        options["num_predict"] = num_predict
+    if repeat_penalty is not None:
+        options["repeat_penalty"] = repeat_penalty
+
     def chat(prompt: str) -> str:
         body = json.dumps({
             "model": model,
@@ -189,8 +205,7 @@ def ollama_chat(model: str, endpoint: str = "http://127.0.0.1:11434", timeout: f
             # better one — see --think in scripts/refine_transcript.py. Models with no thinking
             # mode ignore the field.
             "think": think,
-            # Deterministic: the same transcript should not correct differently on a re-run.
-            "options": {"temperature": 0, "num_ctx": num_ctx},
+            "options": options,
         }).encode()
         req = urllib.request.Request(f"{root}/api/generate", data=body,
                                      headers={"Content-Type": "application/json"})

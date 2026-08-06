@@ -6,7 +6,6 @@ the LLM is a fake chat callable.
 
 from __future__ import annotations
 
-import json
 import tempfile
 from pathlib import Path
 from typing import Callable
@@ -29,10 +28,10 @@ def _lines(counts: dict[str, int], chars: int = 100) -> list[SummaryLine]:
 
 
 def test_target_chars_clamps_both_ends_and_scales():
-    assert S.target_chars(0) == 200
-    assert S.target_chars(2400) == 200
-    assert S.target_chars(12_000) == 1000
-    assert S.target_chars(1_000_000) == 2000
+    assert S.target_chars(0) == 400
+    assert S.target_chars(2400) == 400
+    assert S.target_chars(12_000) == 2000
+    assert S.target_chars(1_000_000) == 8000
 
 
 def test_load_rules_builtin_default_when_file_absent():
@@ -84,45 +83,48 @@ def test_sample_proportional_and_ordered_over_budget():
 
 
 def _valid(title="T", summary="S", decisions=None, actions=None) -> str:
-    return json.dumps({"title": title, "summary": summary,
-                       "decisions": decisions if decisions is not None else [],
-                       "actions": actions if actions is not None else []})
+    parts = [f"TITLE: {title}", "SUMMARY:", summary, "DECISIONS:"]
+    parts += [f"- {d}" for d in (decisions or [])]
+    parts += ["ACTIONS:"]
+    parts += [f"- {text} || {speaker}" for text, speaker in (actions or [])]
+    return "\n".join(parts)
 
 
-def test_parse_response_accepts_valid_json_with_empty_arrays():
-    got = S.parse_response("noise before " + _valid())
+def test_parse_response_accepts_valid_with_empty_sections():
+    got = S.parse_response("noise before\n" + _valid())
     assert got == {"title": "T", "summary": "S", "decisions": [], "actions": []}
+
+
+def test_parse_response_keeps_multiline_summary():
+    raw = _valid(summary="【背景】第一段\n【討論】第二段「原話」")
+    assert S.parse_response(raw)["summary"] == "【背景】第一段\n【討論】第二段「原話」"
 
 
 def test_parse_response_rejects_missing_title():
     try:
-        S.parse_response(json.dumps({"summary": "S", "decisions": [], "actions": []}))
+        S.parse_response("SUMMARY:\nS\nDECISIONS:\nACTIONS:")
         raise AssertionError("should have raised")
     except ValueError as e:
-        assert "title" in str(e)
+        assert "TITLE" in str(e)
 
 
-def test_parse_response_rejects_wrong_type_decisions():
+def test_parse_response_rejects_missing_summary():
     try:
-        S.parse_response(_valid(decisions=["ok", 5]))
+        S.parse_response("TITLE: T\nDECISIONS:\nACTIONS:")
         raise AssertionError("should have raised")
     except ValueError as e:
-        assert "decisions" in str(e)
+        assert "SUMMARY" in str(e)
 
 
-def test_parse_response_rejects_action_without_text():
-    try:
-        S.parse_response(_valid(actions=[{"speaker": "S1"}]))
-        raise AssertionError("should have raised")
-    except ValueError as e:
-        assert "text" in str(e)
+def test_parse_response_parses_decisions_as_bullets():
+    got = S.parse_response(_valid(decisions=["first", "second"]))
+    assert got["decisions"] == ["first", "second"]
 
 
 def test_parse_response_clears_a_speaker_the_transcript_never_had():
     # A code outside the valid set is the model inventing an owner; the action text stays, the
     # false attribution is cleared to "" so the page shows it unassigned.
-    raw = _valid(actions=[{"text": "send the report", "speaker": "S9"},
-                          {"text": "book the room", "speaker": "S1"}])
+    raw = _valid(actions=[("send the report", "S9"), ("book the room", "S1")])
     got = S.parse_response(raw, valid_speakers=frozenset({"S1", "S2"}))
     assert got["actions"] == [{"text": "send the report", "speaker": ""},
                               {"text": "book the room", "speaker": "S1"}]
@@ -130,7 +132,7 @@ def test_parse_response_clears_a_speaker_the_transcript_never_had():
 
 def test_parse_response_keeps_all_speakers_when_no_set_is_given():
     # Called without a set (a test, or a caller that does not have one), nothing is second-guessed.
-    raw = _valid(actions=[{"text": "x", "speaker": "S9"}])
+    raw = _valid(actions=[("x", "S9")])
     assert S.parse_response(raw)["actions"] == [{"text": "x", "speaker": "S9"}]
 
 
@@ -139,7 +141,7 @@ def test_summarize_clears_invented_owners_end_to_end():
     # the reply is cleared without the caller doing anything.
     lines = [S.SummaryLine("S1", "zh", "先講進度"), S.SummaryLine("S2", "zh", "我負責報告")]
     reply = _valid(title="會議", summary="兩人討論進度",
-                   actions=[{"text": "交報告", "speaker": "S7"}, {"text": "訂會議室", "speaker": "S2"}])
+                   actions=[("交報告", "S7"), ("訂會議室", "S2")])
     out, status = S.summarize(lines, ["zh"], lambda _p: reply)
     assert status == "ok"
     assert out["zh"]["actions"] == [{"text": "交報告", "speaker": ""},
