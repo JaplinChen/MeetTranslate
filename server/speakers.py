@@ -97,18 +97,25 @@ class SpeakerStore:
                 "ORDER BY COUNT(DISTINCT sn.session_id) DESC")]
 
     def speaker_sessions(self) -> dict[str, int]:
-        """How many distinct meetings each known voice was named in, counted from the source.
+        """How many distinct meetings each *known* voice was named in, counted from the source.
 
         Not read off known_speaker.sessions, which remember_speaker increments on every save: naming
         a voice, then fixing a typo in that name, both save — so a within-meeting rename inflated the
         count, and it read as more meetings than the voice was ever in. speaker_name holds one row
         per (session, code), so counting distinct sessions per name is the true figure regardless of
         how many times it was saved.
+
+        Joined to known_speaker so this returns only voices the room still knows: forget_speaker
+        removes a voice from known_speaker but leaves its historical transcript names in place (a
+        past meeting keeps the name it was given), and without the join this counted those forgotten
+        names too. get_known_speakers only ever asks about names it got from known_speakers(), so
+        that mismatch was latent — but the two now agree at the source instead of by that accident.
         """
         with self._lock:
             return {r["name"]: r["n"] for r in self._db.execute(
-                "SELECT name, COUNT(DISTINCT session_id) AS n FROM speaker_name "
-                "WHERE name != '' GROUP BY name")}
+                "SELECT sn.name, COUNT(DISTINCT sn.session_id) AS n FROM speaker_name sn "
+                "JOIN known_speaker ks ON ks.name = sn.name "
+                "WHERE sn.name != '' GROUP BY sn.name")}
 
     def speaker_sample(self, name: str) -> tuple[str, float, float | None] | None:
         """Where to hear this voice, and how long that utterance lasts.
