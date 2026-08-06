@@ -137,9 +137,12 @@ class Transcriber:
             parts += [clip.astype(np.float32), gap]
             at += seconds + BATCH_GAP_SECONDS
 
-        from faster_whisper import BatchedInferencePipeline
-
         if self._batched is None:
+            # Imported here, not at module load: faster-whisper is a GPU-only dependency, and this
+            # is the one place that constructs the pipeline. A test that injects a fake `_batched`
+            # never reaches it, which is what lets the OOM retry be exercised without a GPU.
+            from faster_whisper import BatchedInferencePipeline
+
             self._batched = BatchedInferencePipeline(model=self._model)
         segments, info = self._decode_batched(np.concatenate(parts), language, spans)
 
