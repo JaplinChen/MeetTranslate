@@ -623,6 +623,13 @@ export function Sessions() {
             </div>
           ) : sumGenerating ? (
             <p className="sess-hint">{sumStageLabel}</p>
+          ) : summary?.state === 'no_llm' ? (
+            <div className="sess-summary-cta">
+              <p className="sess-summary-error">{t('sessions.summaryNoLlm')}</p>
+              <button type="button" className="sess-summary-generate" disabled={summarizing} onClick={generateSummary}>
+                {summarizing ? t('sessions.summaryGenerating') : t('sessions.summaryRetry')}
+              </button>
+            </div>
           ) : summary?.state === 'failed' ? (
             <div className="sess-summary-cta">
               <p className="sess-summary-error">{t('sessions.summaryFailed')}</p>

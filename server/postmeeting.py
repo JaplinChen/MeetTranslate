@@ -86,6 +86,11 @@ def _summarize_stage(store: Store, session_id: int, languages: list[str],
     target = summarize.target_chars(sum(len(l.text) for l in lines))
     chat = chat_for(llm_cfg, api_key, max_tokens=summarize.max_tokens_for(target))
     if chat is None:
+        # No LLM configured. Record it rather than returning silently: the card otherwise shows
+        # "no summary yet" forever, indistinguishable from never-clicked, hiding that the fix is a
+        # settings change, not a retry.
+        store.set_summary(session_id, "{}", "no_llm", rev,
+                          time.strftime("%Y-%m-%dT%H:%M:%S"))
         return
 
     result, status = summarize.summarize(lines, languages, _cancellable(chat, cancel),

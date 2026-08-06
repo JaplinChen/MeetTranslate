@@ -100,6 +100,7 @@
     "summaryGenerating": "摘要產生中…",
     "summarizing": "整理摘要中",
     "summaryFailed": "摘要產生失敗。",
+    "summaryNoLlm": "尚未設定語言模型——請先到「設定」頁填入 API key（或 Ollama 端點），再產生摘要。",
     "summaryRetry": "重試",
     "summaryRegenerate": "重新產生",
     "summaryRegenerating": "重新產生中…",

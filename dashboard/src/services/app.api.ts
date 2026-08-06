@@ -80,7 +80,7 @@ export interface SessionSummary {
 }
 
 /** Where the meeting summary got to. `partial` means some requested languages failed. */
-export type SummaryState = 'none' | 'generating' | 'ok' | 'partial' | 'failed';
+export type SummaryState = 'none' | 'generating' | 'ok' | 'partial' | 'failed' | 'no_llm';
 
 export interface MeetingSummaryLang {
   title: string;
