@@ -88,6 +88,25 @@ def test_a_line_can_be_reassigned_to_another_speaker(client: TestClient) -> None
     assert client.put(f"/api/sessions/{session}/lines/99999/speaker", json={"speaker": "S2"}).status_code == 404
 
 
+def test_a_session_exports_as_a_word_document(client: TestClient) -> None:
+    """The enterprise deliverable is a .docx, and it has to carry the transcript, not just open."""
+    session = main.store.start_session("now", "")
+    main.store.add_line(session, 1.0, "S1", "en", "quarterly numbers", {"zh": "季度數字"})
+    main.store.add_line(session, 5.0, "S2", "zh", "料號要確認", {})
+
+    r = client.get(f"/api/sessions/{session}/docx")
+    assert r.status_code == 200, r.text
+    assert "wordprocessingml" in r.headers["content-type"], r.headers["content-type"]
+    assert r.content[:2] == b"PK", "a .docx is a zip and must start with the zip magic"
+
+    from docx import Document
+    text = "\n".join(p.text for p in Document(io.BytesIO(r.content)).paragraphs)
+    assert "quarterly numbers" in text and "料號要確認" in text, text
+    assert "季度數字" in text, "translations must survive into the export"
+
+    assert client.get("/api/sessions/99999/docx").status_code == 404
+
+
 def test_importing_a_recording_makes_it_a_session(client: TestClient) -> None:
     """An uploaded file has to land as an ordinary session, or nothing can be learned from it."""
     if shutil.which("ffmpeg") is None:

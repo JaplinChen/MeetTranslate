@@ -95,6 +95,8 @@
     "searchEmpty": "Không có dòng nào chứa “{{query}}”.",
     "export": "Xuất",
     "exportHint": "Tải bản ghi này dưới dạng Markdown — tên người nói, mốc thời gian và mọi bản dịch hiện tại.",
+    "exportDocx": "Word",
+    "exportDocxHint": "Tải bản ghi này dưới dạng tài liệu Word — tóm tắt, người nói và bản ghi, sẵn sàng bàn giao.",
     "pick": "Chọn cuộc họp",
     "refineFailedReason": "Lượt xử lý sau cuộc họp thất bại: {{reason}}",
     "summaryTitle": "Tóm tắt cuộc họp",

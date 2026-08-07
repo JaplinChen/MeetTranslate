@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 import soundfile as sf
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import PlainTextResponse
 
 from . import asr, asr_gpu, config, correct, ingest, jobs, main, translate
@@ -363,3 +363,12 @@ def session_markdown(session_id: int) -> PlainTextResponse:
         raise HTTPException(404, "no such session")
     return PlainTextResponse(main.postprocess.to_markdown(main.store, session_id),
                              media_type="text/markdown")
+
+
+@router.get("/api/sessions/{session_id}/docx")
+def session_docx(session_id: int) -> Response:
+    """The same export as markdown, as a Word document — what an enterprise meeting hands over."""
+    if not main.store.session(session_id):
+        raise HTTPException(404, "no such session")
+    return Response(main.postprocess.to_docx(main.store, session_id),
+                    media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")

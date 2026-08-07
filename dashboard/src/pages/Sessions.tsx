@@ -527,6 +527,15 @@ export function Sessions() {
               <Download size={13} />
               {t('sessions.export')}
             </a>
+            <a
+              className="sess-export"
+              href={`${API_BASE_URL}/sessions/${selected}/docx`}
+              download={`${t('sessions.title')}-${(current?.started ?? '').slice(0, 10)}.docx`}
+              title={t('sessions.exportDocxHint')}
+            >
+              <FileText size={13} />
+              {t('sessions.exportDocx')}
+            </a>
             <button
               type="button"
               className="sess-reprocess"
