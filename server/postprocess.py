@@ -33,6 +33,21 @@ BATCH_UTTERANCES = 64
 # The shortest piece a speaker change is allowed to carve out of an utterance. Below this it is
 # someone agreeing mid-sentence, and cutting there costs a transcript line to gain nothing.
 MIN_PIECE_SECONDS = 0.5
+# The shortest utterance the post-meeting pass will hand to the recogniser. The live path keeps the
+# VAD's own 0.25 because a one-word confirmation belongs on the TV; here the opposite is true.
+# Whisper never declines — handed a fragment with no sentence in it, it writes the YouTube subtitle
+# sign-offs it read most, and a real meeting came back with "剪輯 李宗盛" four times. Measured on a
+# 2h19m factory meeting, VAD then turn-splitting, against seventeen known sign-off lines:
+#
+#     min speech   utterances   speech kept   sign-offs surviving   long real lines kept
+#           0.25          958      105.8 min             15 of 17              6 of 6
+#           0.50          894      103.5 min             11 of 17              6 of 6
+#           0.80          824       99.7 min              8 of 17              6 of 6
+#           1.00          743       94.7 min              7 of 17              5 of 6
+#
+# 0.80 is the last value that costs no long line. Above it the curve flattens and real speech
+# starts going: at 1.00 one of the six reference reports is gone.
+POST_MEETING_MIN_SPEECH = 0.80
 # Utterances averaged into a speaker's stored voiceprint. Their longest few: enough for a stable
 # centroid, and a fixed cost per speaker rather than one embedding per utterance in the meeting.
 VOICEPRINT_SAMPLES = 5
@@ -63,7 +78,7 @@ def segment(wav: Path) -> list[Utterance]:
     if audio.ndim > 1:
         audio = audio.mean(axis=1)
 
-    vad = asr.Vad()
+    vad = asr.Vad(min_speech=POST_MEETING_MIN_SPEECH)
     out: list[Utterance] = []
     for i in range(0, len(audio), config.BLOCK_SIZE):
         out += [Utterance(s.start, s.samples) for s in vad.push(audio[i : i + config.BLOCK_SIZE])]

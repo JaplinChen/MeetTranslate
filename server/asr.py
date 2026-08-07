@@ -76,14 +76,28 @@ _HALLUCINATIONS = re.compile(
     r"|訂閱(我們的)?頻道|點選訂閱|歡迎訂閱|請不吝|點贊|打賞|明鏡|點點欄目"
     # Subtitling credits and sign-offs, all of them from the same training data. Seen on seven
     # real interviews, where they arrive in the silence between speakers.
-    r"|ming pao|amara\.org|字幕組|字幕由|本期(影片|節目)|謝謝觀看|感謝觀看"
+    r"|ming pao|amara\.org|字幕(組|小組)|字幕由|本期的?(影片|視頻|節目)|謝謝觀看|感謝觀看"
+    # Whole line only. This room builds subtitling software and says 字幕 in earnest —
+    # 會議紀錄的中文字幕要不要做 is a sentence someone here will say. A line that is nothing but
+    # 中文字幕提供 is a credit.
+    r"|^中文字幕(提供)?$"
     # Broadcast sign-offs, from a factory morning meeting where three of them arrived in a row
     # just before the real agenda started. 本集 and 本節目 only ever introduce a programme; a
     # meeting that says 本集團 or 年終節目 keeps both, since neither matches these.
-    r"|歡迎收看|感謝收看|本集(完|結束|到此)|本節目|(請您|敬請|歡迎)關注"
+    # 本集 followed by an ending, with room for the words between: the line seen in the wild was
+    # 本集就這樣結束了, not 本集完. The lookahead keeps 本集團 out — 本集團的專案結束了 is a
+    # sentence this room says.
+    r"|歡迎收看|感謝收看|本集(?!團).{0,4}(完|結束|到此)|本期(完|播放)|本節目|下部節目"
+    # 收看 is television vocabulary; a meeting says 看 or 收到. The gap allows 謝謝大家的收看,
+    # which is what the recording actually produced.
+    r"|(請您|敬請|歡迎)關注|(謝謝|感謝)[^。！!]{0,4}收看"
+    # The editor's credit, whole-line only. A wildcard after 剪輯 would eat 剪輯機台 and
+    # 影片剪輯外包, and this filter runs on the live path too, where a false positive drops a
+    # subtitle with nothing to show it happened. So: the line is nothing but 剪輯 and a name.
+    r"|^剪輯[·:：]?[一-鿿]{2,3}$"
     # Anchored at the end: a sign-off is the last thing in the line, while 我們下次見面再談 is
-    # someone arranging a meeting.
-    r"|(下次|下期|下集)見[。！!]?$|多多支援|請按贊|支持明鏡",
+    # someone arranging a meeting — and 我們下回見面再談 is the same sentence.
+    r"|(下次|下期|下集|下回)見(再見|囉)?[。！!]?$|多多支援|請按贊|支持明鏡",
     re.IGNORECASE,
 )
 
@@ -121,12 +135,20 @@ def is_noise(text: str) -> bool:
 class Vad:
     """Streaming VAD. Feed capture blocks, take completed utterances out."""
 
-    def __init__(self, model: Path | None = None, buffer_seconds: int = 60):
+    def __init__(self, model: Path | None = None, buffer_seconds: int = 60,
+                 min_speech: float = 0.25):
+        """`min_speech` is a parameter because the two callers want different answers.
+
+        Live capture wants everything: 「好」「對」「收到」 land under a second and belong on the
+        TV. The post-meeting pass wants the opposite — a quarter-second of speech cannot carry a
+        sentence, and Whisper never declines, so it answers those with the subtitle sign-offs it
+        read in training. See POST_MEETING_MIN_SPEECH in postprocess.
+        """
         cfg = sherpa_onnx.VadModelConfig()
         cfg.silero_vad.model = str(model or config.VAD_MODEL)
         cfg.silero_vad.threshold = 0.5
         cfg.silero_vad.min_silence_duration = 0.5  # the pause that ends an utterance
-        cfg.silero_vad.min_speech_duration = 0.25
+        cfg.silero_vad.min_speech_duration = min_speech
         cfg.silero_vad.max_speech_duration = 20.0  # force a cut so one monologue can't stall the pipeline
         cfg.sample_rate = config.SAMPLE_RATE
         self._vad = sherpa_onnx.VoiceActivityDetector(cfg, buffer_size_in_seconds=buffer_seconds)
