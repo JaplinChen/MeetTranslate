@@ -152,6 +152,34 @@ class Store(SpeakerStore):
             self._bump_rev_for_line(line_id)
             self._db.commit()
 
+    def merge_speakers(self, session_id: int, into: str, sources: list[str]) -> None:
+        """Collapse several diariser codes for one person into one speaker.
+
+        The clustering splits a drifting voice into S17/S18/S20; this is the human saying they are
+        the same person. Every line moves to `into`, and the absorbed codes' name and per-session
+        voiceprint go with them — the codes then vanish from the meeting, because the speaker list
+        is derived from which codes still label a line. What the room has already learned is not
+        touched: naming those codes taught it (see remember_speaker), and that lives on the known
+        tables, not here. Merge only tidies this transcript.
+        """
+        sources = [c for c in sources if c and c != into]
+        if not sources:
+            return
+        marks = ",".join("?" * len(sources))
+        with self._lock:
+            self._db.execute(
+                f"UPDATE line SET speaker=? WHERE session_id=? AND speaker IN ({marks})",
+                (into, session_id, *sources))
+            self._db.execute(
+                f"DELETE FROM speaker_name WHERE session_id=? AND code IN ({marks})",
+                (session_id, *sources))
+            self._db.execute(
+                f"DELETE FROM voiceprint WHERE session_id=? AND code IN ({marks})",
+                (session_id, *sources))
+            self._db.execute(
+                "UPDATE session SET lines_rev = lines_rev + 1 WHERE id=?", (session_id,))
+            self._db.commit()
+
     def line(self, line_id: int) -> dict | None:
         with self._lock:
             row = self._db.execute("SELECT * FROM line WHERE id=?", (line_id,)).fetchone()

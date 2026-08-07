@@ -85,6 +85,44 @@
   align-items: center;
 }
 
+.sess-page .sess-merge-check {
+  flex: 0 0 auto;
+  width: 1.05rem;
+  height: 1.05rem;
+  cursor: pointer;
+  accent-color: var(--accent, #d97706);
+}
+
+.sess-page .sess-merge-bar {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.sess-page .sess-merge-go {
+  margin-left: auto;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--accent, #d97706);
+  border-radius: var(--radius-sm);
+  background: var(--accent, #d97706);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 200ms ease;
+}
+
+.sess-page .sess-merge-go:hover {
+  opacity: 0.88;
+}
+
 .sess-page .sess-name-field {
   display: flex;
   flex: 1;
