@@ -30,6 +30,11 @@ const DEFAULT_DISPLAY: DisplaySettings = {
   theme: 'dark',
 };
 
+// Live lines kept in memory. The display shows at most display.lines (capped at 20 in settings);
+// this dwarfs that, leaving room for out-of-order retries and in-place revisions while bounding the
+// buffer over a multi-hour meeting.
+const MAX_LIVE_LINES = 200;
+
 // API_BASE_URL is either '/api' (same origin) or 'http://host:port/api' (Vite dev server).
 function socketUrl(): string {
   const base = API_BASE_URL.replace(/\/api$/, '');
@@ -72,7 +77,7 @@ export function useLiveSocket() {
           return;
         }
         if (msg.type === 'line' || msg.type === 'update') {
-          setLines(prev => mergeLine(prev, msg.line));
+          setLines(prev => mergeLine(prev, msg.line, MAX_LIVE_LINES));
         }
       };
 

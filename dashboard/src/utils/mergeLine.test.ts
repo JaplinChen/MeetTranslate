@@ -44,6 +44,27 @@ test('ties keep the line already on screen first', () => {
   assert.deepEqual(lines.map(l => l.id), [1, 2]);
 });
 
+test('caps the buffer to max, dropping the oldest line off the front', () => {
+  let lines = Array.from({ length: 200 }, (_, i) => line(i + 1, i));
+  lines = mergeLine(lines, line(201, 200), 200);
+  assert.equal(lines.length, 200, 'buffer must stay at the cap');
+  assert.equal(lines[0].id, 2, 'the oldest line is dropped');
+  assert.equal(lines[lines.length - 1].id, 201, 'the newest line is kept');
+});
+
+test('an in-place revision does not grow the buffer past the cap', () => {
+  const lines = Array.from({ length: 200 }, (_, i) => ({ id: i + 1, start: i, refined: false }));
+  const revised = mergeLine(lines, { id: 150, start: 149, refined: true }, 200);
+  assert.equal(revised.length, 200);
+  assert.equal(revised.find(l => l.id === 150)!.refined, true);
+});
+
+test('without a max the buffer is unbounded, preserving existing callers', () => {
+  let lines = [] as ReturnType<typeof line>[];
+  for (let i = 1; i <= 300; i++) lines = mergeLine(lines, line(i, i));
+  assert.equal(lines.length, 300);
+});
+
 test('does not mutate the array it was given', () => {
   const before = [line(1, 0), line(3, 30)];
   const copy = [...before];
