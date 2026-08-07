@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { withRefine } from './sessionSummary.ts';
+import { withRefine, editingLocked } from './sessionSummary.ts';
 
 // A server older than the refine field omits it, and `SessionSummary` says it is always there.
 // Every consumer reads `s.refine.state` on that promise — the session dropdown does it inside a
@@ -36,4 +36,19 @@ test('a server that does not report hasRecording is assumed to have the audio', 
 
 test('an explicit false is kept', () => {
   assert.equal(withRefine({ ...raw, hasRecording: false }).hasRecording, false);
+});
+
+test('editing is locked while a full pass rewrites lines', () => {
+  assert.equal(editingLocked({ state: 'refining', stage: 'rewrite', error: '' }), true);
+  assert.equal(editingLocked({ state: 'refining', stage: 'refine', error: '' }), true);
+});
+
+test('editing stays open while only the summary regenerates', () => {
+  // A summarize-only job reports state "refining" too, but never touches a transcript line.
+  assert.equal(editingLocked({ state: 'refining', stage: 'summarize', error: '' }), false);
+});
+
+test('editing is open when the pass is not running', () => {
+  assert.equal(editingLocked({ state: 'idle', error: '' }), false);
+  assert.equal(editingLocked({ state: 'refined', error: '' }), false);
 });

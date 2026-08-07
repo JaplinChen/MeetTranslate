@@ -9,6 +9,7 @@ import { useToast } from '../components/Toast';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { appApi, type MeetingSummary, type RefineState, type SessionSummary, type TranscriptLine } from '../services/app.api';
 import { API_BASE_URL, NO_SUCH_ENDPOINT } from '../services/http';
+import { editingLocked } from '../services/sessionSummary';
 import './Sessions.css';
 import './Sessions.refine.css';
 import './Sessions.summary.css';
@@ -62,8 +63,9 @@ export function Sessions() {
   const hasRecording = current?.hasRecording ?? true;
   // The pass calls replace_lines, which drops every line and writes new ones with new ids. An edit
   // saved during that window is silently discarded while the screen shows it saved, so editing is
-  // closed rather than left to look like it worked.
-  const locked = refine === 'refining';
+  // closed rather than left to look like it worked. Scoped to the mutating stages: a summarize-only
+  // regeneration reports "refining" too but never touches a line, so it must not lock the transcript.
+  const locked = current ? editingLocked(current.refine) : false;
 
   const loadLines = useCallback((id: number) => {
     appApi
