@@ -116,6 +116,31 @@ def _fake_transcriber(fake: _FakeBatched) -> asr_gpu.Transcriber:
     return tr
 
 
+def test_auto_detect_retry_drops_a_language_the_room_never_configured(tmp: Path) -> None:
+    """A forced decode that collapses is retried with auto-detect — but that retry must obey the
+    same language allow-list the forced pass does. Otherwise Whisper guessing Portuguese on noise
+    reaches the subtitles as valid text and counts toward what the speaker is taken to speak."""
+    tr = asr.Transcriber.__new__(asr.Transcriber)
+    tr._languages = ["zh", "en"]
+
+    forced = "產品 " * 8  # eight identical tokens: a collapse, so the retry fires
+    calls: list[str] = []
+
+    def fake_decode(samples, language):
+        calls.append(language)
+        if language:
+            return forced.strip(), "zh"          # forced pass collapsed
+        return "obrigado pela reunião de hoje", "pt"  # auto-detect: clean, but off-list
+
+    tr._decode = fake_decode
+    assert asr.is_degenerate(forced), "fixture is not degenerate; the retry would not fire"
+
+    text, used = tr.transcribe(np.zeros(16000, dtype=np.float32), "zh")
+    assert calls == ["zh", ""], calls  # forced, then auto-detect
+    assert text == "", f"off-list retry text leaked: {text!r}"
+    assert used == "pt"
+
+
 def test_is_oom_recognises_the_failure_but_not_ordinary_errors(tmp: Path) -> None:
     assert asr_gpu._is_oom(RuntimeError("CUDA failed with error out of memory"))
     assert asr_gpu._is_oom(RuntimeError("CUBLAS_STATUS_ALLOC_FAILED"))

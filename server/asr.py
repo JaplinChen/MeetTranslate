@@ -277,7 +277,12 @@ class Transcriber:
             if not language:
                 return "", detected
             fallback, fallback_lang = self._decode(samples, "")
-            if is_noise(fallback) or is_hallucination(fallback) or is_degenerate(fallback):
+            # Same allow-list the forced pass is held to above. Without it the retry's auto-detect
+            # could return a language the room never configured — Whisper guessing Portuguese or
+            # Tibetan on noise — and it would reach the subtitles as valid text and count toward
+            # what this speaker is taken to speak. The forced path filters that; the retry must too.
+            if (is_noise(fallback) or is_hallucination(fallback) or is_degenerate(fallback)
+                    or not self._allowed(fallback_lang)):
                 return "", fallback_lang
             return _post(fallback, fallback_lang), fallback_lang
 
