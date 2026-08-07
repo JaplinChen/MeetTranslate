@@ -309,6 +309,30 @@ def test_an_empty_retranscription_does_not_wipe_the_existing_transcript(tmp: Pat
         st.close()
 
 
+def test_the_auto_pass_records_no_llm_so_the_card_can_say_so(tmp: Path) -> None:
+    """With no model configured the after-meeting pass cannot refine or summarize, but it must still
+    record a no_llm summary state. The session card reads that as "configure an LLM"; a bare unset
+    state is indistinguishable from a summary nobody has generated yet, which is the exact ambiguity
+    the state exists to remove. The pass used to return early and leave it unset."""
+    import threading
+
+    from . import llm, postmeeting
+
+    st = store_mod.Store(tmp / "nollm.db")
+    try:
+        sid = st.start_session("2026-01-01T09:00:00", "n.wav")
+        st.add_line(sid, 0.0, "S1", "zh", "會議內容", {})
+
+        # LlmConfig defaults to provider=anthropic; an empty key makes chat_for return None.
+        run = postmeeting.followup(st, ["zh"], llm.LlmConfig(), "", sid)
+        run(threading.Event(), lambda _stage: None)
+
+        summary = st.summary(sid)
+        assert summary is not None and summary["status"] == "no_llm", summary
+    finally:
+        st.close()
+
+
 def test_lines_with_rev_pairs_content_and_revision_from_one_read(tmp: Path) -> None:
     """The content and the revision come back consistent, so the summary cannot be built from one
     version of the transcript and stamped with another's revision.

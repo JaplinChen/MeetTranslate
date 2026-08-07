@@ -126,14 +126,18 @@ def followup(store: Store, languages: list[str], llm_cfg: llm.LlmConfig, api_key
     """
     def run(cancel: threading.Event, set_stage: Callable[[str], None]) -> None:
         chat = chat_for(llm_cfg, api_key, max_tokens=4000)
-        if chat is None:
-            log.warning("no LLM configured — transcript stays unrefined and unsummarized")
-            return
 
-        set_stage("refine")
-        if cancel.is_set():
-            raise jobs.Cancelled()
-        _refine_stage(store, session_id, _cancellable(chat, cancel))
+        # Refine needs a model; with none configured it is simply skipped. Summarize still runs,
+        # because _summarize_stage records a "no_llm" state that the session card reads as "configure
+        # an LLM" — returning here instead left the card on the generic "no summary yet", the exact
+        # ambiguity that state exists to remove, until someone clicked generate by hand.
+        if chat is not None:
+            set_stage("refine")
+            if cancel.is_set():
+                raise jobs.Cancelled()
+            _refine_stage(store, session_id, _cancellable(chat, cancel))
+        else:
+            log.warning("no LLM configured — transcript stays unrefined")
 
         set_stage("summarize")
         if cancel.is_set():
