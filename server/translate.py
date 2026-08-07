@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
+from typing import Callable
 
 from .store import Term
 
@@ -136,19 +137,28 @@ def parse_response(raw: str, targets: list[str]) -> Result:
 class Translator:
     """Thin wrapper over the Anthropic SDK. Import is deferred so the module loads without a key."""
 
-    def __init__(self, api_key: str, model: str = "claude-opus-5", max_tokens: int = 1500):
+    def __init__(self, api_key: str, model: str = "claude-opus-5", max_tokens: int = 1500,
+                 on_reject: Callable[[Exception], None] | None = None):
         from anthropic import Anthropic
 
         self._client = Anthropic(api_key=api_key)
         self._model = model
         self._max_tokens = max_tokens
+        # Called with the provider's error when a request is rejected, so the key pool can bench a
+        # rate-limited or invalid key. The exception is always re-raised; this only reports it.
+        self._on_reject = on_reject
 
     def translate(self, line: Line, targets: list[str], context: list[Line] | None = None,
                   previous: Line | None = None, terms: list[Term] | None = None) -> Result:
         prompt = build_prompt(line, targets, context or [], previous, terms or [])
-        message = self._client.messages.create(
-            model=self._model,
-            max_tokens=self._max_tokens,
-            messages=[{"role": "user", "content": prompt}],
-        )
+        try:
+            message = self._client.messages.create(
+                model=self._model,
+                max_tokens=self._max_tokens,
+                messages=[{"role": "user", "content": prompt}],
+            )
+        except Exception as exc:
+            if self._on_reject:
+                self._on_reject(exc)
+            raise
         return parse_response("".join(b.text for b in message.content if b.type == "text"), targets)
