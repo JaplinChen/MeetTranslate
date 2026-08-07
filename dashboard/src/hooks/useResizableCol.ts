@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useRef } from 'react';
 
 /**
  * Drag-resizes individual grid columns of a panel whose row/header templates read `var(--col-<key>)`.
@@ -7,19 +7,30 @@ import { useEffect, useRef } from 'react';
  * of column key -> width. Each resizable column header carries `data-col="<key>"` and a handle that
  * calls `startResize('<key>')`.
  */
+export function restoreColumnWidths(el: HTMLElement, saved: string | null): void {
+  if (!saved) return;
+  try {
+    const widths = JSON.parse(saved) as Record<string, string>;
+    for (const [key, w] of Object.entries(widths)) el.style.setProperty(`--col-${key}`, w);
+  } catch {
+    // Ignore a corrupt entry — fall back to the stylesheet defaults.
+  }
+}
+
 export function useResizableCol(storageKey: string) {
   const ref = useRef<HTMLElement | null>(null);
 
-  useEffect(() => {
-    const saved = localStorage.getItem(storageKey);
-    if (!saved || !ref.current) return;
-    try {
-      const widths = JSON.parse(saved) as Record<string, string>;
-      for (const [key, w] of Object.entries(widths)) ref.current.style.setProperty(`--col-${key}`, w);
-    } catch {
-      // Ignore a corrupt entry — fall back to the stylesheet defaults.
-    }
-  }, [storageKey]);
+  // A callback ref rather than an effect: the table mounts only after a loading skeleton, so an
+  // effect keyed on storageKey runs while the ref is still null and the saved widths are never
+  // applied — the table reverted to defaults on every reload. A callback ref fires when the node
+  // actually attaches, whenever that happens to be.
+  const setRef = useCallback(
+    (el: HTMLElement | null) => {
+      ref.current = el;
+      if (el) restoreColumnWidths(el, localStorage.getItem(storageKey));
+    },
+    [storageKey],
+  );
 
   const startResize = (colKey: string) => (e: React.MouseEvent) => {
     e.preventDefault();
@@ -47,5 +58,5 @@ export function useResizableCol(storageKey: string) {
     window.addEventListener('mouseup', up);
   };
 
-  return { ref, startResize };
+  return { ref: setRef, startResize };
 }
