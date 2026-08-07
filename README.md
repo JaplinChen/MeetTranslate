@@ -150,6 +150,14 @@ macOS 用 `./start.command`。腳本會清掉佔用 port 的舊程序、建立�
 
 環境變數可覆寫：`ANTHROPIC_API_KEY`、`MEETTRANSLATE_INPUT_DEVICE`、`MEETTRANSLATE_LANGUAGES`、`MEETTRANSLATE_WHISPER_MODEL`、`MEETTRANSLATE_GPU_INDEX`。
 
+### 隱私模式：全程不出機
+
+客戶訪談常有「資料不能上雲」的硬需求。在設定→LLM 把供應商的金鑰留空、但為 Ollama 配一個本地 model，即時翻譯與會後摘要／校正就自動改走本機 Ollama——逐字稿不離開這台機器。
+
+這是自動的：選定的雲端供應商缺金鑰時，只要設定裡有配 Ollama model 就退到本地，沒配才維持「只轉錄不翻譯／不摘要」。用的是你為 Ollama 配的 model，不是雲端的 model 名（Ollama 拉不到 `claude-opus-5`）。不主動探測 Ollama 是否啟動——daemon 沒開就照一般供應商連不上的方式記為失敗。
+
+即時翻譯走本地 model 會比雲端慢，字幕會延遲而非掉字；不想要就別為 Ollama 配 model。
+
 ### 兩張顯卡：讓辨識與本地 LLM 各佔一張
 
 `MEETTRANSLATE_GPU_INDEX`（預設 `0`）指定辨識器用哪張 CUDA 卡。單張卡不必理會。
