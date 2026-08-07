@@ -31,7 +31,9 @@ export async function request<T>(endpoint: string, options: RequestInit = {}): P
     // On a non-JSON body fall through to `HTTP <status>` rather than statusText: the status code is
     // what the toast connection-lost de-dup matches on, and statusText is empty over HTTP/2 anyway.
     const error = await response.json().catch(() => ({}));
-    const err = new Error(error.message || `HTTP ${response.status}`) as Error & { status?: number };
+    // FastAPI puts the message on `detail` (HTTPException); `message` is only for anything that isn't
+    // FastAPI. Reading `detail` first is what lets a toast show the real reason instead of "HTTP 400".
+    const err = new Error(error.detail || error.message || `HTTP ${response.status}`) as Error & { status?: number };
     err.status = response.status;
     throw err;
   }

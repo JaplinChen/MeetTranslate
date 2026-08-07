@@ -15,3 +15,21 @@ test('the service layer imports under plain node', () => {
 test('with no VITE_API_URL set, the API is same-origin /api', () => {
   assert.equal(API_BASE_URL, '/api');
 });
+
+test('a failed request surfaces the FastAPI detail, not a generic HTTP status', async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ detail: 'lines must be between 1 and 20' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  try {
+    await assert.rejects(request('/display'), (err: Error & { status?: number }) => {
+      assert.equal(err.message, 'lines must be between 1 and 20');
+      assert.equal(err.status, 400);
+      return true;
+    });
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
