@@ -150,6 +150,14 @@ macOS 用 `./start.command`。腳本會清掉佔用 port 的舊程序、建立�
 
 環境變數可覆寫：`ANTHROPIC_API_KEY`、`MEETTRANSLATE_INPUT_DEVICE`、`MEETTRANSLATE_LANGUAGES`、`MEETTRANSLATE_WHISPER_MODEL`、`MEETTRANSLATE_GPU_INDEX`。
 
+### 隱私模式：全程不出機
+
+客戶訪談常有「資料不能上雲」的硬需求。在設定→LLM 把供應商的金鑰留空、但為 Ollama 配一個本地 model，即時翻譯與會後摘要／校正就自動改走本機 Ollama——逐字稿不離開這台機器。
+
+這是自動的：選定的雲端供應商缺金鑰時，只要設定裡有配 Ollama model 就退到本地，沒配才維持「只轉錄不翻譯／不摘要」。用的是你為 Ollama 配的 model，不是雲端的 model 名（Ollama 拉不到 `claude-opus-5`）。不主動探測 Ollama 是否啟動——daemon 沒開就照一般供應商連不上的方式記為失敗。
+
+即時翻譯走本地 model 會比雲端慢，字幕會延遲而非掉字；不想要就別為 Ollama 配 model。
+
 ### 兩張顯卡：讓辨識與本地 LLM 各佔一張
 
 `MEETTRANSLATE_GPU_INDEX`（預設 `0`）指定辨識器用哪張 CUDA 卡。單張卡不必理會。
@@ -218,6 +226,22 @@ ffmpeg -i meeting.mp4 -ac 1 -ar 16000 -c:a pcm_s16le recordings/test01.wav
 
 基線與語料都不進版控——它們衍生自實際會議內容。這代表新環境要先跑過一次會議、或放幾份逐字稿進 `transcripts/final/`，這個檢查才有東西可比。
 
+### 量測辨識、語者、幻覺三項指標
+
+`regress` 只看修正層；要量整條管線的品質，拿一份人工標好真實語者的參考稿，和管線產出的假設稿比對：
+
+```bash
+.venv\Scripts\python.exe -m scripts.eval_harness --ref transcripts/eval/會議.ref.txt --hyp transcripts/eval/會議.hyp.txt --save
+```
+
+兩份都是標準逐字稿格式（`[分:秒] S1 (語言) 內容`）。參考稿每行標真實語者，假設稿放 `bench_wav` 或匯出的結果。輸出三項：
+
+- **準確率**：逐語言 CER（中文）/ WER（拉丁語系）。文字依「被解碼成的語言」分桶，語言判錯會誠實反映成該桶準確率下降。
+- **語者歸屬**：參考與假設的語者標籤最佳對應後（S1 這邊不等於 S1 那邊），錯歸的語音佔比即 error，以字數加權。`hyp_speakers < ref_speakers` 直接印 `COLLAPSE`——就是共用麥克風把所有人歸成一位的失效。
+- **幻覺率**：片語過濾器標記的語音佔比，分語言。乾淨跑接近 0；為壓越南語幻覺去動門檻若誤傷過濾器，這裡會升。
+
+和 `regress` 一樣對基線比較、數字變差以 exit code 1 回報，`--save` 更新基線。`transcripts/eval/` 與基線不進版控。`--selfcheck` 跑內建 asserts。
+
 前端另外開一個 dev server（會透過 `VITE_API_URL` 連到後端）：
 
 ```bash
@@ -253,7 +277,7 @@ CUDA runtime 來自 pip wheel，不需要另外裝 CUDA Toolkit。兩個踩過�
 
 ## 已知限制
 
-- **越南語的幻覺率明顯高於中文**。large-v3 的越南語訓練資料多來自 YouTube 字幕，遇到聽不清的片段會吐出「請訂閱頻道」這類台詞。七場訪談實測佔越南語句數 14.8%（中文 0.2%、英語 0.1%），已用片語過濾器擋掉，但這代表越南語段落的可信度本來就較低
+- **越南語的幻覺率明顯高於中文**。large-v3 的越南語訓練資料多來自 YouTube 字幕，遇到聽不清的片段會吐出「請訂閱頻道」這類台詞。七場訪談實測佔越南語句數 14.8%（中文 0.2%、英語 0.1%）。兩層防線：已知的字幕台詞由片語過濾器擋掉；GPU 路徑另外過濾「解碼器自評近乎確定是靜音卻仍吐出文字」的片段（`no_speech_prob ≥ 0.85`）——這類幻覺常帶高信心分數，會滑過 faster-whisper 內建耦合了 logprob 的 no_speech 門檻。門檻可用 `scripts.eval_harness` 對標註語料量測後調整。即便如此，越南語段落的可信度本來就較低
 - **辨識率仍無 CER 數字**。七場訪談已產出逐字稿，但沒有人工聽打的參考稿可比對，只能定性判斷「可讀」
 - 拼音修正只對中文有效。越南語的專有名詞沒有對應機制
 - 詞彙表放常見雙字詞有風險。`採購` 會把「才夠」改掉，`料號` 會把「料耗」改掉——同音本身就是歧義。適合放的是公司、產品、模組名稱這類獨特詞

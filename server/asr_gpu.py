@@ -59,6 +59,20 @@ BATCH_GAP_SECONDS = 0.2
 # is 2-4% wall clock: at batch 32 the GPU is not compute-bound, so the wider search rides along.
 BEAM_SIZE = 5
 
+# A segment the model itself scores as very likely silence, yet returned text for, is Whisper
+# hallucinating in a gap between speakers — the dominant Vietnamese failure (its YouTube-subtitle
+# training makes it fill unclear audio with channel sign-offs). That boilerplate is often confident,
+# a high avg_logprob, so it slips past faster-whisper's own no_speech_threshold, which only suppresses
+# when the logprob is ALSO low. Filtering on no_speech_prob alone catches the confident case the
+# coupled check misses. Set high so it only ever drops near-certain silence — real speech, even weak
+# Vietnamese, scores far below this. Tune against real audio with `scripts.eval_harness`.
+NO_SPEECH_MAX = 0.85
+
+
+def _spoken(seg) -> bool:
+    """False for a segment the decoder is near-certain is silence — a hallucinated line in a gap."""
+    return getattr(seg, "no_speech_prob", 0.0) < NO_SPEECH_MAX
+
 
 def _add_cuda_dlls() -> None:
     """Put the pip-installed CUDA runtime on PATH before CTranslate2 loads.
@@ -150,6 +164,10 @@ class Transcriber:
         # still lands on the utterance it came from.
         texts = ["" for _ in clips]
         for seg in segments:
+            # A confident-silence segment is Whisper filling a gap between speakers; dropping it here
+            # keeps the hallucinated text out of the utterance it would otherwise be assigned to.
+            if not _spoken(seg):
+                continue
             middle = (seg.start + seg.end) / 2
             for i, span in enumerate(spans):
                 if span["start"] <= middle <= span["end"]:
@@ -217,7 +235,7 @@ class Transcriber:
             hotwords=self._hotwords or None,
             condition_on_previous_text=False,  # one VAD utterance at a time carries no history
         )
-        text = "".join(s.text for s in segments).strip()
+        text = "".join(s.text for s in segments if _spoken(s)).strip()
         detected = (info.language or language or "").strip()
 
         # Same three refusals as the sherpa path, including the collapse check: a first-pass

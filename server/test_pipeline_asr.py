@@ -16,6 +16,26 @@ def test_language_whitelist_rejects_what_was_never_configured() -> None:
     assert tr._allowed("") and asr.Transcriber()._allowed("pt")
 
 
+class _Seg:
+    def __init__(self, text: str, no_speech_prob: float):
+        self.text, self.no_speech_prob, self.start, self.end = text, no_speech_prob, 0.0, 1.0
+
+
+def test_confident_silence_segments_are_dropped() -> None:
+    """Whisper fills gaps between speakers with confident boilerplate — the dominant Vietnamese
+    failure. A high no_speech_prob is the signal faster-whisper's own coupled no_speech_threshold
+    misses when the avg_logprob is high, so we filter on it directly."""
+    assert asr_gpu._spoken(_Seg("real speech", 0.10))
+    assert asr_gpu._spoken(_Seg("borderline", asr_gpu.NO_SPEECH_MAX - 0.01))
+    assert not asr_gpu._spoken(_Seg("đăng ký kênh", 0.95))
+
+    # A segment carrying no such score (a fake in another test, an older path) is never dropped by
+    # accident: absent the signal, the text is kept and the phrase filter still guards it downstream.
+    class _Bare:
+        text = "x"
+    assert asr_gpu._spoken(_Bare())
+
+
 def _term(source: str, mode: str = "hint") -> store.Term:
     return store.Term(id=0, source=source, lang="", mode=mode, category="", targets={})
 

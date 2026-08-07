@@ -8,3 +8,4 @@ opencc-python-reimplemented==0.1.7
 anthropic==0.120.2
 soxr==1.1.0
 pypinyin==0.53.0
+python-docx==1.2.0

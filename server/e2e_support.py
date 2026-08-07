@@ -98,6 +98,9 @@ class StubPostprocess:
     def to_markdown(self, store, session_id):
         return postprocess_mod.to_markdown(store, session_id)
 
+    def to_docx(self, store, session_id):
+        return postprocess_mod.to_docx(store, session_id)
+
 
 class StubTranslator:
     """Echoes a deterministic translation, and revises the previous line on the third call."""

@@ -54,7 +54,11 @@ def chat_for(llm_cfg: llm.LlmConfig, api_key: str, max_tokens: int,
                                   num_ctx=num_ctx, num_predict=num_predict,
                                   temperature=temperature, repeat_penalty=repeat_penalty)
     if not api_key:
-        return None
+        # Privacy mode: the chosen cloud provider has no key, but a local Ollama model is configured,
+        # so the summary and refine run on this machine instead of not at all. Configuring the Ollama
+        # model is the opt-in — a client interview that must not reach a cloud can leave the key blank
+        # and still get a summary, and one with no local model set falls through to no_llm as before.
+        return _ollama_fallback(llm_cfg, num_ctx, num_predict, temperature, repeat_penalty)
     if provider == "anthropic":
         return refine.anthropic_chat(api_key, llm_cfg.model, max_tokens=max_tokens)
     if provider == "gemini":
@@ -63,6 +67,26 @@ def chat_for(llm_cfg: llm.LlmConfig, api_key: str, max_tokens: int,
         return refine.azure_chat(api_key, endpoint, max_tokens=max_tokens)
     # openai, groq, mistral, openrouter, nvidia_nim — all speak the OpenAI REST shape.
     return refine.openai_chat(api_key, llm_cfg.model, endpoint, max_tokens=max_tokens)
+
+
+def _ollama_fallback(llm_cfg: llm.LlmConfig, num_ctx: int, num_predict: int | None,
+                     temperature: float, repeat_penalty: float | None) -> Callable[[str], str] | None:
+    """The local Ollama chat to use when the chosen provider has no key, or None if none is set up.
+
+    Reads the Ollama the user already configured on the settings page (its own model and endpoint),
+    never the cloud provider's model name — `claude-opus-5` is not something Ollama can pull. No
+    liveness probe: if the daemon is down the stage fails and says so, the same as any other provider
+    that cannot be reached, and a probe here would just move that failure a few milliseconds earlier.
+    """
+    ollama = llm_cfg.providers.get("ollama", {})
+    model = ollama.get("model", "")
+    if not model:
+        return None
+    log.info("no key for %s; falling back to local Ollama model %s (privacy mode)",
+             llm_cfg.provider, model)
+    return refine.ollama_chat(model, ollama.get("endpoint") or llm.DEFAULT_ENDPOINTS["ollama"],
+                              num_ctx=num_ctx, num_predict=num_predict,
+                              temperature=temperature, repeat_penalty=repeat_penalty)
 
 
 def _cancellable(chat: Callable[[str], str], cancel: threading.Event) -> Callable[[str], str]:

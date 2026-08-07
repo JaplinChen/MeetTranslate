@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 import soundfile as sf
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import PlainTextResponse
 
 from . import asr, asr_gpu, config, correct, ingest, jobs, main, translate
@@ -64,6 +64,27 @@ def put_line(session_id: int, line_id: int, body: dict) -> dict:
     main.store.update_line(line_id, source, before["translations"])
     for wrong, right in correct.diff_terms(before["source"], source):
         main.store.add_correction(wrong, right, before["lang"])
+    return {"lines": main.store.lines(session_id), "speakers": main.store.speaker_names(session_id)}
+
+
+@router.put("/api/sessions/{session_id}/lines/{line_id}/speaker")
+def put_line_speaker(session_id: int, line_id: int, body: dict) -> dict:
+    """Reassign one line to a different speaker.
+
+    The clustering flattens a shared-mic room into one voice more often than not, and language is
+    picked per speaker — so a wrong attribution also decodes the line in the wrong language. This is
+    the human splitting the collapsed speaker back apart. The code can be one the meeting already
+    has or a fresh S-code the caller minted; either is just a label until someone names it.
+    """
+    speaker = str(body.get("speaker", "")).strip()
+    if not speaker:
+        raise HTTPException(400, "speaker required")
+
+    before = next((l for l in main.store.lines(session_id) if l["id"] == line_id), None)
+    if before is None:
+        raise HTTPException(404, "no such line in this session")
+
+    main.store.set_line_speaker(line_id, speaker)
     return {"lines": main.store.lines(session_id), "speakers": main.store.speaker_names(session_id)}
 
 
@@ -342,3 +363,12 @@ def session_markdown(session_id: int) -> PlainTextResponse:
         raise HTTPException(404, "no such session")
     return PlainTextResponse(main.postprocess.to_markdown(main.store, session_id),
                              media_type="text/markdown")
+
+
+@router.get("/api/sessions/{session_id}/docx")
+def session_docx(session_id: int) -> Response:
+    """The same export as markdown, as a Word document — what an enterprise meeting hands over."""
+    if not main.store.session(session_id):
+        raise HTTPException(404, "no such session")
+    return Response(main.postprocess.to_docx(main.store, session_id),
+                    media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")

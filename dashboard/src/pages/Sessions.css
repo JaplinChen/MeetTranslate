@@ -165,10 +165,36 @@
   font-size: 0.82rem;
 }
 
+/* A native <select> dressed down to read as the plain speaker label until you touch it, so the
+   transcript stays calm but every line is one click from being reassigned to the right voice. */
 .sess-page .sess-who {
   font-weight: 600;
   font-size: 0.85rem;
   overflow-wrap: anywhere;
+  appearance: none;
+  max-width: 100%;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.sess-page .sess-who:hover:not(:disabled) {
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+.sess-page .sess-who:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.sess-page .sess-who:disabled {
+  cursor: default;
+  opacity: 0.7;
 }
 
 .sess-page .sess-body p {

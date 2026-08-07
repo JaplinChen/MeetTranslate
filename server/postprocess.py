@@ -474,3 +474,76 @@ def to_markdown(store: Store, session_id: int) -> str:
         out.append("")
 
     return "\n".join(out) + "\n"
+
+
+def to_docx(store: Store, session_id: int) -> bytes:
+    """The same export as `to_markdown`, as a Word document.
+
+    Enterprise meetings hand over a .docx, not a code fence. It carries the same three blocks in the
+    same order — summary, speakers, transcript — and the same honesty: a summary older than the
+    latest transcript edit is included but flagged, because a file is trusted precisely for being a
+    file. python-docx is imported here, not at module load, so the recognition path never pays for a
+    dependency only the export uses.
+    """
+    from docx import Document  # noqa: PLC0415 — export-only, kept off the hot import path
+
+    lines = store.lines(session_id)
+    names = store.speaker_names(session_id)
+    doc = Document()
+    doc.add_heading("會議紀錄", level=0)
+    if not lines:
+        doc.add_paragraph("（無內容）")
+        return _docx_bytes(doc)
+
+    row = store.summary(session_id)
+    per_language = None
+    if row and row["status"] != "failed":
+        try:
+            per_language = json.loads(row["json"])
+        except ValueError:
+            per_language = None
+    if per_language:
+        session = store.session(session_id)
+        stale = bool(session) and int(session["lines_rev"]) != int(row["lines_rev"])
+        doc.add_heading("會議摘要", level=1)
+        if stale:
+            doc.add_paragraph("⚠ 摘要生成後逐字稿曾被修改，內容可能與下方逐字稿不一致。")
+        for lang, s in per_language.items():
+            doc.add_heading(f"{s.get('title') or lang}（{lang}）", level=2)
+            if s.get("summary"):
+                doc.add_paragraph(s["summary"])
+            if s.get("decisions"):
+                doc.add_paragraph("決議").bold = True
+                for d in s["decisions"]:
+                    doc.add_paragraph(str(d), style="List Bullet")
+            if s.get("actions"):
+                doc.add_paragraph("行動項目").bold = True
+                for a in s["actions"]:
+                    who = names.get(a.get("speaker", ""), a.get("speaker")) or "（未指定）"
+                    doc.add_paragraph(f"{who}：{a.get('text', '')}", style="List Bullet")
+
+    speakers = sorted({l["speaker"] for l in lines},
+                      key=lambda s: (0, int(s[1:])) if s[1:].isdigit() else (1, s))
+    doc.add_heading("發言者", level=1)
+    for code in speakers:
+        doc.add_paragraph(names.get(code, code) + ("" if code in names else "（未命名）"),
+                          style="List Bullet")
+
+    doc.add_heading("逐字稿", level=1)
+    for line in lines:
+        stamp = f"{int(line['start']) // 60}:{int(line['start']) % 60:02d}"
+        who = names.get(line["speaker"], line["speaker"])
+        head = doc.add_paragraph()
+        head.add_run(f"[{stamp}] {who}").bold = True
+        doc.add_paragraph(line["source"])
+        for lang, text in line["translations"].items():
+            doc.add_paragraph(f"{lang}｜{text}")
+
+    return _docx_bytes(doc)
+
+
+def _docx_bytes(doc) -> bytes:
+    import io
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()

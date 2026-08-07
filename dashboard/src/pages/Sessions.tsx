@@ -18,6 +18,11 @@ import './Sessions.summary.css';
 // about noticing it finished rather than tracking progress, and it stops the moment it has.
 const REFINE_POLL_MS = 5000;
 
+// Only ping the OS for a pass that ran long enough that the user has likely walked away — a quick
+// meeting refine that finishes while they glanced at another tab does not deserve a notification.
+// Reprocessing 9.5 hours of interviews takes an hour and a half; that is the case this is for.
+const LONG_FLOW_MS = 3 * 60 * 1000;
+
 // One meeting is an import control, up to 35 speaker fields and ~950 transcript rows. Stacked they
 // are one column metres long, where naming a speaker means scrolling past the transcript to find
 // the field and scrolling back to see whether it took. Each is its own view; the session picker
@@ -153,17 +158,34 @@ export function Sessions() {
   const summaryGenerating = summary?.state === 'generating';
   const jobRunning = refine === 'refining' || summaryGenerating;
   const wasRunning = useRef(false);
+  const runStartedAt = useRef<number | null>(null);
   useEffect(() => {
     if (!jobRunning) {
       if (wasRunning.current && selected !== null) {
         wasRunning.current = false;
         toast.success(t('sessions.refineDone'));
+        // One OS notification for a long pass the user walked away from — the single out-of-app
+        // channel, deliberately not Teams/Slack/email. Gated on both a long run and a hidden tab so
+        // a quick refine never pings, and silent if they never granted permission.
+        const ranLong = runStartedAt.current !== null && Date.now() - runStartedAt.current > LONG_FLOW_MS;
+        runStartedAt.current = null;
+        if (ranLong && document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+          new Notification(t('sessions.notifyTitle'), { body: t('sessions.refineDone') });
+        }
         loadLines(selected);
         // Both a refine pass and a summarize job end by writing the summary; either way the card is
         // now out of date, and the summary itself must be re-fetched, not only the session list.
         loadSummary(selected);
       }
       return;
+    }
+    if (!wasRunning.current) {
+      // The pass just started. Stamp the start for the duration gate, and ask for notification
+      // permission now — by the time an hour-long reprocess finishes the answer is long settled.
+      runStartedAt.current = Date.now();
+      if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission().catch(() => {});
+      }
     }
     wasRunning.current = true;
     const timer = window.setInterval(() => {
@@ -217,6 +239,22 @@ export function Sessions() {
     }
     // `fail` is recreated each render by design (it closes over the toast); depending on it would
     // defeat the memoisation these callbacks exist to enable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected]);
+
+  // Move one line to another speaker. The shared-mic clustering collapses a room into one voice
+  // more often than not (see the README's known limits), and language is chosen per speaker — so a
+  // wrong attribution also decoded the line in the wrong language. This is the human putting the
+  // split back by hand. `names` follows because a fresh S-code has no name yet and must show as one.
+  const reassignLine = useCallback(async (lineId: number, speaker: string) => {
+    if (selected === null) return;
+    try {
+      const r = await appApi.setLineSpeaker(selected, lineId, speaker);
+      setLines(r.lines);
+      setNames(r.speakers);
+    } catch (err) {
+      fail(err);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected]);
 
@@ -336,6 +374,15 @@ export function Sessions() {
   }, [lines, names, query]);
 
   const codes = [...new Set(lines.map(l => l.speaker))];
+  // Stable identities so a play/edit click doesn't rebuild 943 memoised rows. Options are every
+  // speaker the meeting has; the new code is the next free S-number, for splitting the collapse.
+  const speakerOptions = useMemo(
+    () => [...new Set(lines.map(l => l.speaker))].sort().map(c => ({ code: c, label: names[c] || c })),
+    [lines, names]);
+  const newSpeakerCode = useMemo(() => {
+    const nums = lines.map(l => Number(/^S(\d+)$/.exec(l.speaker)?.[1])).filter(n => !Number.isNaN(n));
+    return `S${(nums.length ? Math.max(...nums) : 0) + 1}`;
+  }, [lines]);
   const langs = useMemo(() => [...new Set(lines.flatMap(l => Object.keys(l.translations)))], [lines]);
   const failed = lines.filter(l => l.status !== 'ok');
   // 'generating' is visible two ways — the summary endpoint says so, or the session's refine job
@@ -502,6 +549,15 @@ export function Sessions() {
               <Download size={13} />
               {t('sessions.export')}
             </a>
+            <a
+              className="sess-export"
+              href={`${API_BASE_URL}/sessions/${selected}/docx`}
+              download={`${t('sessions.title')}-${(current?.started ?? '').slice(0, 10)}.docx`}
+              title={t('sessions.exportDocxHint')}
+            >
+              <FileText size={13} />
+              {t('sessions.exportDocx')}
+            </a>
             <button
               type="button"
               className="sess-reprocess"
@@ -538,7 +594,8 @@ export function Sessions() {
               <TranscriptRow
                 key={line.id}
                 line={line}
-                speaker={names[line.speaker] || line.speaker}
+                speakerOptions={speakerOptions}
+                newSpeakerCode={newSpeakerCode}
                 langs={langs}
                 locked={locked}
                 draftText={editing?.id === line.id ? editing.text : null}
@@ -550,6 +607,7 @@ export function Sessions() {
                 onSave={saveLine}
                 onRerun={rerunLine}
                 onPlay={playLine}
+                onReassign={reassignLine}
               />
             ))}
             {query.trim() && shown.length === 0 && (

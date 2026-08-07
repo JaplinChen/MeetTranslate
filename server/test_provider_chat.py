@@ -84,6 +84,31 @@ def test_chat_for_returns_none_without_key_for_cloud_provider():
     assert postmeeting.chat_for(cfg, "", max_tokens=50) is None
 
 
+def test_chat_for_falls_back_to_local_ollama_without_key():
+    """Privacy mode: cloud provider chosen, no key, but a local Ollama model is configured — the
+    stage runs on this machine instead of returning no_llm."""
+    cfg = llm.LlmConfig(provider="anthropic", model="claude-opus-5", endpoint="", api_key="",
+                        providers={"ollama": {"model": "qwen3:14b", "endpoint": ""}})
+    reply = {"response": "本地摘要"}
+    calls, restore = _capture(reply)
+    try:
+        chat = postmeeting.chat_for(cfg, "", max_tokens=50)
+        assert chat is not None, "a configured local model should carry the stage"
+        out = chat("summarize")
+    finally:
+        restore()
+    assert out == "本地摘要"
+    # Routed to the local daemon with the Ollama model, never the cloud model name.
+    assert calls[0].full_url == "http://localhost:11434/api/generate"
+    assert json.loads(calls[0].data)["model"] == "qwen3:14b"
+
+
+def test_chat_for_no_fallback_when_no_local_model_configured():
+    """No Ollama model set up means no fallback — still no_llm, not a broken call to a blank model."""
+    cfg = llm.LlmConfig(provider="anthropic", model="claude-opus-5", endpoint="", api_key="")
+    assert postmeeting.chat_for(cfg, "", max_tokens=50) is None
+
+
 def test_translator_uses_injected_chat_callable():
     seen: list[str] = []
 
