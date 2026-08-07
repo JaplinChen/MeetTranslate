@@ -69,6 +69,7 @@
     "refineCancelled": "Đã dừng tinh chỉnh vì có cuộc họp",
     "refiningHint": "Đang chạy lại toàn bộ bản ghi âm với độ chính xác cao hơn. Quá trình này thay thế mọi dòng, nên không thể sửa cho đến khi xong.",
     "refineDone": "Tinh chỉnh xong — bản ghi đã được cập nhật",
+    "notifyTitle": "MeetTranslate",
     "editLocked": "Không sửa được khi đang tinh chỉnh",
     "lineFailedAsr": "Không nhận dạng được",
     "lineFailedTranslate": "Không dịch được",

@@ -69,6 +69,7 @@
     "refineCancelled": "Refining stopped for a meeting",
     "refiningHint": "A more accurate pass is running over the whole recording. Editing is locked until it finishes, because it replaces every line.",
     "refineDone": "Refining finished — the transcript has been updated",
+    "notifyTitle": "MeetTranslate",
     "editLocked": "Locked while refining",
     "lineFailedAsr": "Not recognised",
     "lineFailedTranslate": "Not translated",
