@@ -83,7 +83,10 @@ def _refine_stage(store: Store, session_id: int, chat: Callable[[str], str]) -> 
     corrected = refine.Refiner(chat).refine(lines, terms=store.glossary(), coverage=coverage)
     changed = 0
     for row, text in zip(rows, corrected):
-        if text != row["source"]:
+        # A refined line is never rewritten twice (update_line's own promise): a human correction is
+        # ground truth this pass must not clobber, and an earlier pass's own output stays put. Refined
+        # lines still go to the model above as read-only context, they just are not written back.
+        if text != row["source"] and not row["refined"]:
             # update_line, not replace_line: this is the one writer entitled to mark `refined`,
             # and it must not touch status — a line the decoder failed on stays visibly failed.
             store.update_line(row["id"], text, {})
