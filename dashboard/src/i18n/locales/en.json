@@ -79,6 +79,8 @@
     "clipLabel": "Play a sample of {{code}}",
     "playLine": "Play this line",
     "stopLine": "Stop",
+    "reassignSpeaker": "Reassign this line to another speaker",
+    "newSpeaker": "＋ New speaker ({{code}})",
     "playFailed": "No audio recorded for this line.",
     "noRecording": "The recording for this meeting is no longer on disk, so nothing here can be played back.",
     "reprocess": "Reprocess",

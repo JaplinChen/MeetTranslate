@@ -64,6 +64,30 @@ def test_known_voice_can_be_heard_and_renamed(client: TestClient) -> None:
     assert client.delete("/api/speakers/known/Ana%20Lee").json() == []
 
 
+def test_a_line_can_be_reassigned_to_another_speaker(client: TestClient) -> None:
+    """The shared-mic collapse puts every line on one speaker; the human splits them back apart.
+
+    Reassigning relabels the line and leaves the voiceprint alone — the centroid the clustering
+    built from a collapsed speaker is the thing that was wrong.
+    """
+    wav = config.RECORDINGS_DIR / "split.wav"
+    wav.parent.mkdir(parents=True, exist_ok=True)
+    import soundfile as sf
+    sf.write(str(wav), np.zeros(config.SAMPLE_RATE * 10, dtype="float32"), config.SAMPLE_RATE)
+
+    session = main.store.start_session("now", str(wav))
+    a = main.store.add_line(session, 1.0, "S1", "en", "mine", {})
+    b = main.store.add_line(session, 5.0, "S1", "en", "actually yours", {})
+
+    moved = client.put(f"/api/sessions/{session}/lines/{b}/speaker", json={"speaker": "S2"})
+    assert moved.status_code == 200, moved.text
+    by_id = {l["id"]: l for l in moved.json()["lines"]}
+    assert by_id[a]["speaker"] == "S1" and by_id[b]["speaker"] == "S2", by_id
+
+    assert client.put(f"/api/sessions/{session}/lines/{b}/speaker", json={"speaker": ""}).status_code == 400
+    assert client.put(f"/api/sessions/{session}/lines/99999/speaker", json={"speaker": "S2"}).status_code == 404
+
+
 def test_importing_a_recording_makes_it_a_session(client: TestClient) -> None:
     """An uploaded file has to land as an ordinary session, or nothing can be learned from it."""
     if shutil.which("ffmpeg") is None:

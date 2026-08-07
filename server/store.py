@@ -138,6 +138,20 @@ class Store(SpeakerStore):
             self._bump_rev_for_line(line_id)
             self._db.commit()
 
+    def set_line_speaker(self, line_id: int, speaker: str) -> None:
+        """Reassign one line to a different speaker.
+
+        The room's shared mic collapses everyone into one voice often enough that the automatic
+        clustering cannot be trusted; this is the human putting the attribution back by hand. It
+        only relabels — the voiceprint is not recomputed, because the centroid the clustering
+        derived from a collapsed speaker is exactly what was wrong. Naming the speaker afterwards
+        is what attaches a fresh voiceprint.
+        """
+        with self._lock:
+            self._db.execute("UPDATE line SET speaker=? WHERE id=?", (speaker, line_id))
+            self._bump_rev_for_line(line_id)
+            self._db.commit()
+
     def line(self, line_id: int) -> dict | None:
         with self._lock:
             row = self._db.execute("SELECT * FROM line WHERE id=?", (line_id,)).fetchone()

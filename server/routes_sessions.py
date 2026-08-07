@@ -67,6 +67,27 @@ def put_line(session_id: int, line_id: int, body: dict) -> dict:
     return {"lines": main.store.lines(session_id), "speakers": main.store.speaker_names(session_id)}
 
 
+@router.put("/api/sessions/{session_id}/lines/{line_id}/speaker")
+def put_line_speaker(session_id: int, line_id: int, body: dict) -> dict:
+    """Reassign one line to a different speaker.
+
+    The clustering flattens a shared-mic room into one voice more often than not, and language is
+    picked per speaker — so a wrong attribution also decodes the line in the wrong language. This is
+    the human splitting the collapsed speaker back apart. The code can be one the meeting already
+    has or a fresh S-code the caller minted; either is just a label until someone names it.
+    """
+    speaker = str(body.get("speaker", "")).strip()
+    if not speaker:
+        raise HTTPException(400, "speaker required")
+
+    before = next((l for l in main.store.lines(session_id) if l["id"] == line_id), None)
+    if before is None:
+        raise HTTPException(404, "no such line in this session")
+
+    main.store.set_line_speaker(line_id, speaker)
+    return {"lines": main.store.lines(session_id), "speakers": main.store.speaker_names(session_id)}
+
+
 @router.get("/api/corrections")
 def get_corrections() -> list[dict]:
     return [{"wrong": w, "right": r} for w, r in main.store.corrections().items()]

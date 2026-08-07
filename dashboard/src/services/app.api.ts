@@ -193,6 +193,11 @@ export const appApi = {
   setLineSource: (id: number, lineId: number, source: string) =>
     request<{ lines: TranscriptLine[]; speakers: Record<string, string> }>(
       `/sessions/${id}/lines/${lineId}`, { method: 'PUT', body: JSON.stringify({ source }) }),
+  // Reassign one line to another speaker: the human splitting the shared-mic collapse back apart.
+  // The code may be one the meeting already has or a fresh S-code the caller minted.
+  setLineSpeaker: (id: number, lineId: number, speaker: string) =>
+    request<{ lines: TranscriptLine[]; speakers: Record<string, string> }>(
+      `/sessions/${id}/lines/${lineId}/speaker`, { method: 'PUT', body: JSON.stringify({ speaker }) }),
   // Cross-meeting question. The answer carries citations the server verified against stored lines,
   // so a click can jump to the exact utterance rather than a place the model claimed one was.
   ask: (question: string) =>

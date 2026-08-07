@@ -11,7 +11,8 @@ const clock = (seconds: number) => {
 
 interface Props {
   line: TranscriptLine;
-  speaker: string; // resolved display name, or the S1/S2 code when nobody has named the voice
+  speakerOptions: { code: string; label: string }[]; // every speaker this meeting has, for reassigning; label is the resolved name or the S-code
+  newSpeakerCode: string; // next free S-code, for splitting the shared-mic collapse into a new voice
   langs: string[]; // every target language in this transcript, so rows render them in one order
   locked: boolean; // a refine pass is running; see the comment on `draftText`
   // Per row, not per transcript: a row that is handed "which line is playing" re-renders whenever
@@ -25,9 +26,10 @@ interface Props {
   onSave: (lineId: number, source: string, previous: string) => void;
   onRerun: (lineId: number) => void;
   onPlay: (lineId: number) => void;
+  onReassign: (lineId: number, speaker: string) => void;
 }
 
-function Row({ line, speaker, langs, locked, draftText, isRerunning, rerunBlocked, isPlaying, playable, onDraft, onSave, onRerun, onPlay }: Props) {
+function Row({ line, speakerOptions, newSpeakerCode, langs, locked, draftText, isRerunning, rerunBlocked, isPlaying, playable, onDraft, onSave, onRerun, onPlay, onReassign }: Props) {
   const { t } = useTranslation();
   const editing = draftText === null ? null : { id: line.id, text: draftText };
 
@@ -48,7 +50,24 @@ function Row({ line, speaker, langs, locked, draftText, isRerunning, rerunBlocke
         </button>
         <span>{clock(line.start)}</span>
       </div>
-      <span className="sess-who">{speaker}</span>
+      {/* A native select, not a custom menu: it is keyboard- and screen-reader-ready for free, and
+          styled down to read as the plain speaker label until focused. Reassigning here is the
+          human splitting the shared-mic collapse back into separate voices. */}
+      <select
+        className="sess-who"
+        value={line.speaker}
+        disabled={locked}
+        title={t('sessions.reassignSpeaker')}
+        aria-label={t('sessions.reassignSpeaker')}
+        onChange={e => onReassign(line.id, e.target.value)}
+      >
+        {/* The line's current code always appears (options are built from every line's speaker), so
+            the select never renders with an unmatched value. */}
+        {speakerOptions.map(o => (
+          <option key={o.code} value={o.code}>{o.label}</option>
+        ))}
+        <option value={newSpeakerCode}>{t('sessions.newSpeaker', { code: newSpeakerCode })}</option>
+      </select>
       <div className="sess-body">
         {line.status !== 'ok' && (
           <div className="sess-status">

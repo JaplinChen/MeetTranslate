@@ -220,6 +220,22 @@ export function Sessions() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected]);
 
+  // Move one line to another speaker. The shared-mic clustering collapses a room into one voice
+  // more often than not (see the README's known limits), and language is chosen per speaker — so a
+  // wrong attribution also decoded the line in the wrong language. This is the human putting the
+  // split back by hand. `names` follows because a fresh S-code has no name yet and must show as one.
+  const reassignLine = useCallback(async (lineId: number, speaker: string) => {
+    if (selected === null) return;
+    try {
+      const r = await appApi.setLineSpeaker(selected, lineId, speaker);
+      setLines(r.lines);
+      setNames(r.speakers);
+    } catch (err) {
+      fail(err);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected]);
+
   // A recording made elsewhere teaches the same things a live capture does, once it is a session:
   // names attach to voices, corrections attach to lines.
   const importRecording = async (file: File) => {
@@ -336,6 +352,15 @@ export function Sessions() {
   }, [lines, names, query]);
 
   const codes = [...new Set(lines.map(l => l.speaker))];
+  // Stable identities so a play/edit click doesn't rebuild 943 memoised rows. Options are every
+  // speaker the meeting has; the new code is the next free S-number, for splitting the collapse.
+  const speakerOptions = useMemo(
+    () => [...new Set(lines.map(l => l.speaker))].sort().map(c => ({ code: c, label: names[c] || c })),
+    [lines, names]);
+  const newSpeakerCode = useMemo(() => {
+    const nums = lines.map(l => Number(/^S(\d+)$/.exec(l.speaker)?.[1])).filter(n => !Number.isNaN(n));
+    return `S${(nums.length ? Math.max(...nums) : 0) + 1}`;
+  }, [lines]);
   const langs = useMemo(() => [...new Set(lines.flatMap(l => Object.keys(l.translations)))], [lines]);
   const failed = lines.filter(l => l.status !== 'ok');
   // 'generating' is visible two ways — the summary endpoint says so, or the session's refine job
@@ -538,7 +563,8 @@ export function Sessions() {
               <TranscriptRow
                 key={line.id}
                 line={line}
-                speaker={names[line.speaker] || line.speaker}
+                speakerOptions={speakerOptions}
+                newSpeakerCode={newSpeakerCode}
                 langs={langs}
                 locked={locked}
                 draftText={editing?.id === line.id ? editing.text : null}
@@ -550,6 +576,7 @@ export function Sessions() {
                 onSave={saveLine}
                 onRerun={rerunLine}
                 onPlay={playLine}
+                onReassign={reassignLine}
               />
             ))}
             {query.trim() && shown.length === 0 && (

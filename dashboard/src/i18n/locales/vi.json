@@ -79,6 +79,8 @@
     "clipLabel": "Phát mẫu giọng của {{code}}",
     "playLine": "Phát câu này",
     "stopLine": "Dừng",
+    "reassignSpeaker": "Gán lại câu này cho người nói khác",
+    "newSpeaker": "＋ Người nói mới ({{code}})",
     "playFailed": "Câu này không có âm thanh được ghi.",
     "noRecording": "Bản ghi của cuộc họp này không còn trên đĩa, nên không thể phát lại.",
     "reprocess": "Xử lý lại",

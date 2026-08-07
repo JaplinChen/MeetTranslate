@@ -79,6 +79,8 @@
     "clipLabel": "播放 {{code}} 的聲音片段",
     "playLine": "播放這一句",
     "stopLine": "停止",
+    "reassignSpeaker": "把這一句改指派給其他語者",
+    "newSpeaker": "＋ 新語者（{{code}}）",
     "playFailed": "這一句沒有錄到聲音。",
     "noRecording": "這場會議的錄音檔已經不在，所以這裡的內容都無法播放。",
     "reprocess": "重新處理",
