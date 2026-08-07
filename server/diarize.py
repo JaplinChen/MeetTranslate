@@ -465,8 +465,13 @@ class Diarizer:
 
 
 def load_known(store) -> list[tuple[str, np.ndarray]]:
-    """Known voiceprints as arrays. Stored as raw float32 bytes — the embedder's own layout."""
-    return [(name, np.frombuffer(blob, dtype=np.float32)) for name, blob in store.known_speakers()]
+    """Known voiceprints as arrays. Stored as raw float32 bytes — the embedder's own layout.
+
+    Every variant, not one per name: _recognise takes the closest match, so a person's several
+    stored prints each get a shot at naming a returning voice.
+    """
+    return [(name, np.frombuffer(blob, dtype=np.float32))
+            for name, blob in store.known_voiceprints()]
 
 
 def cluster_offline(embeddings: list[np.ndarray], threshold: float | None = None) -> list[int]:
