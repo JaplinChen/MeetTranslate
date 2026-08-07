@@ -37,23 +37,32 @@ def chat_for(llm_cfg: llm.LlmConfig, api_key: str, max_tokens: int,
              ) -> Callable[[str], str] | None:
     """The chat callable the configured provider implies. None means no LLM stage can run.
 
-    Follows the provider chosen on the LLM settings page rather than hard-coding Anthropic:
-    `refine.ollama_chat` exists precisely because these transcripts may not be allowed to leave
-    the machine, and a summary that quietly bypassed that choice would undo it.
+    Follows the provider chosen on the LLM settings page — the settings page offers nine, and every
+    one of them has to reach its own endpoint, not Anthropic's. This is the single dispatcher both the
+    live translator (`main._make_translator`) and the post-meeting stages route through, so a verified
+    OpenAI/Gemini/Groq key translates in a meeting instead of silently going nowhere.
 
     `num_ctx`/`num_predict`/`temperature`/`repeat_penalty` only reach Ollama: the summary stage
     sends a large transcript excerpt AND wants a long detailed reply, so it raises the window, caps
     the reply, and lifts the temperature with a repetition penalty — greedy decoding on a long CJK
-    summary loops on one sentence. Anthropic sizes its own context and takes `max_tokens` directly.
+    summary loops on one sentence. The cloud providers size their own context and take `max_tokens`.
     """
-    if llm_cfg.provider == "ollama":
-        return refine.ollama_chat(llm_cfg.model,
-                                  llm_cfg.endpoint or llm.DEFAULT_ENDPOINTS["ollama"],
+    provider = llm_cfg.provider
+    endpoint = llm_cfg.endpoint or llm.DEFAULT_ENDPOINTS.get(provider, "")
+    if provider == "ollama":
+        return refine.ollama_chat(llm_cfg.model, endpoint or llm.DEFAULT_ENDPOINTS["ollama"],
                                   num_ctx=num_ctx, num_predict=num_predict,
                                   temperature=temperature, repeat_penalty=repeat_penalty)
     if not api_key:
         return None
-    return refine.anthropic_chat(api_key, llm_cfg.model, max_tokens=max_tokens)
+    if provider == "anthropic":
+        return refine.anthropic_chat(api_key, llm_cfg.model, max_tokens=max_tokens)
+    if provider == "gemini":
+        return refine.gemini_chat(api_key, llm_cfg.model, endpoint, max_tokens=max_tokens)
+    if provider == "azure":
+        return refine.azure_chat(api_key, endpoint, max_tokens=max_tokens)
+    # openai, groq, mistral, openrouter, nvidia_nim — all speak the OpenAI REST shape.
+    return refine.openai_chat(api_key, llm_cfg.model, endpoint, max_tokens=max_tokens)
 
 
 def _cancellable(chat: Callable[[str], str], cancel: threading.Event) -> Callable[[str], str]:

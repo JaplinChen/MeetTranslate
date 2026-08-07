@@ -160,16 +160,10 @@ def test_a_rejected_translation_benches_its_key(tmp: Path) -> None:
         if kind := llm.rejection(exc):
             ks.mark_failure("sk-only-key-9999", limited=(kind == "limited"))
 
-    tr = translate.Translator.__new__(translate.Translator)
-    tr._model, tr._max_tokens, tr._on_reject = "m", 10, on_reject
+    def chat(_prompt):
+        raise RateLimited()
 
-    class FakeClient:
-        class messages:
-            @staticmethod
-            def create(**_kw):
-                raise RateLimited()
-
-    tr._client = FakeClient()
+    tr = translate.Translator(chat, on_reject=on_reject)
 
     raised = False
     try:

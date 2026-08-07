@@ -53,11 +53,11 @@ def _api_key() -> str:
 
 
 def _make_translator() -> translate.Translator | None:
-    """No key configured is a supported mode: transcription still runs, translations stay empty."""
+    """No LLM configured is a supported mode: transcription still runs, translations stay empty.
+
+    The chat callable comes from the same dispatcher the post-meeting pass uses, so live translation
+    honours the provider chosen on the settings page (Ollama needs no key; the cloud providers do)."""
     key = _api_key()
-    if not key:
-        log.warning("no API key configured — transcribing without translation")
-        return None
 
     def on_reject(exc: Exception) -> None:
         # The provider rejected this key. Bench it so the next rotation skips it — a rate limit for
@@ -68,7 +68,13 @@ def _make_translator() -> translate.Translator | None:
             keys.mark_failure(key, limited=(kind == "limited"))
             log.warning("provider rejected key %s (%s), benching it", llm.mask(key), kind)
 
-    return translate.Translator(key, model=state["llm"].model or "claude-opus-5", on_reject=on_reject)
+    # ponytail: Ollama's chat timeout is 900s (refine.ollama_chat default); on the live path a slow
+    # local model lags subtitles rather than dropping them. Add a shorter live timeout if that bites.
+    chat = postmeeting.chat_for(state["llm"], key, max_tokens=1500)
+    if chat is None:
+        log.warning("no API key configured — transcribing without translation")
+        return None
+    return translate.Translator(chat, on_reject=on_reject)
 
 
 def _refine(session_id: int, wav: Path) -> None:
