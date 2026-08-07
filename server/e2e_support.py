@@ -105,7 +105,7 @@ class StubTranslator:
     def __init__(self) -> None:
         self.calls = 0
 
-    def translate(self, line, targets, context=None, previous=None, terms=None):
+    def translate(self, line, targets, context=None, previous=None, terms=None, prev_targets=None):
         self.calls += 1
         out = {t: f"[{t}] {line.text}" for t in targets}
         if self.calls == 3 and previous is not None:

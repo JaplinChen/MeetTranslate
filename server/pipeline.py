@@ -237,8 +237,14 @@ class Pipeline:
         if not self._translator or not targets:
             return translate.Result({})
         prev_line = self._previous[2] if self._previous else None
+        # The previous line's correction targets are its own languages, not this line's: in a mixed
+        # zh/en/vi meeting the two lines rarely share a language, and reusing `targets` asked the
+        # model to re-translate the previous line into the wrong ones.
+        prev_targets = ([c for c in self._cfg.languages if c != prev_line.lang]
+                        if prev_line else None)
         return self._translator.translate(
-            line, targets, context=self._context, previous=prev_line, terms=self._store.glossary()
+            line, targets, context=self._context, previous=prev_line,
+            terms=self._store.glossary(), prev_targets=prev_targets
         )
 
     def _apply_refinement(self, result: translate.Result) -> None:
