@@ -667,3 +667,23 @@ def test_the_auto_refine_pass_leaves_a_human_corrected_line_alone(tmp: Path) -> 
         assert rows[auto] == "機器改寫1", "the unrefined line should still get refined"
     finally:
         st.close()
+
+
+def test_markdown_export_lists_speakers_in_numeric_order(tmp: Path) -> None:
+    """The exported transcript's speaker list is sorted by code. Lexicographic sort put S10 right
+    after S1 and ahead of S2 once a meeting had ten or more speakers (the app allows up to S35),
+    so the downloaded file showed speakers in visibly wrong order."""
+    from . import postprocess
+
+    st = store_mod.Store(tmp / "md.db")
+    try:
+        sid = st.start_session("2026-01-01T09:00:00", "m.wav")
+        for i in (1, 2, 10):
+            st.add_line(sid, float(i), f"S{i}", "zh", f"第 {i} 句", {})
+
+        md = postprocess.to_markdown(st, sid)
+        section = md.split("## 發言者")[1].split("## 逐字稿")[0]
+        listed = [ln for ln in section.splitlines() if ln.startswith("- ")]
+        assert listed == ["- **S1**（未命名）", "- **S2**（未命名）", "- **S10**（未命名）"], listed
+    finally:
+        st.close()

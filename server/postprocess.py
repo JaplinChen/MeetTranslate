@@ -440,7 +440,11 @@ def to_markdown(store: Store, session_id: int) -> str:
 
     out = ["# 會議紀錄", ""]
     out += _summary_markdown(store, session_id, names)
-    speakers = sorted({l["speaker"] for l in lines})
+    # Numeric, not lexicographic: codes are S1..S35, and a plain string sort put S10 between S1 and
+    # S2. The tuple key keeps any non-S<n> code (there should be none) after the numbered ones
+    # without an int-vs-str comparison error.
+    speakers = sorted({l["speaker"] for l in lines},
+                      key=lambda s: (0, int(s[1:])) if s[1:].isdigit() else (1, s))
     out += ["## 發言者", ""]
     out += [f"- **{names.get(code, code)}**" + ("" if code in names else "（未命名）") for code in speakers]
     out += ["", "## 逐字稿", ""]
