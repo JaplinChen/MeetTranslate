@@ -160,7 +160,14 @@ class SpeakerStore:
         Leaving old transcripts on the wrong name would make the rename look like it half-worked.
         """
         with self._lock:
-            self._db.execute("DELETE FROM known_speaker WHERE name=?", (new,))
+            if new != old and self._db.execute(
+                "SELECT 1 FROM known_speaker WHERE name=?", (new,)
+            ).fetchone():
+                # This used to DELETE the row already holding `new` to dodge the primary-key clash,
+                # which silently destroyed that voice's print and merged two people into one name.
+                # Refuse the collision, like edit_correction does — the user removes or renames the
+                # existing speaker first.
+                raise ValueError(f"a speaker named {new} already exists")
             self._db.execute("UPDATE known_speaker SET name=? WHERE name=?", (new, old))
             self._db.execute("UPDATE speaker_name SET name=? WHERE name=?", (new, old))
             self._db.commit()

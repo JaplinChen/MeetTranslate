@@ -364,3 +364,30 @@ def test_an_unknown_api_path_says_it_is_the_build_not_the_data(client: TestClien
     # A real endpoint's 404 must not look like it.
     real = client.get("/api/sessions/999999/lines/1/clip")
     assert real.status_code == 404 and real.json()["detail"] != main.NO_SUCH_ENDPOINT
+
+
+def test_renaming_a_speaker_onto_another_is_refused_not_a_silent_merge(tmp: Path) -> None:
+    """Renaming one learned voice to a name another voice already owns used to DELETE the other's
+    voiceprint and merge two people into one name — no error, unrecoverable. It must be refused."""
+    from . import store as store_mod
+
+    st = store_mod.Store(tmp / "rename.db")
+    try:
+        sid = st.start_session("2026-01-01T09:00:00", "r.wav")
+        st.set_speaker_name(sid, "S1", "Alice")
+        st.remember_speaker("Alice", b"alice-print")
+        st.set_speaker_name(sid, "S2", "Bob")
+        st.remember_speaker("Bob", b"bob-print")
+
+        raised = False
+        try:
+            st.rename_speaker("Bob", "Alice")
+        except ValueError:
+            raised = True
+        assert raised, "renaming onto an existing speaker must be refused"
+
+        # Both voices survive with their own prints — nothing merged, nothing deleted.
+        prints = dict(st.known_speakers())
+        assert prints == {"Alice": b"alice-print", "Bob": b"bob-print"}, prints
+    finally:
+        st.close()
