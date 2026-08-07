@@ -122,3 +122,43 @@ def test_degenerate_ignores_short_text() -> None:
     """A terse reply must never be mistaken for a collapse."""
     assert not asr.is_degenerate("好的")
     assert not asr.is_degenerate("OK OK")
+
+
+def test_the_sign_offs_a_real_meeting_produced() -> None:
+    """Six spellings that walked through the list, taken verbatim from one factory meeting.
+
+    Each escaped for its own reason: the credit was a name the list could not know, 本期的影片
+    had a 的 in the middle, 字幕小組 an extra character, 下回 was simply absent, and
+    本集就這樣結束了 put four words between 本集 and its ending.
+    """
+    for text in ("剪輯 李宗盛", "本期的影片到這裡 再見", "中文字幕 沛隊字幕小組",
+                 "我們下回見 再見", "謝謝您的收看", "下部節目了",
+                 "本集就這樣結束了", "本期完", "本期播放",
+                 "謝謝大家的收看", "中文字幕提供"):
+        assert asr.is_hallucination(text), text
+    # Simplified too: the filter runs before `_post` converts.
+    for text in ("谢谢您的收看", "本集就这样结束了"):
+        assert asr.is_hallucination(text), text
+
+
+def test_the_new_sign_off_patterns_spare_a_factory_meeting() -> None:
+    """These run on the live path as well, where a false positive drops a subtitle and leaves
+    nothing to show it happened. Every widened pattern gets the sentence it must not eat."""
+    for text in ("剪輯機台的參數要改",          # 剪輯 as a verb about machinery
+                 "影片剪輯外包給誰",            # 剪輯 mid-sentence
+                 "剪輯 這個要重做一次不然來不及",  # 剪輯 then real speech, not a name
+                 "我們下回見面再談",            # 下回見 continuing into a sentence
+                 "本集團今年的目標是降低不良率",   # 本集團, not 本集
+                 "本集團的專案結束了",           # 本集團 with an ending after it
+                 "尾牙的節目安排請各部門回報",     # 節目 without 本/下部
+                 "下部品的檢驗要加嚴",           # 下部 without 節目
+                 "這個階段到此告一段落",         # 到此 without 本集
+                 "會議到此結束 謝謝大家",        # 結束 without 本集
+                 "這個議題請大家多關注",         # 關注 without 請您/敬請/歡迎
+                 # This room builds subtitling software and says 字幕 in earnest, so the credit
+                 # patterns that overlap real vocabulary match whole lines only.
+                 "會議紀錄的中文字幕要不要做",
+                 "中文字幕的部分請廠商報價",
+                 "字幕提供給客戶的版本",
+                 "謝謝大家 我們看一下這份報告"):
+        assert not asr.is_hallucination(text), text
