@@ -16,15 +16,19 @@ export interface OrderedLine {
  * bottom of the meeting-room TV and then jump into place on the next reload, since the stored
  * transcript is ordered by start.
  */
-export function mergeLine<T extends OrderedLine>(previous: T[], line: T): T[] {
+export function mergeLine<T extends OrderedLine>(previous: T[], line: T, max = Infinity): T[] {
   const known = previous.findIndex(l => l.id === line.id);
+  let next: T[];
   if (known !== -1) {
-    const next = [...previous];
+    next = [...previous];
     next[known] = line;
-    return next;
+  } else {
+    const at = previous.findIndex(l => l.start > line.start);
+    next = at === -1 ? [...previous, line] : [...previous.slice(0, at), line, ...previous.slice(at)];
   }
 
-  const at = previous.findIndex(l => l.start > line.start);
-  if (at === -1) return [...previous, line];
-  return [...previous.slice(0, at), line, ...previous.slice(at)];
+  // Cap the buffer: only the last `display.lines` are ever shown, so leaving this unbounded grew
+  // the array for the whole meeting — thousands of lines on a multi-hour call, an O(n) findIndex on
+  // every message and memory that only climbs. The oldest are off-screen, so trim from the front.
+  return next.length > max ? next.slice(next.length - max) : next;
 }
