@@ -244,10 +244,13 @@ class Store(SpeakerStore):
         def _like(term: str) -> str:
             escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             return f"%{escaped}%"
-        where = " OR ".join(["l.source LIKE ? ESCAPE '\\'"] * len(terms))
+        # Parenthesised before any date AND: SQL binds AND tighter than OR, so an unwrapped
+        # `A OR B AND date` means `A OR (B AND date)` and the cutoff would only constrain the last
+        # keyword. Wrapping once keeps `(A OR B) AND date` whichever bounds are present.
+        where = "(" + " OR ".join(["l.source LIKE ? ESCAPE '\\'"] * len(terms)) + ")"
         params: list = [_like(t) for t in terms]
         if since:
-            where, params = f"({where}) AND s.started >= ?", params + [since]
+            where, params = f"{where} AND s.started >= ?", params + [since]
         if until:
             where, params = f"{where} AND s.started <= ?", params + [until + "T23:59:59"]
         with self._lock:
