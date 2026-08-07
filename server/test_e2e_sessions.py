@@ -88,6 +88,33 @@ def test_a_line_can_be_reassigned_to_another_speaker(client: TestClient) -> None
     assert client.put(f"/api/sessions/{session}/lines/99999/speaker", json={"speaker": "S2"}).status_code == 404
 
 
+def test_several_codes_for_one_person_merge_into_one(client: TestClient) -> None:
+    """The diariser splits one drifting voice into several codes; merging folds them back to one.
+
+    Every absorbed line moves to the kept code, and the absorbed codes leave the meeting — the
+    speaker list is derived from which codes still label a line.
+    """
+    session = main.store.start_session("now", "")
+    a = main.store.add_line(session, 1.0, "S1", "en", "one", {})
+    b = main.store.add_line(session, 5.0, "S17", "en", "two", {})
+    c = main.store.add_line(session, 9.0, "S20", "en", "three", {})
+    main.store.save_voiceprint(session, "S17", b"\x00" * 8)
+    client.put(f"/api/sessions/{session}/speakers", json={"S1": "Vince", "S17": "Vince"})
+
+    merged = client.post(f"/api/sessions/{session}/speakers/merge",
+                         json={"into": "S1", "from": ["S17", "S20"]})
+    assert merged.status_code == 200, merged.text
+    by_id = {l["id"]: l["speaker"] for l in merged.json()["lines"]}
+    assert by_id == {a: "S1", b: "S1", c: "S1"}, by_id
+    # The absorbed codes are gone from the meeting: no line carries them, no name lingers.
+    assert set(l["speaker"] for l in merged.json()["lines"]) == {"S1"}
+    assert "S17" not in merged.json()["speakers"] and "S20" not in merged.json()["speakers"]
+    assert main.store.voiceprint(session, "S17") is None
+
+    assert client.post(f"/api/sessions/{session}/speakers/merge",
+                       json={"into": "S1", "from": []}).status_code == 400
+
+
 def test_a_session_exports_as_a_word_document(client: TestClient) -> None:
     """The enterprise deliverable is a .docx, and it has to carry the transcript, not just open."""
     session = main.store.start_session("now", "")

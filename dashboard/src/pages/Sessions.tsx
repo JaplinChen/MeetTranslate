@@ -39,6 +39,8 @@ export function Sessions() {
   const [selected, setSelected] = useState<number | null>(null);
   const [lines, setLines] = useState<TranscriptLine[]>([]);
   const [names, setNames] = useState<Record<string, string>>({});
+  // Codes ticked on the speaker page to fold into one person — the diariser splits a drifting voice.
+  const [mergeSel, setMergeSel] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<{ id: number; text: string } | null>(null);
   const [importing, setImporting] = useState(false);
@@ -78,6 +80,7 @@ export function Sessions() {
       .then(r => {
         setLines(r.lines);
         setNames(r.speakers);
+        setMergeSel(new Set());
       })
       .catch(fail);
   }, []);
@@ -383,6 +386,24 @@ export function Sessions() {
     const nums = lines.map(l => Number(/^S(\d+)$/.exec(l.speaker)?.[1])).filter(n => !Number.isNaN(n));
     return `S${(nums.length ? Math.max(...nums) : 0) + 1}`;
   }, [lines]);
+  // Where the ticked codes fold to: a named one if any is named (that is the real identity), else
+  // the first as it appears in the transcript. Shown on the button so the choice is not a surprise.
+  const mergeTarget = useMemo(() => {
+    const sel = codes.filter(c => mergeSel.has(c));
+    return sel.find(c => (names[c] ?? '').trim()) ?? sel[0];
+  }, [codes, mergeSel, names]);
+  const mergeSelected = async () => {
+    if (selected === null || !mergeTarget || mergeSel.size < 2) return;
+    const from = codes.filter(c => mergeSel.has(c) && c !== mergeTarget);
+    try {
+      const r = await appApi.mergeSpeakers(selected, mergeTarget, from);
+      setLines(r.lines);
+      setNames(r.speakers);
+      setMergeSel(new Set());
+    } catch (err) {
+      fail(err);
+    }
+  };
   const langs = useMemo(() => [...new Set(lines.flatMap(l => Object.keys(l.translations)))], [lines]);
   const failed = lines.filter(l => l.status !== 'ok');
   // 'generating' is visible two ways — the summary endpoint says so, or the session's refine job
@@ -498,10 +519,30 @@ export function Sessions() {
       {active === 'speakers' && (
         <section className="etable-panel" role="tabpanel" id="sess-panel-speakers" aria-labelledby="sess-tab-speakers">
           <p className="sess-hint">{t('sessions.speakersHint')}</p>
+          <p className="sess-hint">{t('sessions.mergeHint')}</p>
           {!hasRecording && <p className="sess-no-audio">{t('sessions.noRecording')}</p>}
+          {mergeSel.size >= 2 && mergeTarget && (
+            <div className="sess-merge-bar">
+              <span>{t('sessions.mergeSelected', { count: mergeSel.size })}</span>
+              <button type="button" className="sess-merge-go" onClick={mergeSelected}>
+                {t('sessions.mergeInto', { target: names[mergeTarget] || mergeTarget })}
+              </button>
+            </div>
+          )}
           <div className="sess-names">
             {codes.map(code => (
               <div key={code} className="sess-name">
+                <input
+                  type="checkbox"
+                  className="sess-merge-check"
+                  checked={mergeSel.has(code)}
+                  aria-label={t('sessions.mergePick', { code })}
+                  onChange={() => setMergeSel(prev => {
+                    const next = new Set(prev);
+                    if (next.has(code)) next.delete(code); else next.add(code);
+                    return next;
+                  })}
+                />
                 <label className="sess-name-field">
                   <span>{code}</span>
                   <input

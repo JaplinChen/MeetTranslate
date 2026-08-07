@@ -198,6 +198,11 @@ export const appApi = {
   setLineSpeaker: (id: number, lineId: number, speaker: string) =>
     request<{ lines: TranscriptLine[]; speakers: Record<string, string> }>(
       `/sessions/${id}/lines/${lineId}/speaker`, { method: 'PUT', body: JSON.stringify({ speaker }) }),
+  // Fold several diariser codes for one person into `into`: the clustering splits a drifting voice
+  // into S17/S18/S20, and this is the human saying they are one. Same response shape as reassigning.
+  mergeSpeakers: (id: number, into: string, from: string[]) =>
+    request<{ lines: TranscriptLine[]; speakers: Record<string, string> }>(
+      `/sessions/${id}/speakers/merge`, { method: 'POST', body: JSON.stringify({ into, from }) }),
   // Cross-meeting question. The answer carries citations the server verified against stored lines,
   // so a click can jump to the exact utterance rather than a place the model claimed one was.
   ask: (question: string) =>

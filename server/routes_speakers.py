@@ -29,6 +29,21 @@ def put_speaker_names(session_id: int, body: dict) -> dict:
     return main.store.speaker_names(session_id)
 
 
+@router.post("/api/sessions/{session_id}/speakers/merge")
+def merge_speakers(session_id: int, body: dict) -> dict:
+    """Fold several codes for one person into one, and return the redrawn transcript.
+
+    Same response shape as reassigning a single line, because the speaker page and the transcript
+    both read it: the absorbed codes leave the meeting and their lines now carry the kept one.
+    """
+    into = str(body.get("into", "")).strip()
+    sources = [str(c).strip() for c in body.get("from", []) if str(c).strip()]
+    if not into or not sources:
+        raise HTTPException(400, "into and from required")
+    main.store.merge_speakers(session_id, into, sources)
+    return {"lines": main.store.lines(session_id), "speakers": main.store.speaker_names(session_id)}
+
+
 @router.get("/api/speakers/known")
 def get_known_speakers() -> list[dict]:
     counts = main.store.speaker_sessions()

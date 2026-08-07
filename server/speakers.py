@@ -15,6 +15,20 @@ from __future__ import annotations
 import sqlite3
 import threading
 
+import numpy as np
+
+# A voice needs a handful of anchors, not a history: past this many prints per name the least
+# informative one is dropped when a new variant arrives.
+KNOWN_PRINT_CAP = 8
+# A new print this close to one already stored teaches nothing — skip it, so the set stays a spread
+# of a person's real variants rather than the same utterance saved over and over.
+KNOWN_DUP_THRESHOLD = 0.85
+
+
+def _cosine(a: np.ndarray, b: np.ndarray) -> float:
+    denom = float(np.linalg.norm(a) * np.linalg.norm(b))
+    return float(np.dot(a, b) / denom) if denom else 0.0
+
 
 def _sample(row: sqlite3.Row | None) -> tuple[str, float, float | None] | None:
     """A sample row as (recording, start, seconds), with seconds unknown on transcripts written
@@ -64,10 +78,14 @@ class SpeakerStore:
         return row["centroid"] if row else None
 
     def remember_speaker(self, name: str, centroid: bytes) -> None:
-        """Promote one session's voiceprint to a name this room knows.
+        """Add one voiceprint variant for a name this room knows.
 
-        The newest recording wins rather than being averaged in: a voice drifts with the room, the
-        mic and the codec, and the most recent sample is the closest to the next meeting.
+        A person split across several codes in one meeting is named on each of them, and every
+        distinct print must be learned — matching takes the closest, so a variant kept is another
+        chance to put the right name on a returning voice, and a variant dropped is that chance
+        lost. known_speaker still holds one representative print (newest wins) for the Learned page
+        and as a fallback; the variants live in known_voiceprint, deduped and capped so the set is
+        a spread of a voice rather than an archive of it.
         """
         with self._lock:
             self._db.execute(
@@ -76,7 +94,35 @@ class SpeakerStore:
                 "sessions=known_speaker.sessions + 1",
                 (name, centroid),
             )
+            vec = np.frombuffer(centroid, dtype=np.float32)
+            rows = list(self._db.execute(
+                "SELECT rowid, centroid FROM known_voiceprint WHERE name=?", (name,)))
+            sims = [(_cosine(vec, np.frombuffer(r["centroid"], dtype=np.float32)), r["rowid"])
+                    for r in rows]
+            if sims and max(s for s, _ in sims) >= KNOWN_DUP_THRESHOLD:
+                self._db.commit()  # already know a print this close — nothing new to learn
+                return
+            if len(rows) >= KNOWN_PRINT_CAP:
+                # Drop the print most like the newcomer: keeps the spread, sheds the redundancy.
+                self._db.execute("DELETE FROM known_voiceprint WHERE rowid=?", (max(sims)[1],))
+            self._db.execute(
+                "INSERT INTO known_voiceprint (name, centroid) VALUES (?,?)", (name, centroid))
             self._db.commit()
+
+    def known_voiceprints(self) -> list[tuple[str, bytes]]:
+        """Every stored voiceprint with its current name, for recognising a voice next meeting.
+
+        Unlike known_speakers() — one row per name, for the Learned page — this returns every
+        variant, because matching takes the closest and each variant is another way in. Falls back
+        to known_speaker's single centroid for any name learned before variants were stored, so an
+        upgrade never forgets a voice the room already knew.
+        """
+        with self._lock:
+            return [(r["name"], r["centroid"]) for r in self._db.execute(
+                "SELECT name, centroid FROM known_voiceprint WHERE name != '' "
+                "UNION "
+                "SELECT name, centroid FROM known_speaker WHERE name != '' "
+                "AND name NOT IN (SELECT DISTINCT name FROM known_voiceprint)")]
 
     def known_speakers(self) -> list[tuple[str, bytes]]:
         """Every voice the room can name on sight, with the centroid to recognise it by.
@@ -169,10 +215,12 @@ class SpeakerStore:
                 # existing speaker first.
                 raise ValueError(f"a speaker named {new} already exists")
             self._db.execute("UPDATE known_speaker SET name=? WHERE name=?", (new, old))
+            self._db.execute("UPDATE known_voiceprint SET name=? WHERE name=?", (new, old))
             self._db.execute("UPDATE speaker_name SET name=? WHERE name=?", (new, old))
             self._db.commit()
 
     def forget_speaker(self, name: str) -> None:
         with self._lock:
             self._db.execute("DELETE FROM known_speaker WHERE name=?", (name,))
+            self._db.execute("DELETE FROM known_voiceprint WHERE name=?", (name,))
             self._db.commit()

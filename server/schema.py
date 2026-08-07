@@ -64,6 +64,16 @@ CREATE TABLE IF NOT EXISTS known_speaker (
     centroid BLOB NOT NULL,
     sessions INTEGER NOT NULL DEFAULT 1
 );
+-- One person sounds different across the room, the mic and their mood, and a single meeting can
+-- split them across several codes. Naming all of them stores every variant here, not just the
+-- last: matching takes the closest stored print, so more true variants means more of that voice's
+-- future utterances land on their name. known_speaker keeps one representative print per name (the
+-- Learned page, and a fallback for voices learned before this table existed).
+CREATE TABLE IF NOT EXISTS known_voiceprint (
+    name     TEXT NOT NULL,
+    centroid BLOB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS known_voiceprint_name ON known_voiceprint(name);
 CREATE TABLE IF NOT EXISTS speaker_name (
     session_id INTEGER NOT NULL REFERENCES session(id) ON DELETE CASCADE,
     code       TEXT NOT NULL,
