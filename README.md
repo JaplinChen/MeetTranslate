@@ -218,6 +218,22 @@ ffmpeg -i meeting.mp4 -ac 1 -ar 16000 -c:a pcm_s16le recordings/test01.wav
 
 基線與語料都不進版控——它們衍生自實際會議內容。這代表新環境要先跑過一次會議、或放幾份逐字稿進 `transcripts/final/`，這個檢查才有東西可比。
 
+### 量測辨識、語者、幻覺三項指標
+
+`regress` 只看修正層；要量整條管線的品質，拿一份人工標好真實語者的參考稿，和管線產出的假設稿比對：
+
+```bash
+.venv\Scripts\python.exe -m scripts.eval_harness --ref transcripts/eval/會議.ref.txt --hyp transcripts/eval/會議.hyp.txt --save
+```
+
+兩份都是標準逐字稿格式（`[分:秒] S1 (語言) 內容`）。參考稿每行標真實語者，假設稿放 `bench_wav` 或匯出的結果。輸出三項：
+
+- **準確率**：逐語言 CER（中文）/ WER（拉丁語系）。文字依「被解碼成的語言」分桶，語言判錯會誠實反映成該桶準確率下降。
+- **語者歸屬**：參考與假設的語者標籤最佳對應後（S1 這邊不等於 S1 那邊），錯歸的語音佔比即 error，以字數加權。`hyp_speakers < ref_speakers` 直接印 `COLLAPSE`——就是共用麥克風把所有人歸成一位的失效。
+- **幻覺率**：片語過濾器標記的語音佔比，分語言。乾淨跑接近 0；為壓越南語幻覺去動門檻若誤傷過濾器，這裡會升。
+
+和 `regress` 一樣對基線比較、數字變差以 exit code 1 回報，`--save` 更新基線。`transcripts/eval/` 與基線不進版控。`--selfcheck` 跑內建 asserts。
+
 前端另外開一個 dev server（會透過 `VITE_API_URL` 連到後端）：
 
 ```bash
