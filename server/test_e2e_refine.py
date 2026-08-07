@@ -632,3 +632,38 @@ def test_two_offline_passes_do_not_run_at_once(client: TestClient) -> None:
     finally:
         release.set()
         jobs.cancel_all(wait=1.0)
+
+
+def test_the_auto_refine_pass_leaves_a_human_corrected_line_alone(tmp: Path) -> None:
+    """A hand-typed correction is the only ground truth this system gets. `update_line` marks the
+    line `refined` precisely so it is never rewritten twice — but the auto refine pass read every
+    line and overwrote whatever the model proposed, silently clobbering the correction a user made
+    while (or just before) the pass ran. The refined flag must actually gate the write-back."""
+    from . import postmeeting
+
+    st = store_mod.Store(tmp / "refined-guard.db")
+    try:
+        sid = st.start_session("2026-01-01T09:00:00", "g.wav")
+        human = st.add_line(sid, 0.0, "S1", "zh", "機器聽錯的原文", {})
+        auto = st.add_line(sid, 1.0, "S1", "zh", "另一行", {})
+        st.update_line(human, "人工修正過的正確原文", {})  # a person fixed this line → refined=1
+
+        class RewriteEverything:
+            def __init__(self, chat, topic="會議"):
+                pass
+
+            def refine(self, lines, terms=None, rejected=None, coverage=None):
+                return [f"機器改寫{i}" for i, _ in enumerate(lines)]
+
+        saved = postmeeting.refine.Refiner
+        postmeeting.refine.Refiner = RewriteEverything
+        try:
+            postmeeting._refine_stage(st, sid, lambda _p: "")
+        finally:
+            postmeeting.refine.Refiner = saved
+
+        rows = {r["id"]: r["source"] for r in st.lines(sid)}
+        assert rows[human] == "人工修正過的正確原文", "the human correction was clobbered"
+        assert rows[auto] == "機器改寫1", "the unrefined line should still get refined"
+    finally:
+        st.close()
