@@ -68,7 +68,7 @@ def _term_lines(terms: list[Term], targets: list[str]) -> list[str]:
 
 
 def build_prompt(line: Line, targets: list[str], context: list[Line], previous: Line | None,
-                 terms: list[Term]) -> str:
+                 terms: list[Term], prev_targets: list[str] | None = None) -> str:
     """The user-turn content. Kept a pure function so the prompt is testable without the network."""
     parts = [
         "You translate live meeting speech. The text comes from speech recognition, so it may "
@@ -98,10 +98,14 @@ def build_prompt(line: Line, targets: list[str], context: list[Line], previous: 
         ]
 
     schema = {t: "translation" for t in targets}
+    # The previous line may be in a different language than this one, so its correction targets are
+    # its own (cfg.languages minus its language), not this line's. Sharing one schema asked the model
+    # to re-translate the previous line into the wrong languages in any mixed-language meeting.
+    prev_schema = {t: "translation" for t in (prev_targets if prev_targets is not None else targets)}
     parts += [
         "",
         "Reply with JSON only, no code fence and no commentary:",
-        json.dumps({"translations": schema, "previous": {"source": "...", "translations": schema}}, ensure_ascii=False),
+        json.dumps({"translations": schema, "previous": {"source": "...", "translations": prev_schema}}, ensure_ascii=False),
         "Keep translations natural and spoken, not literal. Preserve the speaker's register.",
     ]
     if "zh" in targets:
@@ -113,7 +117,7 @@ def build_prompt(line: Line, targets: list[str], context: list[Line], previous: 
 _JSON = re.compile(r"\{.*\}", re.DOTALL)
 
 
-def parse_response(raw: str, targets: list[str]) -> Result:
+def parse_response(raw: str, targets: list[str], prev_targets: list[str] | None = None) -> Result:
     """Tolerant parse: models wrap JSON in fences or prose often enough to matter."""
     match = _JSON.search(raw)
     if not match:
@@ -124,7 +128,8 @@ def parse_response(raw: str, targets: list[str]) -> Result:
 
     prev = data.get("previous") or {}
     prev_source = prev.get("source")
-    prev_translations = {k: str(v) for k, v in (prev.get("translations") or {}).items() if k in targets}
+    keep = prev_targets if prev_targets is not None else targets
+    prev_translations = {k: str(v) for k, v in (prev.get("translations") or {}).items() if k in keep}
 
     # A `previous` block with nothing usable in it is the model echoing the schema; drop it so the
     # subtitle page is not told to rewrite a line with identical content.
@@ -147,12 +152,13 @@ class Translator:
         self._on_reject = on_reject
 
     def translate(self, line: Line, targets: list[str], context: list[Line] | None = None,
-                  previous: Line | None = None, terms: list[Term] | None = None) -> Result:
-        prompt = build_prompt(line, targets, context or [], previous, terms or [])
+                  previous: Line | None = None, terms: list[Term] | None = None,
+                  prev_targets: list[str] | None = None) -> Result:
+        prompt = build_prompt(line, targets, context or [], previous, terms or [], prev_targets)
         try:
             raw = self._chat(prompt)
         except Exception as exc:
             if self._on_reject:
                 self._on_reject(exc)
             raise
-        return parse_response(raw, targets)
+        return parse_response(raw, targets, prev_targets)

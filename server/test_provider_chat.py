@@ -97,6 +97,28 @@ def test_translator_uses_injected_chat_callable():
     assert len(seen) == 1  # the prompt reached the injected callable, not an SDK
 
 
+def test_previous_refinement_targets_the_previous_lines_language():
+    """In a mixed-language meeting the previous line's language differs from the current one, so its
+    hindsight correction must be solicited and kept in ITS languages, not the current line's targets.
+    cfg=[zh,en], previous line zh (needs an en correction), current line en (targets=[zh])."""
+    seen: list[str] = []
+
+    def chat(prompt: str) -> str:
+        seen.append(prompt)
+        return json.dumps({"translations": {"zh": "你好"},
+                           "previous": {"source": "前一句修正", "translations": {"en": "corrected"}}})
+
+    tr = translate.Translator(chat)
+    prev = translate.Line("前一句中文", "zh")
+    result = tr.translate(translate.Line("hello", "en"), ["zh"],
+                          previous=prev, prev_targets=["en"])
+
+    assert result.previous_translations == {"en": "corrected"}, result.previous_translations
+    # The previous block must ask for the language the previous line actually needs (en), not zh.
+    prev_block = seen[0].split('"previous"')[1]
+    assert '"en"' in prev_block and '"zh"' not in prev_block, prev_block
+
+
 def test_translator_reports_rejection_then_reraises():
     rejected: list[Exception] = []
 

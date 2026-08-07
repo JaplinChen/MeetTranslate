@@ -135,7 +135,8 @@ def test_a_source_only_refinement_keeps_the_translations_on_screen(tmp: Path) ->
         def __init__(self):
             self.calls = 0
 
-        def translate(self, line, targets, context=None, previous=None, terms=None):
+        def translate(self, line, targets, context=None, previous=None, terms=None,
+                      prev_targets=None):
             self.calls += 1
             out = {t: f"[{t}] {line.text}" for t in targets}
             if self.calls == 2:   # judge the first line wrong, but revise only its source text
