@@ -191,3 +191,27 @@ def test_search_lines_treats_wildcards_as_literal_text(client: TestClient) -> No
         assert len(st.search_lines(["50"])) == 2   # both "50%" and "50 個項目"
     finally:
         st.close()
+
+
+def test_search_lines_until_bounds_every_keyword_not_just_the_last(tmp: Path) -> None:
+    """`until` without `since` must exclude out-of-range hits for EVERY keyword.
+
+    The OR-chain of keyword matches has to be parenthesised before ANDing the date bound: without it,
+    SQL's AND-over-OR precedence makes `A OR B AND date` mean `A OR (B AND date)`, so the cutoff only
+    constrains the last keyword and matches on the others leak in from any date. /api/ask hits this
+    whenever the question implies an upper bound but no lower one ("what did we decide before June?").
+    """
+    from . import store as store_mod
+
+    st = store_mod.Store(tmp / "until.db")
+    try:
+        recent = st.start_session("2025-06-01T09:00:00", "r.wav")
+        st.add_line(recent, 0.0, "S1", "zh", "apple 的討論", {})     # matches the FIRST keyword
+        old = st.start_session("2020-06-01T09:00:00", "o.wav")
+        st.add_line(old, 0.0, "S1", "zh", "banana 的討論", {})       # matches the second, in range
+
+        hits = st.search_lines(["apple", "banana"], since="", until="2020-12-31")
+        sources = sorted(h["source"] for h in hits)
+        assert sources == ["banana 的討論"], f"the 2025 'apple' line leaked past a 2020 cutoff: {sources}"
+    finally:
+        st.close()
