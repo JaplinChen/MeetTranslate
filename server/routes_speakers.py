@@ -103,7 +103,10 @@ def rename_known_speaker(name: str, body: dict) -> list[dict]:
     new = str(body.get("name", "")).strip()
     if not new:
         raise HTTPException(400, "name required")
-    main.store.rename_speaker(name, new)
+    try:
+        main.store.rename_speaker(name, new)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
     return get_known_speakers()
 
 
