@@ -119,12 +119,33 @@ class Corrector:
     def fix(self, text: str) -> str:
         if not text:
             return text
-        for wrong, right in self._aliases:
-            if wrong in text:
-                text = text.replace(wrong, right)
+        text = self._apply_aliases(text)
         for rule in self._rules:
             text = self._fix_chinese(text, rule) if rule.chinese else self._fix_latin(text, rule)
         return text
+
+    def _apply_aliases(self, text: str) -> str:
+        """One left-to-right pass over the original text, longest alias first.
+
+        A per-alias `str.replace` loop let one alias's output be consumed by the next — teaching
+        生館→生管 and (from an unrelated line) 生管→升官 turned 生館 into 升官. Scanning the original
+        and emitting each replacement into a buffer that is never re-scanned keeps every alias
+        applied to what the recogniser actually wrote, not to another alias's correction.
+        """
+        if not self._aliases:
+            return text
+        out: list[str] = []
+        i, n = 0, len(text)
+        while i < n:
+            for wrong, right in self._aliases:  # longest first, so a term beats its own prefix
+                if wrong and text.startswith(wrong, i):
+                    out.append(right)
+                    i += len(wrong)
+                    break
+            else:
+                out.append(text[i])
+                i += 1
+        return "".join(out)
 
     def _fix_chinese(self, text: str, rule: _Rule) -> str:
         """Slide a window the width of the term over every run of Han characters.

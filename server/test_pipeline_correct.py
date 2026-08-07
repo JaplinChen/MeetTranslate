@@ -31,6 +31,19 @@ def test_human_corrections_outrank_the_glossary() -> None:
     assert correct.Corrector([], {}).fix("原文不動") == "原文不動"
 
 
+def test_one_correction_does_not_cascade_into_another() -> None:
+    """Two independently-learned pairs must not chain: applying them sequentially with in-place
+    replace let one alias's output become the next alias's input, so a line the user only ever
+    taught 生館→生管 for came out rewritten by an unrelated 生管→升官 pair."""
+    c = correct.Corrector([], {"生館": "生管", "生管": "升官"})
+    # 生館 is what the recogniser wrote and 生管 is what was said; the 生管→升官 pair was learned
+    # from a different utterance and must not fire on this one's corrected output.
+    assert c.fix("生館的事") == "生管的事"
+    # A line that genuinely contains 生管 still gets its own correction, once.
+    assert c.fix("升官的事") == "升官的事"
+    assert c.fix("談生管") == "談升官"
+
+
 def test_corrector_fixes_near_misses_only() -> None:
     def term(source: str) -> store.Term:
         return store.Term(id=0, source=source, lang="", mode="hint", category="", targets={})
