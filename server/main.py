@@ -58,7 +58,17 @@ def _make_translator() -> translate.Translator | None:
     if not key:
         log.warning("no API key configured — transcribing without translation")
         return None
-    return translate.Translator(key, model=state["llm"].model or "claude-opus-5")
+
+    def on_reject(exc: Exception) -> None:
+        # The provider rejected this key. Bench it so the next rotation skips it — a rate limit for
+        # its cooldown, a bad key until it is removed — instead of dealing every request the same
+        # dud. Only pooled keys are tracked; a key from settings or the environment has nothing to
+        # mark, and mark_failure simply finds no match.
+        if kind := llm.rejection(exc):
+            keys.mark_failure(key, limited=(kind == "limited"))
+            log.warning("provider rejected key %s (%s), benching it", llm.mask(key), kind)
+
+    return translate.Translator(key, model=state["llm"].model or "claude-opus-5", on_reject=on_reject)
 
 
 def _refine(session_id: int, wav: Path) -> None:

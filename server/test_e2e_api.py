@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 from fastapi.testclient import TestClient
 
-from . import config, llm_probe, main, translate
+from . import config, llm, llm_probe, main, translate
 
 
 def test_health_and_config_roundtrip(client: TestClient) -> None:
@@ -111,6 +111,73 @@ def test_keyproxy_masks_and_rotates(client: TestClient) -> None:
     assert client.post("/api/keyproxy/keys", json={"provider": "anthropic", "apiKey": ""}).status_code == 400
     assert client.delete("/api/keyproxy/keys/anthropic/9").status_code == 404
     assert client.delete("/api/keyproxy/keys/anthropic/0").json() == client.get("/api/keyproxy/keys").json()
+
+
+def test_rejection_classifies_the_provider_error(tmp: Path) -> None:
+    class Err(Exception):
+        def __init__(self, code):
+            self.status_code = code
+
+    assert llm.rejection(Err(429)) == "limited"
+    assert llm.rejection(Err(401)) == "failed"
+    assert llm.rejection(Err(403)) == "failed"
+    assert llm.rejection(Err(500)) is None       # a server fault is not the key's problem
+    assert llm.rejection(Exception("no status")) is None
+
+
+def test_a_rejected_key_is_skipped_and_a_rate_limited_one_recovers(tmp: Path) -> None:
+    """mark_failure benches a key so the rotation stops handing it out: a bad key for good, a
+    rate-limited one only until its cooldown passes."""
+    ks = llm.KeyStore(tmp / "rotate-keys.json")
+    ks.add("anthropic", "sk-key-alpha-0001")
+    ks.add("anthropic", "sk-key-bravo-0002")
+
+    # A hard rejection (wrong or disabled key) drops out of the rotation entirely.
+    ks.mark_failure("sk-key-alpha-0001", limited=False)
+    assert {ks.next_key("anthropic") for _ in range(4)} == {"sk-key-bravo-0002"}
+
+    # A rate limit benches the last usable key too: nothing ready, so next_key reports none.
+    ks.mark_failure("sk-key-bravo-0002", limited=True)
+    assert ks.next_key("anthropic") is None, "a cooling-down key must not be handed out"
+
+    # Once its window elapses it heals back to ready and returns to the rotation.
+    for k in ks._keys:
+        if k.key == "sk-key-bravo-0002":
+            k.limited_until = 0.0
+    assert ks.next_key("anthropic") == "sk-key-bravo-0002"
+
+
+def test_a_rejected_translation_benches_its_key(tmp: Path) -> None:
+    """The wiring end to end: a provider 429 during translation marks the key limited, and the next
+    rotation skips it — the failure the pool exists to route around no longer repeats silently."""
+    ks = llm.KeyStore(tmp / "reject-keys.json")
+    ks.add("anthropic", "sk-only-key-9999")
+
+    class RateLimited(Exception):
+        status_code = 429
+
+    def on_reject(exc):
+        if kind := llm.rejection(exc):
+            ks.mark_failure("sk-only-key-9999", limited=(kind == "limited"))
+
+    tr = translate.Translator.__new__(translate.Translator)
+    tr._model, tr._max_tokens, tr._on_reject = "m", 10, on_reject
+
+    class FakeClient:
+        class messages:
+            @staticmethod
+            def create(**_kw):
+                raise RateLimited()
+
+    tr._client = FakeClient()
+
+    raised = False
+    try:
+        tr.translate(translate.Line("hello", "en"), ["zh"])
+    except RateLimited:
+        raised = True
+    assert raised, "the provider error must propagate, not be swallowed"
+    assert ks.next_key("anthropic") is None, "the benched key must be skipped by the next rotation"
 
 
 def test_naming_a_speaker_teaches_the_room_their_voice(client: TestClient) -> None:

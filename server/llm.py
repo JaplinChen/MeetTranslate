@@ -8,6 +8,7 @@ ever leave this module.
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 
@@ -15,6 +16,27 @@ from . import config
 
 LLM_PATH = config.ROOT / "llm.json"
 KEYS_PATH = config.ROOT / "llm_keys.json"
+
+# How long a rate-limited key is benched before it is tried again. A 429 is transient — the window
+# resets — so the key comes back on its own rather than needing a human to clear its status.
+LIMITED_COOLDOWN = 60.0
+
+
+def rejection(exc: Exception) -> str | None:
+    """Classify a provider error: 'limited' for a rate limit, 'failed' for a rejected key, else None.
+
+    Read off the HTTP status the SDK carries rather than the exception type, so one rule covers every
+    provider's client with none of them imported here. 429 is a rate limit — transient, worth
+    retrying after a cooldown. 401/403 is the key itself — wrong, disabled or out of quota — and no
+    waiting fixes it. Anything else (a 500, a dropped connection) is not the key's fault, so the key
+    keeps its place in the rotation.
+    """
+    code = getattr(exc, "status_code", None)
+    if code == 429:
+        return "limited"
+    if code in (401, 403):
+        return "failed"
+    return None
 
 DEFAULT_ENDPOINTS = {
     "anthropic": "https://api.anthropic.com",
@@ -119,6 +141,9 @@ class ApiKey:
     voice_requests: int = 0
     failures: int = 0
     status: str = "ready"  # ready | limited | failed
+    # Epoch seconds a `limited` key is benched until; 0 for ready/failed. Read by next_key to heal a
+    # rate-limited key back to ready once its window has passed.
+    limited_until: float = 0.0
 
     def to_json(self, index: int) -> dict:
         return {
@@ -175,9 +200,21 @@ class KeyStore:
         return self.list()
 
     def next_key(self, provider: str) -> str | None:
-        """Next usable key for a provider, or None when every one of them is exhausted."""
-        candidates = [k for k in self._keys if k.provider == provider and k.status != "failed"]
+        """Next ready key for a provider, or None when every one of them is benched.
+
+        A rate-limited key heals back to ready once its cooldown has passed, so a passing 429 costs
+        it a minute, not the rest of the session. A key rejected outright (`failed`) is never chosen
+        again until someone removes and re-adds it — waiting does not fix a wrong key.
+        """
+        now = time.time()
+        healed = False
+        for k in self._keys:
+            if k.status == "limited" and now >= k.limited_until:
+                k.status, k.limited_until, healed = "ready", 0.0, True
+        candidates = [k for k in self._keys if k.provider == provider and k.status == "ready"]
         if not candidates:
+            if healed:
+                self._save()
             return None
         start = self._cursor.get(provider, 0) % len(candidates)
         chosen = candidates[start]
@@ -187,9 +224,14 @@ class KeyStore:
         return chosen.key
 
     def mark_failure(self, key: str, limited: bool = False) -> None:
+        """Record that the provider rejected this key. A rate limit benches it for the cooldown; a
+        rejection benches it until it is removed."""
         for k in self._keys:
             if k.key == key:
                 k.failures += 1
-                k.status = "limited" if limited else "failed"
+                if limited:
+                    k.status, k.limited_until = "limited", time.time() + LIMITED_COOLDOWN
+                else:
+                    k.status, k.limited_until = "failed", 0.0
                 self._save()
                 return
