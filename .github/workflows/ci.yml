@@ -52,6 +52,10 @@ jobs:
       - name: Cross-meeting Q&A checks
         run: python -m server.test_ask
 
+      # Multi-provider chat wiring is model-free (urllib is faked), so it runs on the bare runner.
+      - name: Provider chat routing checks
+        run: python -m server.test_provider_chat
+
   dashboard:
     name: dashboard
     runs-on: ubuntu-latest

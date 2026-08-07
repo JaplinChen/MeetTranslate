@@ -159,6 +159,82 @@ def anthropic_chat(api_key: str, model: str, max_tokens: int = 4000):
     return chat
 
 
+class ProviderError(Exception):
+    """An HTTP-provider error carrying `status_code`, so `llm.rejection` classifies a rate limit or a
+    bad key the same way whether it came from the Anthropic SDK or one of the raw-HTTP providers."""
+
+    def __init__(self, message: str, status_code: int | None = None):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def _post_json(url: str, headers: dict, body: dict, timeout: float) -> dict:
+    import json
+    import urllib.error
+    import urllib.request
+
+    data = json.dumps(body).encode()
+    req = urllib.request.Request(
+        url, data=data, headers={"Content-Type": "application/json", **headers})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read() or b"{}")
+    except urllib.error.HTTPError as exc:
+        detail = ""
+        try:
+            detail = (exc.read() or b"").decode("utf-8", "replace")[:300]
+        except Exception:
+            pass
+        raise ProviderError(f"{exc.code} {exc.reason}: {detail}".strip(), exc.code) from exc
+
+
+def openai_chat(api_key: str, model: str, endpoint: str, max_tokens: int = 4000,
+                timeout: float = 120):
+    """The OpenAI REST shape — Bearer auth, POST /chat/completions — shared by openai, groq, mistral,
+    openrouter and nvidia_nim. Same shape the settings-page Verify button proves, so a key that
+    tested good here works there."""
+    from .llm_probe import base_url
+    url = f"{base_url(endpoint)}/chat/completions"
+
+    def chat(prompt: str) -> str:
+        payload = _post_json(url, {"Authorization": f"Bearer {api_key}"},
+                             {"model": model, "max_tokens": max_tokens,
+                              "messages": [{"role": "user", "content": prompt}]}, timeout)
+        return THINK.sub("", payload["choices"][0]["message"]["content"])
+
+    return chat
+
+
+def gemini_chat(api_key: str, model: str, endpoint: str, max_tokens: int = 4000,
+                timeout: float = 120):
+    """Gemini's generateContent — key in the query string, reply under candidates[].content.parts."""
+    import urllib.parse
+    from .llm_probe import base_url
+    base = base_url(endpoint)
+
+    def chat(prompt: str) -> str:
+        url = (f"{base}/models/{urllib.parse.quote(model)}:generateContent"
+               f"?key={urllib.parse.quote(api_key)}")
+        payload = _post_json(url, {},
+                             {"contents": [{"parts": [{"text": prompt}]}],
+                              "generationConfig": {"maxOutputTokens": max_tokens}}, timeout)
+        parts = payload["candidates"][0]["content"].get("parts", [])
+        return THINK.sub("", "".join(p.get("text", "") for p in parts))
+
+    return chat
+
+
+def azure_chat(api_key: str, endpoint: str, max_tokens: int = 4000, timeout: float = 120):
+    """Azure OpenAI: the deployment URL is the endpoint as pasted, and the key is its own header."""
+    def chat(prompt: str) -> str:
+        payload = _post_json(endpoint.strip(), {"api-key": api_key},
+                             {"max_tokens": max_tokens,
+                              "messages": [{"role": "user", "content": prompt}]}, timeout)
+        return THINK.sub("", payload["choices"][0]["message"]["content"])
+
+    return chat
+
+
 def ollama_chat(model: str, endpoint: str = "http://127.0.0.1:11434", timeout: float = 900,
                 think: bool = False, num_ctx: int = 8192, num_predict: int | None = None,
                 temperature: float = 0.0, repeat_penalty: float | None = None):

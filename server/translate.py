@@ -135,15 +135,13 @@ def parse_response(raw: str, targets: list[str]) -> Result:
 
 
 class Translator:
-    """Thin wrapper over the Anthropic SDK. Import is deferred so the module loads without a key."""
+    """Provider-agnostic: driven by a `chat(prompt) -> str` callable, so live translation follows the
+    provider chosen on the settings page — the same dispatcher (`postmeeting.chat_for`) the
+    post-meeting pass uses, instead of a hard-wired Anthropic client that ignored the choice."""
 
-    def __init__(self, api_key: str, model: str = "claude-opus-5", max_tokens: int = 1500,
+    def __init__(self, chat: Callable[[str], str],
                  on_reject: Callable[[Exception], None] | None = None):
-        from anthropic import Anthropic
-
-        self._client = Anthropic(api_key=api_key)
-        self._model = model
-        self._max_tokens = max_tokens
+        self._chat = chat
         # Called with the provider's error when a request is rejected, so the key pool can bench a
         # rate-limited or invalid key. The exception is always re-raised; this only reports it.
         self._on_reject = on_reject
@@ -152,13 +150,9 @@ class Translator:
                   previous: Line | None = None, terms: list[Term] | None = None) -> Result:
         prompt = build_prompt(line, targets, context or [], previous, terms or [])
         try:
-            message = self._client.messages.create(
-                model=self._model,
-                max_tokens=self._max_tokens,
-                messages=[{"role": "user", "content": prompt}],
-            )
+            raw = self._chat(prompt)
         except Exception as exc:
             if self._on_reject:
                 self._on_reject(exc)
             raise
-        return parse_response("".join(b.text for b in message.content if b.type == "text"), targets)
+        return parse_response(raw, targets)
