@@ -8,6 +8,13 @@ export type RawSessionSummary = Omit<SessionSummary, 'refine' | 'hasRecording'> 
 /** Fills the field in so `SessionSummary` is true for every consumer. They all read `s.refine.state`
  *  on that promise — the session dropdown does it inside a map over every session, so one legacy row
  *  threw and the ErrorBoundary blanked the whole transcript. */
+/** Editing is locked only while a pass is actually rewriting transcript lines. A summarize-only
+ *  regeneration reports state "refining" too (and so does the summarize tail of a full pass), but by
+ *  then every line is already written — locking there disabled editing, re-run and reprocess for the
+ *  whole transcript while nothing was touching it. The rewrite/refine stages are the mutating ones. */
+export const editingLocked = (refine: SessionSummary['refine']): boolean =>
+  refine.state === 'refining' && refine.stage !== 'summarize';
+
 export const withRefine = (s: RawSessionSummary): SessionSummary => ({
   ...s,
   refine: s.refine ?? { state: 'idle', error: '' },
