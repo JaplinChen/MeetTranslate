@@ -136,19 +136,25 @@ class Vad:
     """Streaming VAD. Feed capture blocks, take completed utterances out."""
 
     def __init__(self, model: Path | None = None, buffer_seconds: int = 60,
-                 min_speech: float = 0.25):
+                 min_speech: float = 0.25, min_silence: float = 0.5):
         """`min_speech` is a parameter because the two callers want different answers.
 
         Live capture wants everything: 「好」「對」「收到」 land under a second and belong on the
         TV. The post-meeting pass wants the opposite — a quarter-second of speech cannot carry a
         sentence, and Whisper never declines, so it answers those with the subtitle sign-offs it
         read in training. See POST_MEETING_MIN_SPEECH in postprocess.
+
+        `min_silence` is the pause that ends an utterance, and it is a knob because how long a
+        speaker pauses mid-thought varies by person and room. Too short cuts a breath into two
+        half-sentences — the first arrives at Whisper as a fragment that collapses into filler —
+        so the live pipeline runs it higher than this default. See vad_min_silence in config.
         """
         cfg = sherpa_onnx.VadModelConfig()
         cfg.silero_vad.model = str(model or config.VAD_MODEL)
         cfg.silero_vad.threshold = 0.5
-        cfg.silero_vad.min_silence_duration = 0.5  # the pause that ends an utterance
+        cfg.silero_vad.min_silence_duration = min_silence
         cfg.silero_vad.min_speech_duration = min_speech
+        self.min_silence = min_silence
         cfg.silero_vad.max_speech_duration = 20.0  # force a cut so one monologue can't stall the pipeline
         cfg.sample_rate = config.SAMPLE_RATE
         self._vad = sherpa_onnx.VoiceActivityDetector(cfg, buffer_size_in_seconds=buffer_seconds)

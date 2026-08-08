@@ -79,7 +79,7 @@ class Pipeline:
             raise FileNotFoundError("speech models not found: " + ", ".join(missing))
 
         self.tap: queue.Queue[np.ndarray | None] = queue.Queue(maxsize=TAP_CAPACITY)
-        self._vad = asr.Vad()
+        self._vad = asr.Vad(min_silence=cfg.vad_min_silence)
         # GPU first: measured on this box it is both faster and markedly more accurate.
         self._hotwords = asr_gpu.hotwords_from(store.glossary())
         self._transcriber = (asr_gpu.maybe(cfg.languages, self._hotwords)
