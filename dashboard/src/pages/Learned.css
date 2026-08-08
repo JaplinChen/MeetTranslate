@@ -1,4 +1,44 @@
 /* page-root: .learned-page */
+/* Same underline-tab shape as Sessions/LlmSettings — scoped to this page rather than a shared
+   component nothing else asked for. */
+.learned-page .learned-tabs {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.learned-page .learned-tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 150ms ease, border-color 150ms ease;
+}
+
+.learned-page .learned-tab:hover {
+  color: var(--text-primary);
+}
+
+.learned-page .learned-tab.active {
+  color: var(--text-primary);
+  border-bottom-color: var(--primary);
+}
+
+.learned-page .learned-tab:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+  border-radius: var(--radius-sm);
+}
+
 .learned-page .learned-note {
   margin: 0 0 12px;
   color: var(--text-muted);

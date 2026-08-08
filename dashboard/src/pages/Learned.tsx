@@ -22,6 +22,7 @@ export function Learned() {
   useDocumentTitle(t('learned.title'));
   const toast = useToast();
 
+  const [tab, setTab] = useState<'voices' | 'corrections'>('voices');
   const [speakers, setSpeakers] = useState<KnownSpeaker[]>([]);
   const [corrections, setCorrections] = useState<LearnedCorrection[]>([]);
   const [loading, setLoading] = useState(true);
@@ -107,11 +108,29 @@ export function Learned() {
     <div className="etable-page learned-page">
       <PageHeader title={t('learned.title')} subtitle={t('learned.subtitle')} />
 
-      <section className="etable-panel">
-        <h3 className="etable-panel-title">
+      <div className="learned-tabs" role="tablist">
+        <button
+          className={`learned-tab${tab === 'voices' ? ' active' : ''}`}
+          role="tab"
+          aria-selected={tab === 'voices'}
+          onClick={() => setTab('voices')}
+        >
           {t('learned.voices')}
           <span className="etable-count">{speakers.length}</span>
-        </h3>
+        </button>
+        <button
+          className={`learned-tab${tab === 'corrections' ? ' active' : ''}`}
+          role="tab"
+          aria-selected={tab === 'corrections'}
+          onClick={() => setTab('corrections')}
+        >
+          {t('learned.corrections')}
+          <span className="etable-count">{corrections.length}</span>
+        </button>
+      </div>
+
+      {tab === 'voices' && (
+      <section className="etable-panel">
         <p className="learned-note">{t('learned.voicesNote')}</p>
         {speakers.length === 0 ? (
           <p className="learned-empty">{t('learned.noVoices')}</p>
@@ -163,12 +182,10 @@ export function Learned() {
           </ul>
         )}
       </section>
+      )}
 
+      {tab === 'corrections' && (
       <section className="etable-panel">
-        <h3 className="etable-panel-title">
-          {t('learned.corrections')}
-          <span className="etable-count">{corrections.length}</span>
-        </h3>
         <p className="learned-note">{t('learned.correctionsNote')}</p>
         {corrections.length === 0 ? (
           <p className="learned-empty">{t('learned.noCorrections')}</p>
@@ -237,6 +254,7 @@ export function Learned() {
           </ul>
         )}
       </section>
+      )}
     </div>
   );
 }
