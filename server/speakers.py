@@ -55,6 +55,13 @@ class SpeakerStore:
             )
             self._db.commit()
 
+    def clear_speaker_names(self, session_id: int) -> None:
+        """Drop every name mapping for a session. Used before a reprocess renames the new codes:
+        the old mappings point at codes the re-derive renumbered, so keeping them mislabels."""
+        with self._lock:
+            self._db.execute("DELETE FROM speaker_name WHERE session_id=?", (session_id,))
+            self._db.commit()
+
     def speaker_names(self, session_id: int) -> dict[str, str]:
         with self._lock:
             return {r["code"]: r["name"] for r in self._db.execute(

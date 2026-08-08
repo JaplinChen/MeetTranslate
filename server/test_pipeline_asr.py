@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from . import asr, asr_gpu, pipeline, store
+from . import asr, asr_gpu, config, pipeline, store
 
 
 def test_language_whitelist_rejects_what_was_never_configured() -> None:
@@ -14,6 +14,16 @@ def test_language_whitelist_rejects_what_was_never_configured() -> None:
     assert asr.Transcriber(languages=["zh-TW", "en"])._allowed("zh")
     # Auto-detect that reported nothing, and an unconfigured meeting, stay permissive.
     assert tr._allowed("") and asr.Transcriber()._allowed("pt")
+
+
+def test_live_silence_default_rides_over_breaths() -> None:
+    """Half-sentences on the TV traced to a 0.5s silence cutting speakers mid-breath. The live pause
+    is now a config knob raised to 0.7; locked here so a future edit can't quietly drop it back.
+
+    Model-free on purpose — constructing a Vad would load silero, which the bare CI runner lacks.
+    The Vad(min_silence=…) passthrough is exercised on the live pipeline against real models.
+    """
+    assert config.Config().vad_min_silence == 0.7
 
 
 class _Seg:

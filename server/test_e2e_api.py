@@ -215,6 +215,42 @@ def test_naming_one_person_across_codes_learns_every_voice(client: TestClient) -
     assert sum(n == NAME for n, _ in main.store.known_voiceprints()) == 0
 
 
+def test_clearing_session_names_drops_the_stale_mapping(client: TestClient) -> None:
+    """A reprocess renumbers codes, so the old (code -> name) rows must be cleared before the new
+    ones are written, or a name lands on whoever the re-clustering happened to call S1."""
+    session = main.store.start_session("2026-03-03T09:00:00", "clear.wav")
+    main.store.set_speaker_name(session, "S1", "審查臨時清除")
+    assert main.store.speaker_names(session).get("S1") == "審查臨時清除"
+    main.store.clear_speaker_names(session)
+    assert main.store.speaker_names(session) == {}
+
+
+def test_naming_one_person_across_codes_learns_every_voice(client: TestClient) -> None:
+    """One person split across several codes must teach every variant, not just the last.
+
+    The diariser flattens a room unevenly: a voice that drifts gets minted as S1, S17, S20. Naming
+    all of them the same person used to keep only the print saved last (name was the primary key),
+    so three of four voice variants were thrown away. Now each distinct print is stored, and a
+    near-duplicate adds nothing.
+    """
+    session = main.store.start_session("2026-02-02T09:00:00", "multi.wav")
+    NAME = "審查臨時多聲"
+    # Two orthogonal prints — genuinely different variants of the one person.
+    main.store.save_voiceprint(session, "S1", np.array([1.0, 0.0, 0.0, 0.0], "float32").tobytes())
+    main.store.save_voiceprint(session, "S2", np.array([0.0, 1.0, 0.0, 0.0], "float32").tobytes())
+    client.put(f"/api/sessions/{session}/speakers", json={"S1": NAME, "S2": NAME})
+    assert sum(n == NAME for n, _ in main.store.known_voiceprints()) == 2
+
+    # A near-duplicate of the first print teaches nothing, so the count holds.
+    main.store.save_voiceprint(session, "S3", np.array([1.0, 0.0, 0.0, 0.01], "float32").tobytes())
+    client.put(f"/api/sessions/{session}/speakers", json={"S3": NAME})
+    assert sum(n == NAME for n, _ in main.store.known_voiceprints()) == 2
+
+    # Forgetting the voice drops every variant, not just the representative one.
+    client.delete(f"/api/speakers/known/{NAME}")
+    assert sum(n == NAME for n, _ in main.store.known_voiceprints()) == 0
+
+
 def test_speaker_session_count_is_distinct_meetings_not_saves(client: TestClient) -> None:
     """The "N meetings" figure counts meetings the voice was named in, not times it was saved.
 

@@ -181,26 +181,33 @@ def _speaker_code(speaker: int) -> str:
 
 
 def _remember_voices(store: Store, session_id: int, utterances: list[Utterance],
-                     diarizer: diarize.Diarizer) -> None:
-    """Store one voiceprint per speaker, so naming them afterwards teaches the room their voice.
+                     diarizer: diarize.Diarizer) -> dict[str, str]:
+    """Store one voiceprint per speaker, and recognise the ones the room already knows.
 
-    Only the live pipeline did this, which meant an imported recording never taught anything:
-    naming S3 on the transcript page looked up a voiceprint that had never been written, found
-    nothing, and quietly skipped promoting it. The whole point of the naming screen is that the
-    next meeting recognises the voice.
+    Only the live pipeline stored voiceprints, which meant an imported recording never taught
+    anything: naming S3 on the transcript page looked up a voiceprint that had never been written,
+    found nothing, and quietly skipped promoting it. The whole point of the naming screen is that
+    the next meeting recognises the voice.
+
+    Returns the codes a known voice was recognised on, so a reprocess can put the learned names
+    back rather than dropping the room to anonymous Sn again.
     """
     groups: dict[str, list[Utterance]] = {}
     for u in utterances:
         if u.speaker and len(u.samples) / config.SAMPLE_RATE >= config.MIN_EMBED_SECONDS:
             groups.setdefault(u.speaker, []).append(u)
 
+    recognised: dict[str, str] = {}
     for code, said in groups.items():
         # Their longest few, not everything they said: a centroid is an average, and averaging the
         # clearest samples costs a fixed handful of embeddings per speaker instead of one per
         # utterance in the meeting.
         best = sorted(said, key=lambda u: -len(u.samples))[:VOICEPRINT_SAMPLES]
-        centroid = np.mean([diarizer.embed(u.samples) for u in best], axis=0)
-        store.save_voiceprint(session_id, code, centroid.astype(np.float32).tobytes())
+        centroid = np.mean([diarizer.embed(u.samples) for u in best], axis=0).astype(np.float32)
+        store.save_voiceprint(session_id, code, centroid.tobytes())
+        if name := diarizer._recognise(centroid):
+            recognised[code] = name
+    return recognised
 
 
 def assign_speakers(utterances: list[Utterance], diarizer: diarize.Diarizer) -> None:
@@ -335,7 +342,10 @@ def rewrite_session(store: Store, session_id: int, wav: Path, cfg: config.Config
     transcriber = (asr_gpu.maybe(cfg.languages, asr_gpu.hotwords_from(store.glossary()))
                    or asr.Transcriber(model_dir=best_model(), quantized=False,
                                       num_threads=os.cpu_count() or 4, languages=cfg.languages))
-    diarizer = diarize.Diarizer(cfg=cfg)
+    # Known voices loaded so a re-derive can put the room's learned names back on the freshly
+    # clustered codes — a reprocess renumbers speakers from scratch, and without this every name the
+    # user typed would land on a different person or none at all.
+    diarizer = diarize.Diarizer(cfg=cfg, known=diarize.load_known(store))
 
     utterances = segment(wav)
     log.info("%d utterances from %s", len(utterances), wav.name)
@@ -352,7 +362,7 @@ def rewrite_session(store: Store, session_id: int, wav: Path, cfg: config.Config
         log.info("%d turns split %d utterances into %d", len(speaker_turns), before, len(utterances))
     else:
         assign_speakers(utterances, diarizer)
-    _remember_voices(store, session_id, utterances, diarizer)
+    recognised = _remember_voices(store, session_id, utterances, diarizer)
 
     def watch(_u: Utterance, _done: int, _total: int) -> None:
         if stop():
@@ -409,6 +419,12 @@ def rewrite_session(store: Store, session_id: int, wav: Path, cfg: config.Config
     if not rows and store.lines(session_id):
         raise ValueError("re-transcription produced no lines; keeping the existing transcript")
     store.replace_lines(session_id, rows)
+    # Only now that the new transcript is committed: the old names were keyed to the old codes, which
+    # this pass renumbered, so they are cleared and replaced by whatever the learned voices matched.
+    # Done here, not beside _remember_voices, so a cancelled pass leaves the names as it found them.
+    store.clear_speaker_names(session_id)
+    for code, name in recognised.items():
+        store.set_speaker_name(session_id, code, name)
     return utterances
 
 
