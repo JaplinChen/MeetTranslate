@@ -34,7 +34,7 @@ log = logging.getLogger("meettranslate.postmeeting")
 def chat_for(llm_cfg: llm.LlmConfig, api_key: str, max_tokens: int,
              num_ctx: int = 8192, num_predict: int | None = None,
              temperature: float = 0.0, repeat_penalty: float | None = None,
-             ) -> Callable[[str], str] | None:
+             model: str = "") -> Callable[[str], str] | None:
     """The chat callable the configured provider implies. None means no LLM stage can run.
 
     Follows the provider chosen on the LLM settings page — the settings page offers nine, and every
@@ -49,8 +49,10 @@ def chat_for(llm_cfg: llm.LlmConfig, api_key: str, max_tokens: int,
     """
     provider = llm_cfg.provider
     endpoint = llm_cfg.endpoint or llm.DEFAULT_ENDPOINTS.get(provider, "")
+    # A per-function override (translation vs summary) falls back to the one configured model when empty.
+    model = model or llm_cfg.model
     if provider == "ollama":
-        return refine.ollama_chat(llm_cfg.model, endpoint or llm.DEFAULT_ENDPOINTS["ollama"],
+        return refine.ollama_chat(model, endpoint or llm.DEFAULT_ENDPOINTS["ollama"],
                                   num_ctx=num_ctx, num_predict=num_predict,
                                   temperature=temperature, repeat_penalty=repeat_penalty)
     if not api_key:
@@ -60,13 +62,13 @@ def chat_for(llm_cfg: llm.LlmConfig, api_key: str, max_tokens: int,
         # and still get a summary, and one with no local model set falls through to no_llm as before.
         return _ollama_fallback(llm_cfg, num_ctx, num_predict, temperature, repeat_penalty)
     if provider == "anthropic":
-        return refine.anthropic_chat(api_key, llm_cfg.model, max_tokens=max_tokens)
+        return refine.anthropic_chat(api_key, model, max_tokens=max_tokens)
     if provider == "gemini":
-        return refine.gemini_chat(api_key, llm_cfg.model, endpoint, max_tokens=max_tokens)
+        return refine.gemini_chat(api_key, model, endpoint, max_tokens=max_tokens)
     if provider == "azure":
         return refine.azure_chat(api_key, endpoint, max_tokens=max_tokens)
     # openai, groq, mistral, openrouter, nvidia_nim — all speak the OpenAI REST shape.
-    return refine.openai_chat(api_key, llm_cfg.model, endpoint, max_tokens=max_tokens)
+    return refine.openai_chat(api_key, model, endpoint, max_tokens=max_tokens)
 
 
 def _ollama_fallback(llm_cfg: llm.LlmConfig, num_ctx: int, num_predict: int | None,
@@ -135,7 +137,7 @@ def _summarize_stage(store: Store, session_id: int, languages: list[str],
     # the reply so it stops instead of generating until the window fills.
     mt = summarize.max_tokens_for(target)
     chat = chat_for(llm_cfg, api_key, max_tokens=mt, num_ctx=16384, num_predict=mt,
-                    temperature=0.5, repeat_penalty=1.2)
+                    temperature=0.5, repeat_penalty=1.2, model=llm_cfg.summary_model)
     if chat is None:
         # No LLM configured. Record it rather than returning silently: the card otherwise shows
         # "no summary yet" forever, indistinguishable from never-clicked, hiding that the fix is a
@@ -161,7 +163,9 @@ def followup(store: Store, languages: list[str], llm_cfg: llm.LlmConfig, api_key
     is why each writes to the store as it finishes rather than at the end.
     """
     def run(cancel: threading.Event, set_stage: Callable[[str], None]) -> None:
-        chat = chat_for(llm_cfg, api_key, max_tokens=4000)
+        # Refine corrects the transcript's own words, a Traditional-Chinese comprehension job closer to
+        # the summary than to translation, so it rides the summary model rather than the translator's.
+        chat = chat_for(llm_cfg, api_key, max_tokens=4000, model=llm_cfg.summary_model)
 
         # Refine needs a model; with none configured it is simply skipped. Summarize still runs,
         # because _summarize_stage records a "no_llm" state that the session card reads as "configure

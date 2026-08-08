@@ -73,6 +73,12 @@ class LlmConfig:
     # Flat "provider:model" chain tried in order when the primary fails.
     fallback_models: list[str] = field(default_factory=list)
     providers: dict[str, dict] = field(default_factory=dict)
+    # Per-function model overrides; empty falls back to `model`. The morning meeting is Taiwanese
+    # Mandarin most days (Vietnamese only when the manager is out), so translation wants a Traditional
+    # Chinese + Vietnamese model while the summary wants a long-context reasoner — different jobs, so
+    # a room can point each at the model that fits instead of compromising on one for both.
+    translate_model: str = ""
+    summary_model: str = ""
 
     def save(self) -> None:
         LLM_PATH.write_text(json.dumps(asdict(self), indent=2, ensure_ascii=False), encoding="utf-8")
@@ -92,6 +98,8 @@ class LlmConfig:
             "llmProvider": self.provider,
             "llmEndpoint": self.endpoint,
             "llmModel": self.model,
+            "llmTranslateModel": self.translate_model,
+            "llmSummaryModel": self.summary_model,
             "llmApiKey": "",
             "llmTemperature": self.temperature,
             "llmFallbackModels": self.fallback_models,
@@ -103,6 +111,8 @@ class LlmConfig:
         self.provider = str(body.get("llmProvider", self.provider))
         self.endpoint = str(body.get("llmEndpoint", self.endpoint)) or DEFAULT_ENDPOINTS.get(self.provider, "")
         self.model = str(body.get("llmModel", self.model))
+        self.translate_model = str(body.get("llmTranslateModel", self.translate_model))
+        self.summary_model = str(body.get("llmSummaryModel", self.summary_model))
         self.temperature = float(body.get("llmTemperature", self.temperature))
         self.fallback_models = [str(s) for s in body.get("llmFallbackModels", self.fallback_models)]
 

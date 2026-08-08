@@ -79,6 +79,21 @@ def test_chat_for_routes_openai_provider_to_openai_shape():
     assert calls[0].full_url == "https://api.openai.com/v1/chat/completions"
 
 
+def test_chat_for_model_override_picks_a_per_function_model():
+    """Per-function split: translation and summary can point at different models; empty falls back
+    to the one configured model, so a room that sets neither behaves exactly as before."""
+    cfg = llm.LlmConfig(provider="openai", model="base-model", endpoint="https://api.openai.com/v1")
+    reply = {"choices": [{"message": {"content": "ok"}}]}
+    calls, restore = _capture(reply)
+    try:
+        postmeeting.chat_for(cfg, "sk", max_tokens=50, model="aya-expanse:8b")("hi")
+        postmeeting.chat_for(cfg, "sk", max_tokens=50)("hi")  # empty override
+    finally:
+        restore()
+    assert json.loads(calls[0].data)["model"] == "aya-expanse:8b", "override used"
+    assert json.loads(calls[1].data)["model"] == "base-model", "empty override falls back to base"
+
+
 def test_chat_for_returns_none_without_key_for_cloud_provider():
     cfg = llm.LlmConfig(provider="groq", model="llama", endpoint="")
     assert postmeeting.chat_for(cfg, "", max_tokens=50) is None
