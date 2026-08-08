@@ -329,6 +329,9 @@ def test_an_imported_recording_leaves_a_voiceprint_behind() -> None:
             # Length stands in for identity, so the averaged centroid is checkable.
             return np.full(4, len(samples) / config.SAMPLE_RATE, dtype=np.float32)
 
+        def _recognise(self, emb: np.ndarray) -> str:
+            return ""  # no learned voices in this fixture
+
     said = [postprocess.Utterance(0.0, np.zeros(config.SAMPLE_RATE * 4, dtype=np.float32), "S1"),
             postprocess.Utterance(5.0, np.zeros(config.SAMPLE_RATE * 2, dtype=np.float32), "S1"),
             postprocess.Utterance(9.0, np.zeros(config.SAMPLE_RATE * 6, dtype=np.float32), "S2"),
@@ -344,6 +347,38 @@ def test_an_imported_recording_leaves_a_voiceprint_behind() -> None:
     assert embedder.calls == 3, "the sub-second clip must not have been embedded"
 
 
+def test_reprocess_puts_learned_names_back_on_the_new_codes() -> None:
+    """A re-derive renumbers speakers from scratch; the room's learned voices must name them again.
+
+    Without this a reprocess dropped every name the user had typed — the old speaker_name rows were
+    keyed to codes the re-clustering renumbered. _remember_voices now reports which fresh code each
+    known voice landed on, so rewrite_session can write the names back.
+    """
+    class FakeStore:
+        def __init__(self) -> None:
+            self.saved: dict[str, bytes] = {}
+
+        def save_voiceprint(self, session_id: int, code: str, centroid: bytes) -> None:
+            self.saved[code] = centroid
+
+    class FakeDiarizer:
+        def embed(self, samples: np.ndarray) -> np.ndarray:
+            # Length stands in for identity, so the centroid is a known value per speaker.
+            return np.full(4, len(samples) / config.SAMPLE_RATE, dtype=np.float32)
+
+        def _recognise(self, emb: np.ndarray) -> str:
+            # The four-second voice is the one the room knows; the six-second one is a stranger.
+            return "廖仁成" if abs(float(emb[0]) - 4.0) < 0.01 else ""
+
+    said = [postprocess.Utterance(0.0, np.zeros(config.SAMPLE_RATE * 4, dtype=np.float32), "S1"),
+            postprocess.Utterance(9.0, np.zeros(config.SAMPLE_RATE * 6, dtype=np.float32), "S2")]
+    store = FakeStore()
+    recognised = postprocess._remember_voices(store, 1, said, FakeDiarizer())
+
+    assert recognised == {"S1": "廖仁成"}, recognised
+    assert sorted(store.saved) == ["S1", "S2"], "both voices are still learned, named or not"
+
+
 def test_a_voiceprint_averages_only_a_speakers_longest_few() -> None:
     """A two-hour meeting has hundreds of utterances per speaker; a centroid needs a handful."""
     class Counter:
@@ -353,6 +388,9 @@ def test_a_voiceprint_averages_only_a_speakers_longest_few() -> None:
         def embed(self, samples: np.ndarray) -> np.ndarray:
             self.calls += 1
             return np.ones(4, dtype=np.float32)
+
+        def _recognise(self, emb: np.ndarray) -> str:
+            return ""
 
     class Sink:
         def save_voiceprint(self, session_id: int, code: str, centroid: bytes) -> None:
