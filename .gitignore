@@ -18,3 +18,8 @@ models/
 
 # Server logs from a manually launched uvicorn; never part of a change.
 *.log
+
+# Transcript exports (Word/Markdown), generated on demand from a meeting — deliverables, not source.
+# Scoped to the "逐字稿" the export names carry, so a real README.md/CHANGELOG.md is never caught.
+*逐字稿*.docx
+*逐字稿*.md
