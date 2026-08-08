@@ -3,11 +3,12 @@ setlocal
 cd /d "%~dp0"
 set PORT=8010
 
-rem Free the port first so the script is re-runnable without manual cleanup.
-for /f "tokens=5" %%p in ('netstat -ano ^| findstr /r /c:"LISTENING .*:%PORT% " 2^>nul') do (
-    echo Stopping process %%p on port %PORT%
-    taskkill /F /PID %%p >nul 2>&1
-)
+rem Free the port first so the script is re-runnable without manual cleanup. Get-NetTCPConnection
+rem rather than netstat+findstr: the old pattern matched "LISTENING" before the port, but netstat
+rem prints the port first and the state after, so it never matched and the stale server was left
+rem holding the port — the new one could not bind and the restart silently kept serving old code.
+rem One line, no caret-continuation: a multi-line PowerShell inside for /f breaks cmd parsing.
+for /f %%p in ('powershell -NoProfile -Command "(Get-NetTCPConnection -LocalPort %PORT% -State Listen -ErrorAction SilentlyContinue).OwningProcess" 2^>nul') do taskkill /F /PID %%p >nul 2>&1
 
 if not exist ".venv\Scripts\python.exe" (
     echo Creating virtual environment...
