@@ -61,7 +61,7 @@ class StubPostmeeting:
     def _summarize_stage(self, store, session_id, languages, llm_cfg, api_key, cancel):
         self.summarize_calls.append(session_id)
 
-    def chat_for(self, llm_cfg, api_key, max_tokens):
+    def chat_for(self, llm_cfg, api_key, max_tokens, model="", **_):
         # None means "no model configured", the 503 path. A list means "answer with these".
         if self.replies is None:
             return None

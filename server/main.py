@@ -70,7 +70,8 @@ def _make_translator() -> translate.Translator | None:
 
     # ponytail: Ollama's chat timeout is 900s (refine.ollama_chat default); on the live path a slow
     # local model lags subtitles rather than dropping them. Add a shorter live timeout if that bites.
-    chat = postmeeting.chat_for(state["llm"], key, max_tokens=1500)
+    chat = postmeeting.chat_for(state["llm"], key, max_tokens=1500,
+                                model=state["llm"].translate_model)
     if chat is None:
         log.warning("no API key configured — transcribing without translation")
         return None
