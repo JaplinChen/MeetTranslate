@@ -159,6 +159,51 @@ def test_translator_reports_rejection_then_reraises():
     assert len(rejected) == 1
 
 
+def test_translate_retries_a_malformed_json_reply() -> None:
+    """A local model emits unparseable JSON sporadically; a re-ask parses it, so no line is lost.
+
+    Measured: 179 of 862 lines on one meeting came back unparseable, and re-asking parsed them all.
+    """
+    replies = iter(["not json at all", "{bad json", '{"translations": {"en": "hello"}}'])
+    calls: list[str] = []
+
+    def chat(prompt: str) -> str:
+        calls.append(prompt)
+        return next(replies)
+
+    res = translate.Translator(chat).translate(translate.Line("你好", "zh"), ["en"])
+    assert res.translations == {"en": "hello"}, res.translations
+    assert len(calls) == 3, "retried until it parsed"
+
+
+def test_translate_surfaces_a_reply_that_never_parses() -> None:
+    """Malformed on every attempt is raised, not swallowed as a silently empty translation."""
+    raised = False
+    try:
+        translate.Translator(lambda p: "never valid").translate(translate.Line("你好", "zh"), ["en"])
+    except ValueError:
+        raised = True
+    assert raised
+
+
+def test_translate_does_not_retry_a_provider_rejection() -> None:
+    """A rejected key benches at once — retrying the parse loop would hammer a dud key three times."""
+    calls: list[str] = []
+    rejected: list[Exception] = []
+
+    def chat(prompt: str) -> str:
+        calls.append(prompt)
+        raise RuntimeError("rate limited")
+
+    raised = False
+    try:
+        translate.Translator(chat, on_reject=rejected.append).translate(
+            translate.Line("你好", "zh"), ["en"])
+    except RuntimeError:
+        raised = True
+    assert raised and len(calls) == 1 and len(rejected) == 1, (raised, len(calls), len(rejected))
+
+
 def main() -> None:
     checks = sorted((n, f) for n, f in globals().items() if n.startswith("test_"))
     for name, fn in checks:

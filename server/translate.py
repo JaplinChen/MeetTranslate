@@ -116,6 +116,11 @@ def build_prompt(line: Line, targets: list[str], context: list[Line], previous: 
 
 _JSON = re.compile(r"\{.*\}", re.DOTALL)
 
+# How many times to ask before giving up on a line. The malformed JSON is sporadic, so a re-ask
+# almost always parses; three total attempts pushes the residue near zero without hammering a
+# genuinely stuck line (or a live subtitle) for long.
+PARSE_ATTEMPTS = 3
+
 
 def parse_response(raw: str, targets: list[str], prev_targets: list[str] | None = None) -> Result:
     """Tolerant parse: models wrap JSON in fences or prose often enough to matter."""
@@ -155,10 +160,20 @@ class Translator:
                   previous: Line | None = None, terms: list[Term] | None = None,
                   prev_targets: list[str] | None = None) -> Result:
         prompt = build_prompt(line, targets, context or [], previous, terms or [], prev_targets)
-        try:
-            raw = self._chat(prompt)
-        except Exception as exc:
-            if self._on_reject:
-                self._on_reject(exc)
-            raise
-        return parse_response(raw, targets, prev_targets)
+        # A local model emits malformed JSON sporadically, not by content: on a 2h19m meeting 179 of
+        # 862 lines came back unparseable, and re-asking the same prompt parsed every one. So a parse
+        # failure is retried rather than dropped — a provider rejection (bad key, rate limit) is not,
+        # it re-raises at once so the key pool can bench the key instead of hammering it.
+        last: ValueError | None = None
+        for _ in range(PARSE_ATTEMPTS):
+            try:
+                raw = self._chat(prompt)
+            except Exception as exc:
+                if self._on_reject:
+                    self._on_reject(exc)
+                raise
+            try:
+                return parse_response(raw, targets, prev_targets)
+            except ValueError as exc:  # JSONDecodeError is a ValueError subclass
+                last = exc
+        raise last
