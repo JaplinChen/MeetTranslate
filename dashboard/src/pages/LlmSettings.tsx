@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Loader2, Save } from 'lucide-react';
 import { translateApi, type LlmProvider, type LlmProviderSaved } from '../services/api';
@@ -25,6 +25,12 @@ export function LlmSettings() {
   const [loading, setLoading] = useState(true);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Per-function model overrides; empty means "use the primary model". Global, not per-tab.
+  const [translateModel, setTranslateModel] = useState('');
+  const [summaryModel, setSummaryModel] = useState('');
+  const translateId = useId();
+  const summaryId = useId();
+  const modelListId = useId();
 
   const keySet = (p: LlmProvider | ''): boolean => (p ? Boolean(pcfgs[p]?.apiKeySet) : false);
 
@@ -64,6 +70,8 @@ export function LlmSettings() {
       };
     };
     setTabs([primary, fbTab(order[0]), fbTab(order[1])]);
+    setTranslateModel(c.llmTranslateModel ?? '');
+    setSummaryModel(c.llmSummaryModel ?? '');
   };
 
   useEffect(() => {
@@ -138,6 +146,8 @@ export function LlmSettings() {
         llmProvider: primary.provider,
         llmEndpoint: effectiveEndpoint(primary),
         llmModel: primary.model,
+        llmTranslateModel: translateModel.trim(),
+        llmSummaryModel: summaryModel.trim(),
         llmApiKey: primary.apiKey,
         llmTemperature: primary.temperature,
         llmFallbackModels: chain,
@@ -202,6 +212,39 @@ export function LlmSettings() {
             onProviderChange={p => changeProvider(active, p)}
             onField={patch => patchTab(active, patch)}
           />
+        </section>
+
+        <section className="translate-panel">
+          <p className="llm-hint">{t('llm.perFunctionHint')}</p>
+          <div className="form-group">
+            <label htmlFor={translateId}>{t('llm.translateModel')}</label>
+            <input
+              id={translateId}
+              type="text"
+              list={modelListId}
+              value={translateModel}
+              disabled={!canWrite}
+              placeholder={t('llm.perFunctionPlaceholder')}
+              onChange={e => setTranslateModel(e.target.value)}
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor={summaryId}>{t('llm.summaryModel')}</label>
+            <input
+              id={summaryId}
+              type="text"
+              list={modelListId}
+              value={summaryModel}
+              disabled={!canWrite}
+              placeholder={t('llm.perFunctionPlaceholder')}
+              onChange={e => setSummaryModel(e.target.value)}
+            />
+          </div>
+          <datalist id={modelListId}>
+            {[...new Set([tabs[0].model, ...tabs[0].fallbackModels, tabs[1].model, tabs[2].model].filter(Boolean))].map(m => (
+              <option key={m} value={m} />
+            ))}
+          </datalist>
         </section>
       </div>
     </div>

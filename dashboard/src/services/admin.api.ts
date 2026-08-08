@@ -42,6 +42,9 @@ export interface TranslateConfig {
   llmProvider: LlmProvider;
   llmEndpoint: string;
   llmModel: string;
+  /** Per-function model overrides; empty falls back to llmModel. */
+  llmTranslateModel?: string;
+  llmSummaryModel?: string;
   llmApiKey: string;
   llmTemperature: number;
   llmFallbackModels: string[];
